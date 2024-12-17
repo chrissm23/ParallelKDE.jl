@@ -55,6 +55,15 @@ begin
 	end
 end
 
+# ╔═╡ fec5d7ab-61ee-450b-a952-0e4fd3a102cf
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	grid = Grid([0:0.1:1, 1:0.1:2])
+	grid .+ 1.5
+end
+  ╠═╡ =#
+
 # ╔═╡ e65784bb-2484-473d-ba03-649df17285e8
 begin
 	struct CuGrid{N,T<:Real,M} <: AbstractGrid{N,T,M}
@@ -103,14 +112,8 @@ begin
 	grid .+ 1.5
 end
 
-# ╔═╡ fec5d7ab-61ee-450b-a952-0e4fd3a102cf
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	grid = Grid([0:0.1:1, 1:0.1:2])
-	grid .+ 1.5
-end
-  ╠═╡ =#
+# ╔═╡ 519cbee1-a301-4fd9-a504-fe6807db0aa3
+all(isfinite, CUDA.rand(Float32, 2,2))
 
 # ╔═╡ Cell order:
 # ╠═6ca5c154-bf2b-4097-9b3a-2e1df93d043a
@@ -119,3 +122,4 @@ end
 # ╠═fec5d7ab-61ee-450b-a952-0e4fd3a102cf
 # ╠═e65784bb-2484-473d-ba03-649df17285e8
 # ╠═71c71f33-5bbf-4979-9451-fc13b66f0c30
+# ╠═519cbee1-a301-4fd9-a504-fe6807db0aa3

@@ -4,6 +4,10 @@ using FFTW
 using StaticArrays
 using CUDA
 
+export AbstractGrid,
+  Grid,
+  CuGrid
+
 abstract type AbstractGrid{N,T<:Real,M} end
 
 struct Grid{N,T<:Real,M} <: AbstractGrid{N,T,M}
@@ -49,7 +53,8 @@ struct CuGrid{N,T<:Real,M} <: AbstractGrid{N,T,M}
 end
 
 function CuGrid(
-  ranges::Union{AbstractVector{<:AbstractRange{T}},NTuple{N,AbstractRange{T}}},
+  ranges::Union{AbstractVector{<:AbstractRange{T}},NTuple{N,AbstractRange{T}}};
+  b32::Bool=true
 )::CuGrid where {N,T<:Real}
   if isa(ranges, NTuple)
     ranges = collect(ranges)
@@ -63,13 +68,23 @@ function CuGrid(
     collect(Iterators.product(ranges...))
   )
 
-  coordinates = CuArray{T}(complete_array)
-  spacings = CuArray{T}(step.(ranges))
-  bounds = CuArray{T}(
-    reinterpret(reshape, T, extrema.(ranges))
-  )
+  if b32
+    coordinates = CuArray{Float32}(complete_array)
+    spacings = CuArray{Float32}(step.(ranges))
+    bounds = CuArray{Float32}(
+      reinterpret(reshape, T, extrema.(ranges))
+    )
 
-  return CuGrid{n,T,n + 1}(coordinates, spacings, bounds)
+    return CuGrid{n,Float32,n + 1}(coordinates, spacings, bounds)
+  else
+    coordinates = CuArray{T}(complete_array)
+    spacings = CuArray{T}(step.(ranges))
+    bounds = CuArray{T}(
+      reinterpret(reshape, T, extrema.(ranges))
+    )
+
+    return CuGrid{n,T,n + 1}(coordinates, spacings, bounds)
+  end
 end
 
 function Base.size(grid::CuGrid{N,T}) where {N,T<:Real}
