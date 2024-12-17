@@ -72,7 +72,7 @@ function fit_kde!(
   t_final::Union{Real,Vector{<:Real},Nothing}=nothing,
   n_bootstraps::Union{Int,Nothing}=nothing,
   smoothness::Real=1.0,
-  performance::Symbol=:low,
+  n_batches::Union{Int,Nothing}=nothing,
   ignore_t0::Bool=true
 ) where {N,T,S,M}
   n_bootstraps = get_nbootstraps(n_bootstraps)
@@ -80,14 +80,34 @@ function fit_kde!(
   threshold = get_smoothness(smoothness, n_samples, N)
   t0 = kde.t
   time_range = get_times(dt, n_steps, t_final, t0, ignore_t0)
+  n_batches = get_nbatches(DeviceKDE(kde), n_batches, size(kde.grid), n_bootstraps)
 
   if ignore_t0
     set_nan_density!(kde)
   end
 
-  density = find_density(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold, performance)
+  density = find_density(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold, n_batches)
 
+  # TODO:
+  # Set t attribute to last time in time_range
   set_density!(kde, density)
+end
+
+function find_density(
+  ::IsCPUKDE,
+  kde::KDE{N,T,S,M},
+  time_range::AbstractVector{<:AbstractRange{<:Real}},
+  n_bootstraps::Int,
+  threshold::Real,
+  n_batches::Int,
+) where {N,T,S,M}
+  bootstraps_per_batch = ceil(Int, n_bootstraps / n_batches)
+  density = zeros(size(kde.grid))
+
+  for batch in 1:n_batches
+    means, variances = initialize_statistics(kde.data, kde.grid, bootstraps_per_batch)
+    propagate_bandwidth!(means, variances, time_range, threshold)
+  end
 end
 
 function get_times(
@@ -96,7 +116,7 @@ function get_times(
   t_final::Union{Real,Vector{<:Real},Nothing},
   t0::AbstractVector{<:Real},
   ignore_t0::Bool
-)
+)::Vector{<:AbstractRange{<:Real}}
   N = length(t0)
 
   if ignore_t0
@@ -135,6 +155,35 @@ function get_smoothness(smoothness::Real, n_samples::Int, n_dims::Int)
   threshold = smoothness * optimal_variance(n_samples, n_dims)
 
   return threshold
+end
+
+function get_nbatches(
+  device::DeviceKDE,
+  n_batches::Union{Int,Nothing},
+  grid_size::NTuple{N,Int},
+  n_bootstraps::Int
+)::Int where {N}
+  free_memory = 0.75 * get_available_memory(device)
+  bootstraps_per_batch = free_memory / (prod(grid_size) * 32)
+  max_batches = ceil(Int, n_bootstraps / bootstraps_per_batch)
+
+  if n_batches === nothing
+    n_batches = max_batches
+  elseif n_batches > max_batches
+    throw(ArgumentError("n_batches is too large for available memory."))
+  end
+
+  return n_batches
+end
+
+function get_available_memory(::IsCPUKDE)
+  return Sys.free_memory() / 1024^2
+end
+function get_available_memory(::IsGPUKDE)
+  if !CUDA.functional()
+    throw(ArgumentError("CUDA.jl is not functional. Use a different method."))
+  end
+  return CUDA.memory_status().free / 1024^2
 end
 
 end
