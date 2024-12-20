@@ -2,9 +2,11 @@ module ParallelKDE
 
 include("Grids.jl")
 include("KDEs.jl")
+include("DirectSpace.jl")
 
 using .Grids
 using .KDEs
+using .DirectSpace
 
 using StaticArrays,
   FFTW,
@@ -45,8 +47,8 @@ function initialize_kde(
 end
 
 function initialize_kde(
-  data::AbstractVector{<:AbstractVector{T<:Real}},
-  grid_ranges::AbstractVector{<:AbstractRange{S<:Real}},
+  data::AbstractVector{<:AbstractVector{T}},
+  grid_ranges::AbstractVector{<:AbstractRange{S}},
   ::IsGPUKDE
 )::CuKDE where {T<:Real,S<:Real}
   N = length(data[1])
@@ -72,42 +74,128 @@ function fit_kde!(
   t_final::Union{Real,Vector{<:Real},Nothing}=nothing,
   n_bootstraps::Union{Int,Nothing}=nothing,
   smoothness::Real=1.0,
-  n_batches::Union{Int,Nothing}=nothing,
-  ignore_t0::Bool=true
-) where {N,T,S,M}
+  ignore_t0::Bool=true,
+  method::Symbol=:serial
+) where {N,T<:Real,S<:Real,M}
   n_bootstraps = get_nbootstraps(n_bootstraps)
   n_samples = get_nsamples(kde)
   threshold = get_smoothness(smoothness, n_samples, N)
   t0 = kde.t
   time_range = get_times(dt, n_steps, t_final, t0, ignore_t0)
-  n_batches = get_nbatches(DeviceKDE(kde), n_batches, size(kde.grid), n_bootstraps)
 
   if ignore_t0
     set_nan_density!(kde)
   end
 
-  density = find_density(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold, n_batches)
+  if method == :serial || method == :threaded
+    density = find_density(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold, method=method)
+  elseif method == :cuda
+    density = find_density(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold)
+  else
+    throw(ArgumentError("Invalid method: $method"))
+  end
 
-  # TODO:
-  # Set t attribute to last time in time_range
   set_density!(kde, density)
 end
 
 function find_density(
   ::IsCPUKDE,
   kde::KDE{N,T,S,M},
-  time_range::AbstractVector{<:AbstractRange{<:Real}},
+  time_range::Vector{<:AbstractRange{<:Real}},
   n_bootstraps::Int,
-  threshold::Real,
-  n_batches::Int,
-) where {N,T,S,M}
-  bootstraps_per_batch = ceil(Int, n_bootstraps / n_batches)
-  density = zeros(size(kde.grid))
+  threshold::Real;
+  method::Symbol=:serial
+)::Array{T,N} where {N,T<:Real,S<:Real,M}
+  density = fill(NaN, size(kde.grid))
 
-  for batch in 1:n_batches
-    means, variances = initialize_statistics(kde.data, kde.grid, bootstraps_per_batch)
-    propagate_bandwidth!(means, variances, time_range, threshold)
+  means_0, variances_0 = initialize_statistics(kde, n_bootstraps, method)
+  complete_distribution = initialize_distribution(kde.data, kde.grid, method)
+  fourier_grid = fft_grid(kde.grid)
+
+  times = reinterpret(reshape, T, collect(zip(time_range...)))
+
+  for time in eachcol(times)
+    means_t, variances_t = propagate_bandwidth(means_0, variances_0, fourier_grid, time, method)
+    means, variances = calculate_statistics(means_t, variances_t, method)
+    assign_density!(density, complete_distribution, means, variances, threshold, method)
+
+    if all(isfinite, density)
+      kde.t .= time
+      break
+    end
+
+    if time === times[end]
+      @warn "Not all points converged with the specified time ranges."
+    end
   end
+
+  return density
+end
+function find_denisty(
+  ::IsGPUKDE,
+  kde::CuKDE{N,T,S,M},
+  time_range::Vector{<:AbstractRange{<:Real}},
+  n_bootstraps::Int,
+  threshold::Real;
+)::CuArray{T,N} where {N,T<:Real,S<:Real,M}
+  density = CUDA.fill(NaN32, size(kde.grid))
+
+  means_0, variances_0 = initialize_statistics(kde, n_bootstraps)
+  complete_distribution = initialize_distribution(kde.data, kde.grid, method)
+  fourier_grid = fft_grid(kde.grid)
+
+  times = CuArray{T,N}(
+    reinterpret(reshape, T, collect(zip(time_range...)))
+  )
+
+  for col in 1:size(times, 2)
+    time = view(times, :, col)
+
+    means_t, variances_t = propagate_bandwidth(means_0, variances_0, fourier_grid, time, method)
+    means, variances = calculate_statistics(means_t, variances_t, method)
+
+    assign_density!(density, complete_distribution, means, variances, threshold, method)
+
+    if all(isfinite, density)
+      kde.t .= time
+      break
+    end
+
+    if col == size(times, 2)
+      @warn "Not all points converged with the specified time ranges."
+    end
+  end
+
+  return density
+end
+
+function initialize_statistics(
+  kde::KDE{N,T,S,M},
+  n_bootstraps::Int,
+  method::Symbol
+)::NTuple{2,Array{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
+  n_samples = length(kde.data)
+  dirac_series = initialize_dirac_series(Val(method), kde, n_bootstraps)
+
+  s_0 = fft(dirac_series, 1:N)
+  means_0 = s_0 ./ n_samples
+  variances_0 = (abs2.(s_0) ./ n_samples^2) .- (means_0 .^ 2)
+
+  return means_0, variances_0
+end
+
+function initialize_statistics(
+  kde::CuKDE{N,T,S,M},
+  n_bootstraps::Int,
+)::NTuple{2,CuArray{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
+  n_samples = size(kde.data, 2)
+  dirac_series = initialize_dirac_series(Val(:cuda), kde, n_bootstraps)
+
+  s_0 = fft(dirac_series, 1:N)
+  means_0 = s_0 ./ n_samples
+  variances_0 = (abs2.(s_0) ./ n_samples^2) .- means_0 .^ 2
+
+  return means_0, variances_0
 end
 
 function get_times(
@@ -155,25 +243,6 @@ function get_smoothness(smoothness::Real, n_samples::Int, n_dims::Int)
   threshold = smoothness * optimal_variance(n_samples, n_dims)
 
   return threshold
-end
-
-function get_nbatches(
-  device::DeviceKDE,
-  n_batches::Union{Int,Nothing},
-  grid_size::NTuple{N,Int},
-  n_bootstraps::Int
-)::Int where {N}
-  free_memory = 0.75 * get_available_memory(device)
-  bootstraps_per_batch = free_memory / (prod(grid_size) * 32)
-  max_batches = ceil(Int, n_bootstraps / bootstraps_per_batch)
-
-  if n_batches === nothing
-    n_batches = max_batches
-  elseif n_batches > max_batches
-    throw(ArgumentError("n_batches is too large for available memory."))
-  end
-
-  return n_batches
 end
 
 function get_available_memory(::IsCPUKDE)

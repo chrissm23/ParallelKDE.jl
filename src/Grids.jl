@@ -6,7 +6,11 @@ using CUDA
 
 export AbstractGrid,
   Grid,
-  CuGrid
+  CuGrid,
+  spacings,
+  bounds,
+  low_bounds,
+  high_bounds
 
 abstract type AbstractGrid{N,T<:Real,M} end
 
@@ -36,7 +40,7 @@ function Grid(ranges::NTuple{N,AbstractRange{T}})::Grid{N,T,N + 1} where {N,T<:R
 end
 
 function Base.size(grid::Grid{N,T}) where {N,T<:Real}
-  return ntuple(i -> length(grid.coordinates), N)
+  return ntuple(i -> length(grid.coordinates[i]), N)
 end
 function Base.broadcastable(grid::Grid{N,T}) where {N,T<:Real}
   return reinterpret(
@@ -93,6 +97,28 @@ end
 
 function Base.broadcastable(grid::CuGrid{N,T}) where {N,T<:Real}
   return grid.coordinates
+end
+
+abstract type DeviceGrid end
+struct IsCPUGrir <: DeviceGrid end
+struct IsGPUGrid <: DeviceGrid end
+DeviceGrid(grid::Grid) = IsCPUGrir()
+DeviceGrid(grid::CuGrid) = IsGPUGrid()
+
+function spacings(grid::AbstractGrid)::AbstractVector
+  return grid.spacings
+end
+
+function bounds(grid::AbstractGrid)::AbstractMatrix
+  return grid.bounds
+end
+
+function low_bounds(grid::AbstractGrid)::AbstractVector
+  return grid.bounds[:, 1]
+end
+
+function high_bounds(grid::AbstractGrid)::AbstractVector
+  return grid.bounds[:, 2]
 end
 
 end
