@@ -43,11 +43,17 @@ function Base.size(grid::Grid{N,T}) where {N,T<:Real}
   return ntuple(i -> length(grid.coordinates[i]), N)
 end
 function Base.broadcastable(grid::Grid{N,T}) where {N,T<:Real}
-  return reinterpret(
+  complete_array = reinterpret(
     reshape,
     T,
     collect(Iterators.product(grid.coordinates...))
   )
+
+  if N == 1
+    complete_array = reshape(complete_array, 1, :)
+  end
+
+  return complete_array
 end
 
 struct CuGrid{N,T<:Real,M} <: AbstractGrid{N,T,M}
@@ -66,11 +72,15 @@ function CuGrid(
   else
     n = length(ranges)
   end
+
   complete_array = reinterpret(
     reshape,
     T,
     collect(Iterators.product(ranges...))
   )
+  if n == 1
+    complete_array = reshape(complete_array, 1, :)
+  end
 
   if b32
     coordinates = CuArray{Float32}(complete_array)

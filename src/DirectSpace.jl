@@ -6,6 +6,8 @@ using ..KDEs
 using StaticArrays,
   CUDA
 
+using CUDA: i32
+
 export initialize_dirac_series
 
 function initialize_dirac_series(
@@ -22,9 +24,9 @@ function initialize_dirac_series(
   low_bound = low_bounds(kde.grid)
 
   for i in 1:n_bootstraps
-    @views generate_dirac_cpu!(
-      dirac_series[fill(Colon(), i, ndims(dirac_series) - 1)...],
-      kde.data[bootstrap_idxs[:, i]],
+    generate_dirac_cpu!(
+      selectdim(dirac_series, 1, i),
+      view(kde.data, bootstrap_idxs[:, i]),
       spacing,
       low_bound
     )
@@ -47,9 +49,9 @@ function initialize_dirac_series(
   low_bound = low_bounds(kde.grid)
 
   Threads.@threads for i in 1:n_bootstraps
-    @views generate_dirac_cpu!(
-      dirac_series[fill(Colon(), i, ndims(dirac_series) - 1)...],
-      kde.data[bootstrap_idxs[:, i]],
+    generate_dirac_cpu!(
+      selectdim(dirac_series, 1, i),
+      view(kde.data, bootstrap_idxs[:, i]),
       spacing,
       low_bound
     )
@@ -86,7 +88,7 @@ function generate_dirac_cpu!(
 end
 
 function initialize_dirac_series(
-  ::Val{:gpu},
+  ::Val{:cuda},
   kde::CuKDE{N,T,S,M},
   n_bootstraps::Int
 )::Array{T,N + 1} where {N,T<:Real,S<:Real,M}
@@ -118,26 +120,63 @@ function initialize_dirac_series(
 end
 
 function generate_dirac_gpu!(
-  dirac_series::CuDeviceArray{T,N},
+  dirac_series::CuDeviceArray{T,M},
   data::CuDeviceArray{S,2},
-  bootstrap_idxs::CuDeviceArray{Int,2},
+  bootstrap_idxs::CuDeviceArray{Int32,2},
   spacing::CuDeviceArray{T,1},
   low_bound::CuDeviceArray{T,1}
-) where {N,T<:Real,S<:Real}
-  n_samples = size(data, 2)
-  n_bootstraps = size(bootstrap_idxs, 2)
-  n_modified_gridpoints = 2^N * n_bootstraps * n_samples
-  idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+) where {M,T<:Real,S<:Real}
+  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+  n_dims = Int32(M) - 1i32
+  n_samples = size(data, 2i32)
+  n_bootstraps = size(bootstrap_idxs, 2i32)
+  n_modified_gridpoints = (2i32)^n_dims * n_bootstraps * n_samples
 
   if idx > n_modified_gridpoints
     return
   end
 
-  idx_dim = ((idx - 1) % 2^N) + 1
-  quot, rem = divrem(idx - 1, 2^N)
-  idx_bootstrap = (rem % n_bootstraps) + 1
-  idx_sample = (quot ÷ n_bootstraps) + 1
+  idx_sample, remainder = divrem(idx - 1i32, (2i32)^n_dims * n_bootstraps)
+  idx_bootstrap, idx_dim = divrem(remainder, (2i32)^n_dims)
+  # idx_dim += 1i32
+  # idx_bootstrap += 1i32
+  # idx_sample += 1i32
 
+  bit_dim_mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
+  @inbounds tuple_dim_mask = ntuple(
+    i -> ifelse(
+      bit_dim_mask[end-i+1i32],
+      floor(
+        Int32,
+        (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) / spacing[i]
+      ),
+      ceil(
+        Int32,
+        (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) / spacing[i]
+      )
+    ),
+    n_dims
+  )
+
+  remainder_product = 1.0f0
+  i = 1i32
+  @inbounds while i <= n_dims
+    remainder_product *= ifelse(
+      bit_dim_mask[end-i+1i32],
+      (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) % spacing[i],
+      spacing[i] - (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) % spacing[i]
+    )
+
+    i += 1i32
+  end
+
+  dirac_idx = (idx_bootstrap, tuple_dim_mask...)
+  @inbounds CUDA.@atomic dirac_series[dirac_idx...] += (
+    remainder_product / (n_samples * prod(spacing)^2i32)
+  )
+
+  return
 end
 
 end
