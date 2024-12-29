@@ -84,6 +84,8 @@ function generate_dirac_cpu!(
     grid_points .= CartesianIndex{N}.(collect(Iterators.product(zip(indices_l, indices_h)...)))
 
     @inbounds dirac_series[grid_points] .+= products
+
+    return nothing
   end
 end
 

@@ -191,7 +191,7 @@ function initialize_statistics(
   n_samples = size(kde.data, 2)
   dirac_series = initialize_dirac_series(Val(:cuda), kde, n_bootstraps)
 
-  s_0 = fft(dirac_series, 1:N)
+  s_0 = fft(dirac_series, 2:N+1)
   means_0 = s_0 ./ n_samples
   variances_0 = (abs2.(s_0) ./ n_samples^2) .- means_0 .^ 2
 

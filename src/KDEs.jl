@@ -52,22 +52,28 @@ end
 
 function set_density!(kde::AbstractKDE{N,T,S,M}, density::Array{T,N}) where {N,T<:Real,S<:Real,M}
   set_density!(DeviceKDE(kde), kde, density)
+  return nothing
 end
 function set_density!(::IsCPUKDE, kde::KDE{N,T,S,M}, density::Array{T,N}) where {N,T<:Real,S<:Real,M}
   kde.density .= density
+  return nothing
 end
 function set_density!(::IsGPUKDE, kde::CuKDE{N,T,S,M}, density::CuArray{T,N}) where {N,T<:Real,S<:Real,M}
   kde.density .= density
+  return nothing
 end
 
 function set_nan_density!(kde::AbstractKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
   set_nan_density!(DeviceKDE(kde), kde)
+  return nothing
 end
 function set_nan_density!(::IsCPUKDE, kde::KDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
   fill!(kde.density, NaN)
+  return nothing
 end
 function set_nan_density!(::IsGPUKDE, kde::CuKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
   CUDA.fill!(kde.density, NaN32)
+  return nothing
 end
 
 function get_nsamples(kde::AbstractKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
