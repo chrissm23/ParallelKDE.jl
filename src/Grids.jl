@@ -17,7 +17,7 @@ abstract type AbstractGrid{N,T<:Real,M} end
 struct Grid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   coordinates::SVector{N,StepRangeLen}
   spacings::SVector{N,T}
-  bounds::SMatrix{N,2,T}
+  bounds::SMatrix{2,N,T}
 end
 function Grid(
   ranges::AbstractVector{<:AbstractRange{T}},
@@ -25,14 +25,16 @@ function Grid(
   N = length(ranges)
   ranges = SVector{N}(ranges)
   spacings = SVector{N}(step.(ranges))
-  bounds = SMatrix{N,2,T}(reinterpret(reshape, T, extrema.(ranges)))
+  bounds = SMatrix{2,N,T}(
+    reinterpret(reshape, T, extrema.(ranges))
+  )
 
   return Grid{N,T,N + 1}(ranges, spacings, bounds)
 end
 function Grid(ranges::NTuple{N,AbstractRange{T}})::Grid{N,T,N + 1} where {N,T<:Real}
   ranges = SVector{N}(ranges)
   spacings = SVector{N}(step.(ranges))
-  bounds = SMatrix{N,2,T}(
+  bounds = SMatrix{2,N,T}(
     reinterpret(reshape, T, collect(extrema.(ranges)))
   )
 
@@ -110,9 +112,9 @@ function Base.broadcastable(grid::CuGrid{N,T}) where {N,T<:Real}
 end
 
 abstract type DeviceGrid end
-struct IsCPUGrir <: DeviceGrid end
+struct IsCPUGrid <: DeviceGrid end
 struct IsGPUGrid <: DeviceGrid end
-DeviceGrid(grid::Grid) = IsCPUGrir()
+DeviceGrid(grid::Grid) = IsCPUGrid()
 DeviceGrid(grid::CuGrid) = IsGPUGrid()
 
 function spacings(grid::AbstractGrid)::AbstractVector
@@ -124,11 +126,11 @@ function bounds(grid::AbstractGrid)::AbstractMatrix
 end
 
 function low_bounds(grid::AbstractGrid)::AbstractVector
-  return grid.bounds[:, 1]
+  return grid.bounds[1, :]
 end
 
 function high_bounds(grid::AbstractGrid)::AbstractVector
-  return grid.bounds[:, 2]
+  return grid.bounds[2, :]
 end
 
 end

@@ -40,7 +40,6 @@ function initialize_dirac_series(
   n_bootstraps::Int
 )::Array{T,N + 1} where {N,T<:Real,S<:Real,M}
   grid_size = size(kde.grid)
-  spacing_squared = prod(spacings(kde.grid))^2
 
   dirac_series = zeros(T, n_bootstraps, grid_size...)
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
@@ -57,7 +56,7 @@ function initialize_dirac_series(
     )
   end
 
-  return dirac_series ./ spacing_squared
+  return dirac_series
 end
 
 function generate_dirac_cpu!(
@@ -66,6 +65,9 @@ function generate_dirac_cpu!(
   spacing::SVector{N,T},
   low_bound::SVector{N,T}
 ) where {N,T<:Real,S<:Real}
+  n_samples = length(data)
+  spacing_squared = prod(spacing)^2
+
   indices_l = @MVector zeros(Int64, N)
   indices_h = @MVector zeros(Int64, N)
   remainder_l = @MVector zeros(T, N)
@@ -75,7 +77,7 @@ function generate_dirac_cpu!(
   grid_points = Array{CartesianIndex{N}}(undef, fill(2, N)...)
 
   @simd for sample in data
-    @. indices_l = floor(Int64, (sample - low_bound) / spacing)
+    @. indices_l = floor(Int64, (sample - low_bound) / spacing) + 1
     @. remainder_l = (sample - low_bound) % spacing
     @. indices_h = indices_l + 1
     @. remainder_h = spacing - remainder_l
@@ -83,10 +85,10 @@ function generate_dirac_cpu!(
     products .= map(prod, Iterators.product(zip(remainder_l, remainder_h)...))
     grid_points .= CartesianIndex{N}.(collect(Iterators.product(zip(indices_l, indices_h)...)))
 
-    @inbounds dirac_series[grid_points] .+= products
-
-    return nothing
+    @inbounds dirac_series[grid_points] .+= products / (n_samples * spacing_squared)
   end
+
+  return nothing
 end
 
 function initialize_dirac_series(
@@ -152,11 +154,11 @@ function generate_dirac_gpu!(
       floor(
         Int32,
         (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) / spacing[i]
-      ),
+      ) + 1i32,
       ceil(
         Int32,
         (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) / spacing[i]
-      )
+      ) + 1i32
     ),
     n_dims
   )
@@ -173,9 +175,10 @@ function generate_dirac_gpu!(
     i += 1i32
   end
 
-  dirac_idx = (idx_bootstrap, tuple_dim_mask...)
+  spacing_squared = prod(spacing)^2i32
+  dirac_idx = (idx_bootstrap + 1i32, tuple_dim_mask...)
   @inbounds CUDA.@atomic dirac_series[dirac_idx...] += (
-    remainder_product / (n_samples * prod(spacing)^2i32)
+    remainder_product / (n_samples * spacing_squared)
   )
 
   return
