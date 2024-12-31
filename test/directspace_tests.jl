@@ -54,7 +54,7 @@ function test_diracseries_gpu(n_dims::Int, n_samples::Int)
   if n_samples == 1
     data = CUDA.zeros(Float32, n_dims, 1)
   elseif n_samples == 2
-    data = CuArray{Float32,2}([0.0 0.05; 0.0 0.05])
+    data = CuArray{Float32,2}([fill(0.0, n_dims) fill(0.05, n_dims)])
   else
     throw(ArgumentError("n_samples must be 1 or 2."))
   end
@@ -81,12 +81,6 @@ function test_diracseries_gpu(n_dims::Int, n_samples::Int)
   result = calculate_test_result(n_dims, n_samples)
   result = permutedims(cat(result, result, dims=n_dims + 1), (n_dims + 1, ntuple(i -> i, n_dims)...))
   result = CuArray{Float32,n_dims + 1}(result)
-
-  # CUDA.@allowscalar begin
-  #   println("n_dims: $n_dims, n_samples: $n_samples")
-  #   println("dirac_series: ", dirac_series[dirac_series.!=0.0])
-  #   println("result: ", result[result.!=0.0])
-  # end
 
   @test dirac_series ≈ result atol = 1.0f-2
 

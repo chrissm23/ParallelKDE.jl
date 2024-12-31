@@ -141,23 +141,24 @@ function generate_dirac_gpu!(
     return
   end
 
-  idx_sample, remainder = divrem(idx - 1i32, (2i32)^n_dims * n_bootstraps)
-  idx_bootstrap, idx_dim = divrem(remainder, (2i32)^n_dims)
-  # idx_dim += 1i32
-  # idx_bootstrap += 1i32
-  # idx_sample += 1i32
+  idx_sample_tmp, remainder = divrem(idx - 1i32, (2i32)^n_dims * n_bootstraps)
+  idx_bootstrap_tmp, idx_dim = divrem(remainder, (2i32)^n_dims)
+
+  # idx_dim should be 0-indexed but idx_bootstrap and idx_sample should be 1-indexed
+  idx_bootstrap = idx_bootstrap_tmp + 1i32
+  idx_sample = idx_sample_tmp + 1i32
 
   bit_dim_mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
-  @inbounds tuple_dim_mask = ntuple(
+  tuple_dim_mask = ntuple(
     i -> ifelse(
       bit_dim_mask[end-i+1i32],
       floor(
         Int32,
-        (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) / spacing[i]
+        (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) / spacing[i]
       ) + 1i32,
       ceil(
         Int32,
-        (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) / spacing[i]
+        (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) / spacing[i]
       ) + 1i32
     ),
     n_dims
@@ -168,15 +169,15 @@ function generate_dirac_gpu!(
   @inbounds while i <= n_dims
     remainder_product *= ifelse(
       bit_dim_mask[end-i+1i32],
-      (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) % spacing[i],
-      spacing[i] - (data[i, bootstrap_idxs[idx_sample+1i32, idx_bootstrap+1i32]] - low_bound[i]) % spacing[i]
+      (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) % spacing[i],
+      spacing[i] - (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) % spacing[i]
     )
 
     i += 1i32
   end
 
   spacing_squared = prod(spacing)^2i32
-  dirac_idx = (idx_bootstrap + 1i32, tuple_dim_mask...)
+  dirac_idx = (idx_bootstrap, tuple_dim_mask...)
   @inbounds CUDA.@atomic dirac_series[dirac_idx...] += (
     remainder_product / (n_samples * spacing_squared)
   )
