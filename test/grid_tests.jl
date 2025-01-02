@@ -2,7 +2,7 @@ function check_sample_frequencies(grid::Grid)
   fourier_range = fftshift(2π * fftfreq(21, 1 / 0.1))
   result_grid = Grid(fill(fourier_range, length(size(grid))))
 
-  fourier_grid = fft_grid(grid)
+  fourier_grid = fftgrid(grid)
 
   @test fourier_grid ≈ result_grid
 
@@ -12,7 +12,7 @@ function check_sample_frequencies(grid::CuGrid)
   fourier_range = fftshift(2π * fftfreq(21, 1 / 0.1))
   result_grid = Grid(fill(fourier_range, length(size(grid))))
 
-  fourier_grid = fft_grid(grid)
+  fourier_grid = fftgrid(grid)
 
   @test fourier_grid ≈ result_grid atol = 1.0f-1
 

@@ -11,7 +11,7 @@ using CUDA: i32
 export initialize_dirac_series
 
 function initialize_dirac_series(
-  ::Val{:cpu},
+  ::Val{:serial},
   kde::KDE{N,T,S,M},
   n_bootstraps::Int
 )::Array{T,N + 1} where {N,T<:Real,S<:Real,M}

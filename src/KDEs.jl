@@ -12,6 +12,10 @@ export AbstractKDE,
   IsCPUKDE,
   IsGPUKDE,
   DeviceKDE,
+  get_data,
+  get_grid,
+  get_time,
+  get_density,
   converged_kde,
   set_density!,
   set_nan_density!,
@@ -39,6 +43,50 @@ struct IsCPUKDE <: DeviceKDE end
 struct IsGPUKDE <: DeviceKDE end
 DeviceKDE(::KDE) = IsCPUKDE()
 DeviceKDE(::CuKDE) = IsGPUKDE()
+
+function get_data(kde::AbstractKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return get_data(DeviceKDE(kde), kde)
+end
+function get_data(::IsCPUKDE, kde::KDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  if N == 1
+    return reshape(reinterpret(reshape, S, kde.data), 1, :)
+  else
+    return reinterpret(reshape, S, kde.data)
+  end
+end
+function get_data(::IsGPUKDE, kde::CuKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return kde.data
+end
+
+function get_grid(kde::AbstractKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return get_grid(DeviceKDE(kde), kde)
+end
+function get_grid(::IsCPUKDE, kde::KDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return kde.grid
+end
+function get_grid(::IsGPUKDE, kde::CuKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return kde.grid
+end
+
+function get_time(kde::AbstractKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return get_time(DeviceKDE(kde), kde)
+end
+function get_time(::IsCPUKDE, kde::KDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return kde.t
+end
+function get_time(::IsGPUKDE, kde::CuKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return kde.t
+end
+
+function get_density(kde::AbstractKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return get_density(DeviceKDE(kde), kde)
+end
+function get_density(::IsCPUKDE, kde::KDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return kde.density
+end
+function get_density(::IsGPUKDE, kde::CuKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
+  return kde.density
+end
 
 function converged_kde(kde::AbstractKDE{N,T,S,M}) where {N,T<:Real,S<:Real,M}
   return converged_kde(DeviceKDE(kde), kde)

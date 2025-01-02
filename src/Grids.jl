@@ -11,7 +11,7 @@ export AbstractGrid,
   bounds,
   low_bounds,
   high_bounds,
-  fft_grid
+  fftgrid
 
 abstract type AbstractGrid{N,T<:Real,M} end
 
@@ -148,10 +148,10 @@ function high_bounds(grid::AbstractGrid)::AbstractVector
   return grid.bounds[2, :]
 end
 
-function fft_grid(grid::AbstractGrid)::AbstractGrid
-  return fft_grid(DeviceGrid(grid), grid)
+function fftgrid(grid::AbstractGrid)::AbstractGrid
+  return fftgrid(DeviceGrid(grid), grid)
 end
-function fft_grid(::IsCPUGrid, grid::AbstractGrid)::Grid
+function fftgrid(::IsCPUGrid, grid::AbstractGrid)::Grid
   n_points = size(grid)
   spacing = spacings(grid)
   fourier_coordinates = @. fftshift(2π * fftfreq(n_points, 1 / spacing))
@@ -162,7 +162,7 @@ function fft_grid(::IsCPUGrid, grid::AbstractGrid)::Grid
 
   return Grid(fourier_coordinates)
 end
-function fft_grid(::IsGPUGrid, grid::AbstractGrid)::CuGrid
+function fftgrid(::IsGPUGrid, grid::AbstractGrid)::CuGrid
   n_points = size(grid)
   spacing = Array{Float32}(spacings(grid))
   fourier_coordinates = @. fftshift(Float32(2π) * fftfreq(n_points, 1 / spacing))
@@ -180,20 +180,25 @@ function Base.isapprox(
   atol::Real=0.0,
   rtol::Real=atol > 0 ? 0 : √eps(),
 )::Bool where {T<:AbstractGrid,S<:AbstractGrid}
-  if S <: CuGrid
-    grid1_coordinates = get_coordinates(grid1)
-    grid1_spacings = spacings(grid1)
-    grid1_bounds = bounds(grid1)
-    grid2_coordinates = Array{Float32}(get_coordinates(grid2))
-    grid2_spacings = Array{Float32}(spacings(grid2))
-    grid2_bounds = Array{Float32}(bounds(grid2))
-  elseif T <: CuGrid
-    grid1_coordinates = Array{Float32}(get_coordinates(grid1))
-    grid1_spacings = Array{Float32}(spacings(grid1))
-    grid1_bounds = Array{Float32}(bounds(grid1))
-    grid2_coordinates = get_coordinates(grid2)
-    grid2_spacings = spacings(grid2)
-    grid2_bounds = bounds(grid2)
+  is_T_CuGrid = T <: CuGrid
+  is_S_CuGrid = S <: CuGrid
+
+  if is_T_CuGrid ⊻ is_S_CuGrid
+    if is_S_CuGrid
+      grid1_coordinates = get_coordinates(grid1)
+      grid1_spacings = spacings(grid1)
+      grid1_bounds = bounds(grid1)
+      grid2_coordinates = Array{Float32}(get_coordinates(grid2))
+      grid2_spacings = Array{Float32}(spacings(grid2))
+      grid2_bounds = Array{Float32}(bounds(grid2))
+    elseif is_T_CuGrid
+      grid1_coordinates = Array{Float32}(get_coordinates(grid1))
+      grid1_spacings = Array{Float32}(spacings(grid1))
+      grid1_bounds = Array{Float32}(bounds(grid1))
+      grid2_coordinates = get_coordinates(grid2)
+      grid2_spacings = spacings(grid2)
+      grid2_bounds = bounds(grid2)
+    end
   else
     grid1_coordinates = get_coordinates(grid1)
     grid1_spacings = spacings(grid1)
@@ -203,9 +208,9 @@ function Base.isapprox(
     grid2_bounds = bounds(grid2)
   end
 
-  coordinates_check = all(isapprox(grid1_coordinates, grid2_coordinates, atol=atol, rtol=rtol))
-  spacings_check = all(isapprox(grid1_spacings, grid2_spacings, atol=atol, rtol=rtol))
-  bounds_check = all(isapprox(grid1_bounds, grid2_bounds, atol=atol, rtol=rtol))
+  coordinates_check = isapprox(grid1_coordinates, grid2_coordinates, atol=atol, rtol=rtol)
+  spacings_check = isapprox(grid1_spacings, grid2_spacings, atol=atol, rtol=rtol)
+  bounds_check = isapprox(grid1_bounds, grid2_bounds, atol=atol, rtol=rtol)
 
   if coordinates_check && spacings_check && bounds_check
     return true

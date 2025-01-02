@@ -3,14 +3,20 @@ module ParallelKDE
 include("Grids.jl")
 include("KDEs.jl")
 include("DirectSpace.jl")
+include("FourierSpace.jl")
 
 using .Grids
 using .KDEs
 using .DirectSpace
+using .FourierSpace
 
 using StaticArrays,
+  Statistics,
   FFTW,
   CUDA
+
+export initialize_kde,
+  fit_kde!
 
 function initialize_kde(
   data::AbstractVector{<:AbstractVector{<:Real}},
@@ -177,7 +183,7 @@ function initialize_statistics(
   n_samples = length(kde.data)
   dirac_series = initialize_dirac_series(Val(method), kde, n_bootstraps)
 
-  s_0 = fft(dirac_series, 1:N)
+  s_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
   means_0 = s_0 ./ n_samples
   variances_0 = (abs2.(s_0) ./ n_samples^2) .- (means_0 .^ 2)
 
@@ -191,7 +197,7 @@ function initialize_statistics(
   n_samples = size(kde.data, 2)
   dirac_series = initialize_dirac_series(Val(:cuda), kde, n_bootstraps)
 
-  s_0 = fft(dirac_series, 2:N+1)
+  s_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
   means_0 = s_0 ./ n_samples
   variances_0 = (abs2.(s_0) ./ n_samples^2) .- means_0 .^ 2
 
