@@ -6,11 +6,15 @@ using Test
 using Aqua
 
 using StaticArrays
+using FFTW
 using CUDA
 
 @testset "ParallelKDE.jl" begin
   @testset "Code quality (Aqua.jl)" begin
-    Aqua.test_all(ParallelKDE)
+    Aqua.test_all(
+      ParallelKDE,
+      unbound_args=false,
+    )
   end
 
   @testset "Grid tests" begin

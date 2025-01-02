@@ -10,7 +10,8 @@ export AbstractGrid,
   spacings,
   bounds,
   low_bounds,
-  high_bounds
+  high_bounds,
+  fft_grid
 
 abstract type AbstractGrid{N,T<:Real,M} end
 
@@ -20,7 +21,7 @@ struct Grid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   bounds::SMatrix{2,N,T}
 end
 function Grid(
-  ranges::AbstractVector{<:AbstractRange{T}},
+  ranges::AbstractVector{<:Union{AbstractRange{T},Frequencies{T}}},
 )::Grid where {T<:Real}
   N = length(ranges)
   ranges = SVector{N}(ranges)
@@ -31,7 +32,9 @@ function Grid(
 
   return Grid{N,T,N + 1}(ranges, spacings, bounds)
 end
-function Grid(ranges::NTuple{N,AbstractRange{T}})::Grid{N,T,N + 1} where {N,T<:Real}
+function Grid(
+  ranges::NTuple{N,Union{AbstractRange{T},Frequencies{T}}}
+)::Grid{N,T,N + 1} where {N,T<:Real}
   ranges = SVector{N}(ranges)
   spacings = SVector{N}(step.(ranges))
   bounds = SMatrix{2,N,T}(
@@ -44,7 +47,8 @@ end
 function Base.size(grid::Grid{N,T}) where {N,T<:Real}
   return ntuple(i -> length(grid.coordinates[i]), N)
 end
-function Base.broadcastable(grid::Grid{N,T}) where {N,T<:Real}
+
+function get_coordinates(grid::Grid{N,T}) where {N,T<:Real}
   complete_array = reinterpret(
     reshape,
     T,
@@ -58,6 +62,10 @@ function Base.broadcastable(grid::Grid{N,T}) where {N,T<:Real}
   return complete_array
 end
 
+function Base.broadcastable(grid::Grid{N,T}) where {N,T<:Real}
+  return get_coordinates(grid)
+end
+
 struct CuGrid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   coordinates::CuArray{T,M}
   spacings::CuArray{T,1}
@@ -65,7 +73,10 @@ struct CuGrid{N,T<:Real,M} <: AbstractGrid{N,T,M}
 end
 
 function CuGrid(
-  ranges::Union{AbstractVector{<:AbstractRange{T}},NTuple{N,AbstractRange{T}}};
+  ranges::Union{
+    AbstractVector{<:Union{AbstractRange{T},Frequencies{T}}},
+    NTuple{N,Union{AbstractRange{T},Frequencies{T}}}
+  };
   b32::Bool=true
 )::CuGrid where {N,T<:Real}
   if isa(ranges, NTuple)
@@ -107,8 +118,12 @@ function Base.size(grid::CuGrid{N,T}) where {N,T<:Real}
   return size(grid.coordinates)[2:end]
 end
 
-function Base.broadcastable(grid::CuGrid{N,T}) where {N,T<:Real}
+function get_coordinates(grid::CuGrid{N,T}) where {N,T<:Real}
   return grid.coordinates
+end
+
+function Base.broadcastable(grid::CuGrid{N,T}) where {N,T<:Real}
+  return get_coordinates(grid)
 end
 
 abstract type DeviceGrid end
@@ -131,6 +146,72 @@ end
 
 function high_bounds(grid::AbstractGrid)::AbstractVector
   return grid.bounds[2, :]
+end
+
+function fft_grid(grid::AbstractGrid)::AbstractGrid
+  return fft_grid(DeviceGrid(grid), grid)
+end
+function fft_grid(::IsCPUGrid, grid::AbstractGrid)::Grid
+  n_points = size(grid)
+  spacing = spacings(grid)
+  fourier_coordinates = @. fftshift(2π * fftfreq(n_points, 1 / spacing))
+
+  if fourier_coordinates isa Frequencies
+    fourier_coordinates = [fourier_coordinates,]
+  end
+
+  return Grid(fourier_coordinates)
+end
+function fft_grid(::IsGPUGrid, grid::AbstractGrid)::CuGrid
+  n_points = size(grid)
+  spacing = Array{Float32}(spacings(grid))
+  fourier_coordinates = @. fftshift(Float32(2π) * fftfreq(n_points, 1 / spacing))
+
+  if fourier_coordinates isa Frequencies
+    fourier_coordinates = [fourier_coordinates,]
+  end
+
+  return CuGrid(fourier_coordinates)
+end
+
+function Base.isapprox(
+  grid1::T,
+  grid2::S;
+  atol::Real=0.0,
+  rtol::Real=atol > 0 ? 0 : √eps(),
+)::Bool where {T<:AbstractGrid,S<:AbstractGrid}
+  if S <: CuGrid
+    grid1_coordinates = get_coordinates(grid1)
+    grid1_spacings = spacings(grid1)
+    grid1_bounds = bounds(grid1)
+    grid2_coordinates = Array{Float32}(get_coordinates(grid2))
+    grid2_spacings = Array{Float32}(spacings(grid2))
+    grid2_bounds = Array{Float32}(bounds(grid2))
+  elseif T <: CuGrid
+    grid1_coordinates = Array{Float32}(get_coordinates(grid1))
+    grid1_spacings = Array{Float32}(spacings(grid1))
+    grid1_bounds = Array{Float32}(bounds(grid1))
+    grid2_coordinates = get_coordinates(grid2)
+    grid2_spacings = spacings(grid2)
+    grid2_bounds = bounds(grid2)
+  else
+    grid1_coordinates = get_coordinates(grid1)
+    grid1_spacings = spacings(grid1)
+    grid1_bounds = bounds(grid1)
+    grid2_coordinates = get_coordinates(grid2)
+    grid2_spacings = spacings(grid2)
+    grid2_bounds = bounds(grid2)
+  end
+
+  coordinates_check = all(isapprox(grid1_coordinates, grid2_coordinates, atol=atol, rtol=rtol))
+  spacings_check = all(isapprox(grid1_spacings, grid2_spacings, atol=atol, rtol=rtol))
+  bounds_check = all(isapprox(grid1_bounds, grid2_bounds, atol=atol, rtol=rtol))
+
+  if coordinates_check && spacings_check && bounds_check
+    return true
+  else
+    return false
+  end
 end
 
 end
