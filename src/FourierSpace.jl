@@ -23,7 +23,18 @@ function initialize_fourier_statistics(
   s2k_0 = fftshift(fft(dirac_series_squared, 2:N+1), 2:N+1)
 
   return sk_0, s2k_0
+end
+function initialize_fourier_statistics(
+  dirac_series::Array{T,M},
+) where {T<:Real,M}
+  N = M - 1
+  if N < 1
+    throw(ArgumentError("The dimension of the input array must be at least 1."))
+  end
 
+  sk_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
+
+  return sk_0
 end
 function initialize_fourier_statistics(
   dirac_series::CuArray{T,M},
@@ -38,7 +49,18 @@ function initialize_fourier_statistics(
   s2k_0 = fftshift(fft(dirac_series_squared, 2:N+1), 2:N+1)
 
   return sk_0, s2k_0
+end
+function initialize_fourier_statistics(
+  dirac_series::CuArray{T,M},
+) where {T<:Real,M}
+  N = M - 1
+  if N < 1
+    throw(ArgumentError("The dimension of the input array must be at least 1."))
+  end
 
+  sk_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
+
+  return sk_0
 end
 
 function ifft_statistics(

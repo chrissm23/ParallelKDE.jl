@@ -84,7 +84,7 @@ function fit_kde!(
   n_samples = get_nsamples(kde)
   threshold = get_smoothness(smoothness, n_samples, N)
   t0 = kde.t
-  time_range = get_times(dt, n_steps, t_final, t0, ignore_t0)
+  time_range = get_times(dt, n_steps, t_final, t0, ignore_t0, kde.grid)
 
   if ignore_t0
     set_nan_density!(kde)
@@ -112,15 +112,27 @@ function find_density(
   density = fill(NaN, size(kde.grid))
 
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps, method)
-  complete_distribution = initialize_distribution(kde.data, kde.grid, method)
-  fourier_grid = fft_grid(kde.grid)
+  ifft_plan_multi = plan_ifft(means_0, dims=2:N+1)
+  complete_distribution = initialize_distribution(kde, method)
+  ifft_plan_single = plan_ifft(complete_distribution, dims=2:N+1)
 
+  fourier_grid = fftgrid(kde.grid)
   times = reinterpret(reshape, T, collect(zip(time_range...)))
 
   for time in eachcol(times)
     means_t, variances_t = propagate_bandwidth(means_0, variances_0, fourier_grid, time, method)
-    means, variances = calculate_statistics(means_t, variances_t, method)
-    assign_density!(density, complete_distribution, means, variances, threshold, method)
+    means, variances = calculate_statistics(means_t, variances_t, ifft_plan_multi, method)
+
+    assign_density!(
+      density,
+      means,
+      variances,
+      complete_distribution,
+      time,
+      threshold,
+      ifft_plan_single,
+      method
+    )
 
     if all(isfinite, density)
       kde.t .= time
@@ -144,9 +156,11 @@ function find_denisty(
   density = CUDA.fill(NaN32, size(kde.grid))
 
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps)
-  complete_distribution = initialize_distribution(kde.data, kde.grid, method)
-  fourier_grid = fft_grid(kde.grid)
+  ifft_plan_multi = plan_ifft(means_0, dims=2:N+1)
+  complete_distribution = initialize_distribution(kde)
+  ifft_plan_single = plan_ifft(complete_distribution, dims=2:N+1)
 
+  fourier_grid = fftgrid(kde.grid)
   times = CuArray{T,N}(
     reinterpret(reshape, T, collect(zip(time_range...)))
   )
@@ -154,10 +168,10 @@ function find_denisty(
   for col in 1:size(times, 2)
     time = view(times, :, col)
 
-    means_t, variances_t = propagate_bandwidth(means_0, variances_0, fourier_grid, time, method)
-    means, variances = calculate_statistics(means_t, variances_t, method)
+    means_t, variances_t = propagate_bandwidth(means_0, variances_0, fourier_grid, time)
+    means, variances = calculate_statistics(means_t, variances_t, ifft_plan_multi)
 
-    assign_density!(density, complete_distribution, means, variances, threshold, method)
+    assign_density!(density, means, variances, complete_distribution, time, threshold, ifft_plan_single)
 
     if all(isfinite, density)
       kde.t .= time
@@ -177,22 +191,46 @@ function initialize_statistics(
   n_bootstraps::Integer,
   method::Symbol
 )::NTuple{2,Array{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
-  dirac_series, dirac_series_squared = initialize_dirac_series(Val(method), kde, n_bootstraps)
-
+  dirac_series, dirac_series_squared = initialize_dirac_series(
+    Val(method),
+    kde,
+    n_bootstraps=n_bootstraps,
+    calculate_squared=true
+  )
   sk_0, s2k_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
 
   return sk_0, s2k_0
 end
-
 function initialize_statistics(
   kde::CuKDE{N,T,S,M},
   n_bootstraps::Integer,
 )::NTuple{2,CuArray{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
-  dirac_series, dirac_series_squared = initialize_dirac_series(Val(:cuda), kde, n_bootstraps)
-
+  dirac_series, dirac_series_squared = initialize_dirac_series(
+    Val(:cuda),
+    kde,
+    n_bootstraps=n_bootstraps,
+    calculate_squared=true
+  )
   s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
 
   return s_0, s2_0
+end
+
+function initialize_distribution(
+  kde::KDE{N,T,S,M}, method::Symbol
+)::Array{Complex{T},N} where {N,T<:Real,S<:Real,M}
+  dirac_series = initialize_dirac_series(Val(method), kde)
+  s_0 = initialize_fourier_statistics(dirac_series)
+
+  return dropdims(s_0, dims=1)
+end
+function initialize_distribution(
+  kde::CuKDE{N,T,S,M}
+)::CuArray{Complex{T},N} where {N,T<:Real,S<:Real,M}
+  dirac_series = initialize_dirac_series(Val(:cuda), kde)
+  s_0 = initialize_fourier_statistics(dirac_series)
+
+  return dropdims(s_0, dims=1)
 end
 
 function get_times(
@@ -200,14 +238,20 @@ function get_times(
   n_steps::Union{Int,Nothing},
   t_final::Union{Real,Vector{<:Real},Nothing},
   t0::AbstractVector{<:Real},
-  ignore_t0::Bool
+  ignore_t0::Bool,
+  grid::AbstractGrid
 )::Vector{<:AbstractRange{<:Real}}
-  N = length(t0)
 
   if ignore_t0
-    t0 = @SVector zeros(N)
-  elseif isa(t0, CuArray)
-    t0 = Array(t0)
+    bandwidth_0 = initial_bandwidth(grid)
+    t0 = bandwidth_0
+  end
+  if t0 isa CuArray
+    t0 = Array{Float64}(t0)
+  end
+
+  if any(t_final .< t0)
+    throw(ArgumentError("The final time must be greater than the initial bandwidth."))
   end
 
   if dt !== nothing && n_steps !== nothing && t_final !== nothing

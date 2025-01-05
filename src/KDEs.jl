@@ -139,11 +139,19 @@ function bootstrap_indices(kde::AbstractKDE{N,T,S,M}, n_bootstraps::Integer) whe
 end
 function bootstrap_indices(::IsCPUKDE, kde::KDE{N,T,S,M}, n_bootstraps::Integer) where {N,T<:Real,S<:Real,M}
   n_samples = get_nsamples(kde)
-  return rand(1:n_samples, n_samples, n_bootstraps)
+  if n_bootstraps == 1
+    return reshape(1:n_samples, n_samples, 1)
+  else
+    return rand(1:n_samples, n_samples, n_bootstraps)
+  end
 end
 function bootstrap_indices(::IsGPUKDE, kde::CuKDE{N,T,S,M}, n_bootstraps::Integer) where {N,T<:Real,S<:Real,M}
   n_samples = get_nsamples(kde)
-  return CuArray{Int32}(rand(1:n_samples, n_samples, n_bootstraps))
+  if n_bootstraps == 1
+    return reshape(CuArray{Int32}(1:n_samples), n_samples, 1)
+  else
+    return CuArray{Int32}(rand(1:n_samples, n_samples, n_bootstraps))
+  end
 end
 
 end

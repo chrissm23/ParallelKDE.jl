@@ -49,7 +49,7 @@ function test_diracseries_cpu(n_dims::Integer, n_samples::Int)
   dirac_series = zeros(Float64, length.(grid_ranges)...)
   dirac_series_squared = zeros(Float64, length.(grid_ranges)...)
 
-  DirectSpace.generate_dirac_cpu!(dirac_series, dirac_series_squared, data, spacing, low_bound)
+  DirectSpace.generate_dirac_cpu!(dirac_series, dirac_series_squared, data, spacing, low_bound, true)
 
   result, result_squared = calculate_test_result(n_dims, n_samples)
 
@@ -75,7 +75,7 @@ function test_diracseries_gpu(n_dims::Integer, n_samples::Int)
   dirac_series = CUDA.zeros(Float32, 2, length.(grid_ranges)...)
   dirac_series_squared = CUDA.zeros(Float32, 2, length.(grid_ranges)...)
 
-  kernel = @cuda launch = false DirectSpace.generate_dirac_gpu!(
+  kernel = @cuda launch = false DirectSpace.generate_dirac_squared_gpu!(
     dirac_series, dirac_series_squared, data, bootstrap_idxs, spacing, low_bound
   )
   config = launch_configuration(kernel.fun)
