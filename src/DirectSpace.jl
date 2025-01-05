@@ -13,11 +13,12 @@ export initialize_dirac_series
 function initialize_dirac_series(
   ::Val{:serial},
   kde::KDE{N,T,S,M},
-  n_bootstraps::Int
+  n_bootstraps::Integer
 )::Array{T,N + 1} where {N,T<:Real,S<:Real,M}
   grid_size = size(kde.grid)
 
   dirac_series = zeros(T, n_bootstraps, grid_size...)
+  dirac_series_squared = zeros(T, n_bootstraps, grid_size...)
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
   spacing = spacings(kde.grid)
@@ -26,22 +27,24 @@ function initialize_dirac_series(
   for i in 1:n_bootstraps
     generate_dirac_cpu!(
       selectdim(dirac_series, 1, i),
+      selectdim(dirac_series_squared, 1, i),
       view(kde.data, bootstrap_idxs[:, i]),
       spacing,
       low_bound
     )
   end
 
-  return dirac_series
+  return dirac_series, dirac_series_squared
 end
 function initialize_dirac_series(
   ::Val{:threaded},
   kde::KDE{N,T,S,M},
-  n_bootstraps::Int
+  n_bootstraps::Integer
 )::Array{T,N + 1} where {N,T<:Real,S<:Real,M}
   grid_size = size(kde.grid)
 
   dirac_series = zeros(T, n_bootstraps, grid_size...)
+  dirac_series_squared = zeros(T, n_bootstraps, grid_size...)
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
   spacing = spacings(kde.grid)
@@ -50,17 +53,19 @@ function initialize_dirac_series(
   Threads.@threads for i in 1:n_bootstraps
     generate_dirac_cpu!(
       selectdim(dirac_series, 1, i),
+      selectdim(dirac_series_squared, 1, i),
       view(kde.data, bootstrap_idxs[:, i]),
       spacing,
       low_bound
     )
   end
 
-  return dirac_series
+  return dirac_series, dirac_series_squared
 end
 
 function generate_dirac_cpu!(
-  dirac_series::AbstractArray{T,N},
+  dirac_series::Array{T,N},
+  dirac_series_squared::Array{T,N},
   data::AbstractVector{SVector{N,S}},
   spacing::SVector{N,T},
   low_bound::SVector{N,T}
@@ -85,7 +90,9 @@ function generate_dirac_cpu!(
     products .= map(prod, Iterators.product(zip(remainder_l, remainder_h)...))
     grid_points .= CartesianIndex{N}.(collect(Iterators.product(zip(indices_l, indices_h)...)))
 
-    @inbounds dirac_series[grid_points] .+= products / (n_samples * spacing_squared)
+    dirac_series_term = products / (n_samples * spacing_squared)
+    @inbounds dirac_series[grid_points] .+= dirac_series_term
+    @inbounds dirac_series_squared[grid_points] .+= dirac_series_term .^ 2
   end
 
   return nothing
@@ -94,11 +101,12 @@ end
 function initialize_dirac_series(
   ::Val{:cuda},
   kde::CuKDE{N,T,S,M},
-  n_bootstraps::Int
+  n_bootstraps::Integer
 )::Array{T,N + 1} where {N,T<:Real,S<:Real,M}
   grid_size = size(kde.grid)
 
   dirac_series = CUDA.zeros(T, n_bootstraps, grid_size...)
+  dirac_series_squared = CUDA.zeros(T, n_bootstraps, grid_size...)
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
   spacing = spacings(kde.grid)
@@ -108,7 +116,7 @@ function initialize_dirac_series(
   n_modified_gridpoints = n_samples * 2^N * n_bootstraps
 
   kernel = @cuda launch = false generate_dirac_gpu!(
-    dirac_series, kde.data, bootstrap_idxs, spacing, low_bound
+    dirac_series, dirac_series_squared, kde.data, bootstrap_idxs, spacing, low_bound
   )
 
   config = launch_configuration(kernel.fun)
@@ -117,14 +125,24 @@ function initialize_dirac_series(
   blocks = cld(n_modified_gridpoints, threads)
 
   CUDA.@sync blocking = true begin
-    kernel(dirac_series, kde.data, bootstrap_idxs, spacing, low_bound; threads, blocks)
+    kernel(
+      dirac_series,
+      dirac_series_squared,
+      kde.data,
+      bootstrap_idxs,
+      spacing,
+      low_bound;
+      threads,
+      blocks
+    )
   end
 
-  return dirac_series
+  return dirac_series, dirac_series_squared
 end
 
 function generate_dirac_gpu!(
   dirac_series::CuDeviceArray{T,M},
+  dirac_series_squared::CuDeviceArray{T,M},
   data::CuDeviceArray{S,2},
   bootstrap_idxs::CuDeviceArray{Int32,2},
   spacing::CuDeviceArray{T,1},
@@ -177,10 +195,11 @@ function generate_dirac_gpu!(
   end
 
   spacing_squared = prod(spacing)^2i32
+  dirac_series_term = remainder_product / (n_samples * spacing_squared)
+
   dirac_idx = (idx_bootstrap, tuple_dim_mask...)
-  @inbounds CUDA.@atomic dirac_series[dirac_idx...] += (
-    remainder_product / (n_samples * spacing_squared)
-  )
+  @inbounds CUDA.@atomic dirac_series[dirac_idx...] += dirac_series_term
+  @inbounds CUDA.@atomic dirac_series_squared[dirac_idx...] += dirac_series_term^2i32
 
   return
 end

@@ -11,9 +11,10 @@ using .DirectSpace
 using .FourierSpace
 
 using StaticArrays,
-  Statistics,
   FFTW,
   CUDA
+
+using Statistics
 
 export initialize_kde,
   fit_kde!
@@ -43,9 +44,7 @@ function initialize_kde(
   grid = Grid(grid_ranges)
   density = fill(NaN, size(grid))
 
-  # TODO:
-  # Calculate the actual initial bandwidth given by the Dirac series
-  t = @SVector zeros(N)
+  t = initial_bandwidth(grid)
 
   kde = KDE{N,Float64,T,N + 1}(Vector{SVector{N,T}}(data), grid, t, density)
 
@@ -62,9 +61,7 @@ function initialize_kde(
   grid = CuGrid(grid_ranges, b32=true)
   density = CUDA.fill(NaN32, size(grid))
 
-  # TODO:
-  # Calculcate the actual initial bandwidth given by the Dirac series
-  t = CUDA.zeros(Float32, N)
+  t = initial_bandwidth(grid)
 
   rearanged_data = reduce(hcat, data)
 
@@ -108,7 +105,7 @@ function find_density(
   ::IsCPUKDE,
   kde::KDE{N,T,S,M},
   time_range::Vector{<:AbstractRange{<:Real}},
-  n_bootstraps::Int,
+  n_bootstraps::Integer,
   threshold::Real;
   method::Symbol=:serial
 )::Array{T,N} where {N,T<:Real,S<:Real,M}
@@ -141,7 +138,7 @@ function find_denisty(
   ::IsGPUKDE,
   kde::CuKDE{N,T,S,M},
   time_range::Vector{<:AbstractRange{<:Real}},
-  n_bootstraps::Int,
+  n_bootstraps::Integer,
   threshold::Real;
 )::CuArray{T,N} where {N,T<:Real,S<:Real,M}
   density = CUDA.fill(NaN32, size(kde.grid))
@@ -177,31 +174,25 @@ end
 
 function initialize_statistics(
   kde::KDE{N,T,S,M},
-  n_bootstraps::Int,
+  n_bootstraps::Integer,
   method::Symbol
 )::NTuple{2,Array{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
-  n_samples = length(kde.data)
-  dirac_series = initialize_dirac_series(Val(method), kde, n_bootstraps)
+  dirac_series, dirac_series_squared = initialize_dirac_series(Val(method), kde, n_bootstraps)
 
-  s_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
-  means_0 = s_0 ./ n_samples
-  variances_0 = (abs2.(s_0) ./ n_samples^2) .- (means_0 .^ 2)
+  sk_0, s2k_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
 
-  return means_0, variances_0
+  return sk_0, s2k_0
 end
 
 function initialize_statistics(
   kde::CuKDE{N,T,S,M},
-  n_bootstraps::Int,
+  n_bootstraps::Integer,
 )::NTuple{2,CuArray{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
-  n_samples = size(kde.data, 2)
-  dirac_series = initialize_dirac_series(Val(:cuda), kde, n_bootstraps)
+  dirac_series, dirac_series_squared = initialize_dirac_series(Val(:cuda), kde, n_bootstraps)
 
-  s_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
-  means_0 = s_0 ./ n_samples
-  variances_0 = (abs2.(s_0) ./ n_samples^2) .- means_0 .^ 2
+  s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
 
-  return means_0, variances_0
+  return s_0, s2_0
 end
 
 function get_times(
@@ -240,7 +231,7 @@ function get_nbootstraps(n_bootstraps::Union{Int,Nothing})
   return n_bootstraps
 end
 
-function get_smoothness(smoothness::Real, n_samples::Int, n_dims::Int)
+function get_smoothness(smoothness::Real, n_samples::Integer, n_dims::Int)
   if smoothness === nothing
     smoothness = 1.0
   elseif smoothness < 0.0

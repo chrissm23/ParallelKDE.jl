@@ -11,7 +11,7 @@
       @test get_data(kde) ≈ reinterpret(reshape, Float64, data)
     end
     @test get_grid(kde) ≈ Grid(grid_ranges)
-    @test get_time(kde) ≈ @SVector zeros(Float64, n_dims)
+    @test get_time(kde) ≈ @SVector fill(0.05, n_dims)
     @test all(isnan.(get_density(kde)))
   end
 end
@@ -29,7 +29,7 @@ if CUDA.functional()
         @test get_data(kde) ≈ CuArray{Float32}(reinterpret(reshape, Float64, data))
       end
       @test get_grid(kde) ≈ CuGrid(grid_ranges)
-      @test get_time(kde) ≈ CUDA.zeros(Float32, n_dims)
+      @test get_time(kde) ≈ CUDA.fill(0.05, n_dims)
       @test all(isnan.(get_density(kde)))
     end
   end

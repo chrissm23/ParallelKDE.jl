@@ -11,6 +11,8 @@ export AbstractGrid,
   bounds,
   low_bounds,
   high_bounds,
+  initial_bandwidth,
+  get_coordinates,
   fftgrid
 
 abstract type AbstractGrid{N,T<:Real,M} end
@@ -146,6 +148,10 @@ end
 
 function high_bounds(grid::AbstractGrid)::AbstractVector
   return grid.bounds[2, :]
+end
+
+function initial_bandwidth(grid::AbstractGrid)::AbstractVector
+  return spacings(grid) ./ 2
 end
 
 function fftgrid(grid::AbstractGrid)::AbstractGrid

@@ -2,16 +2,18 @@ using ParallelKDE
 using ParallelKDE.Grids
 using ParallelKDE.KDEs
 using ParallelKDE.DirectSpace
+using ParallelKDE.FourierSpace
 
 using Test
 using Aqua
 
-using Statistics
+using Statistics,
+  LinearAlgebra
 
-using StaticArrays
-using FFTW
-using CUDA
-using Distributions
+using StaticArrays,
+  FFTW,
+  CUDA,
+  Distributions
 
 include("test_utils.jl")
 
@@ -35,8 +37,8 @@ include("test_utils.jl")
     include("directspace_tests.jl")
   end
 
-  # @testset "Fourier space tests" begin
-  #   include("fourierspace_tests.jl")
-  # end
+  @testset "Fourier space tests" begin
+    include("fourierspace_tests.jl")
+  end
 
 end

@@ -134,14 +134,14 @@ function get_nsamples(::IsGPUKDE, kde::CuKDE{N,T,S,M}) where {N,T<:Real,S<:Real,
   return size(kde.data, 2)
 end
 
-function bootstrap_indices(kde::AbstractKDE{N,T,S,M}, n_bootstraps::Int) where {N,T<:Real,S<:Real,M}
+function bootstrap_indices(kde::AbstractKDE{N,T,S,M}, n_bootstraps::Integer) where {N,T<:Real,S<:Real,M}
   return bootstrap_indices(DeviceKDE(kde), kde, n_bootstraps)
 end
-function bootstrap_indices(::IsCPUKDE, kde::KDE{N,T,S,M}, n_bootstraps::Int) where {N,T<:Real,S<:Real,M}
+function bootstrap_indices(::IsCPUKDE, kde::KDE{N,T,S,M}, n_bootstraps::Integer) where {N,T<:Real,S<:Real,M}
   n_samples = get_nsamples(kde)
   return rand(1:n_samples, n_samples, n_bootstraps)
 end
-function bootstrap_indices(::IsGPUKDE, kde::CuKDE{N,T,S,M}, n_bootstraps::Int) where {N,T<:Real,S<:Real,M}
+function bootstrap_indices(::IsGPUKDE, kde::CuKDE{N,T,S,M}, n_bootstraps::Integer) where {N,T<:Real,S<:Real,M}
   n_samples = get_nsamples(kde)
   return CuArray{Int32}(rand(1:n_samples, n_samples, n_bootstraps))
 end
