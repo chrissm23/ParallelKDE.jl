@@ -119,8 +119,11 @@ function find_density(
   fourier_grid = fftgrid(kde.grid)
   times = reinterpret(reshape, T, collect(zip(time_range...)))
 
+  means_t = Array{Complex{T},N + 1}(undef, size(means_0))
+  variances_t = Array{Complex{T},N + 1}(undef, size(variances_0))
+
   for time in eachcol(times)
-    means_t, variances_t = propagate_bandwidth(means_0, variances_0, fourier_grid, time, method)
+    propagate_bandwidth!(means_t, variances_t, means_0, variances_0, fourier_grid, time, method)
     means, variances = calculate_statistics(means_t, variances_t, ifft_plan_multi, method)
 
     assign_density!(
@@ -165,10 +168,13 @@ function find_denisty(
     reinterpret(reshape, T, collect(zip(time_range...)))
   )
 
+  means_t = CuArray{Complex{T},N + 1}(undef, size(means_0))
+  variances_t = CuArray{Complex{T},N + 1}(undef, size(variances_0))
+
   for col in 1:size(times, 2)
     time = view(times, :, col)
 
-    means_t, variances_t = propagate_bandwidth(means_0, variances_0, fourier_grid, time)
+    propagate_bandwidth!(means_t, variances_t, means_0, variances_0, fourier_grid, time)
     means, variances = calculate_statistics(means_t, variances_t, ifft_plan_multi)
 
     assign_density!(density, means, variances, complete_distribution, time, threshold, ifft_plan_single)
@@ -233,6 +239,42 @@ function initialize_distribution(
   return dropdims(s_0, dims=1)
 end
 
+function propagate_bandwidth!(
+  means_t::Array{Complex{T},M},
+  variances_t::Array{Complex{T},M},
+  means_0::Array{Complex{T},M},
+  variances_0::Array{Complex{T},M},
+  fourier_grid::Grid{N,S},
+  time::Vector{<:Real},
+  method::Symbol,
+)::NTuple{2,Array{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
+  grid_array = get_coordinates(fourier_grid)
+  propagate_statistics!(
+    Val(method),
+    means_t,
+    variances_t,
+    means_0,
+    variances_0,
+    grid_array,
+    SVector{N,Float64}(time)
+  )
+
+  return nothing
+end
+function propagate_bandwidth!(
+  means_t::CuArray{Complex{T},M},
+  variances_t::CuArray{Complex{T},M},
+  means_0::CuArray{Complex{T},M},
+  variances_0::CuArray{Complex{T},M},
+  fourier_grid::CuGrid{N,S},
+  time::CuVector{<:Real},
+)::NTuple{2,Array{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
+  grid_array = get_coordinates(fourier_grid)
+  propagate_statistics(Val(:cuda), means_t, variances_t, means_0, variances_0, grid_array, time)
+
+  return nothing
+end
+
 function get_times(
   dt::Union{Real,Vector{<:Real},Nothing},
   n_steps::Union{Int,Nothing},
@@ -252,6 +294,10 @@ function get_times(
 
   if any(t_final .< t0)
     throw(ArgumentError("The final time must be greater than the initial bandwidth."))
+  end
+
+  if ignore_t0
+    t0 = @SVector zeros(Float64, length(t0))
   end
 
   if dt !== nothing && n_steps !== nothing && t_final !== nothing

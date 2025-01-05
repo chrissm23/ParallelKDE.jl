@@ -124,7 +124,7 @@ function initialize_dirac_series(
   n_modified_gridpoints = n_samples * 2^N * n_bootstraps
 
   if calculate_squared
-    kernel = @cuda launch = false generate_dirac_squared_gpu!(
+    kernel = @cuda launch = false generate_dirac_gpu!(
       dirac_series, dirac_series_squared, kde.data, bootstrap_idxs, spacing, low_bound
     )
   else
@@ -134,7 +134,6 @@ function initialize_dirac_series(
   end
 
   config = launch_configuration(kernel.fun)
-
   threads = min(n_modified_gridpoints, config.threads)
   blocks = cld(n_modified_gridpoints, threads)
 
@@ -232,8 +231,7 @@ function generate_dirac_gpu!(
 
   return
 end
-
-function generate_dirac_squared_gpu!(
+function generate_dirac_gpu!(
   dirac_series::CuDeviceArray{T,M},
   dirac_series_squared::CuDeviceArray{T,M},
   data::CuDeviceArray{S,2},
