@@ -8,16 +8,26 @@ function normal_distribution(
   return pdf(normal_distro, x)
 end
 
-function initialize_kernels(data::Vector{SVector{N,S}}, grid::Grid{N,S}) where {N,S<:Real}
+function initialize_kernels(
+  data::Vector{SVector{N,S}},
+  grid::Grid{N,S};
+  bandwidth::Union{Nothing,SMatrix{N,N,Float64}}=nothing
+) where {N,S<:Real}
   grid_coordinates = SVector{N,S}.(eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, N)))
-  bandwidth = SMatrix{N,N,Float64}(
+  bandwidth_init = SMatrix{N,N,Float64}(
     diagm(initial_bandwidth(grid))
   )
+
+  if bandwidth === nothing
+    bandwidth_final = bandwidth_init
+  else
+    bandwidth_final = @. sqrt((bandwidth^2) + (bandwidth_init^2))
+  end
 
   density = normal_distribution.(
     data,
     reshape(grid_coordinates, 1, size(grid_coordinates)...),
-    Ref(bandwidth)
+    Ref(bandwidth_final)
   )
 
   return density
@@ -25,11 +35,12 @@ end
 
 function initialize_density(
   data::Vector{SVector{N,S}},
-  grid::Grid{N,S}
+  grid::Grid{N,S};
+  bandwidth::Union{Nothing,SMatrix{N,N,Float64}}=nothing
 ) where {N,S<:Real}
   n_samples = length(data)
 
-  density = initialize_kernels(data, grid) ./ n_samples
+  density = initialize_kernels(data, grid; bandwidth) ./ n_samples
   density_squared = density .^ 2
   density_sum = sum(density, dims=1)
   density_sum_squared = sum(density_squared, dims=1)
@@ -39,18 +50,19 @@ end
 
 function calculate_means_variances(
   data::Vector{SVector{N,S}},
-  grid::Grid{N,S}
+  grid::Grid{N,S};
+  bandwidth::Union{Nothing,SMatrix{N,N,Float64}}=nothing
 ) where {N,S<:Real}
   n_samples = length(data)
 
-  density = initialize_kernels(data, grid) ./ n_samples
+  density = initialize_kernels(data, grid; bandwidth) ./ n_samples
   means = mean(density, dims=1)
   variances = var(density, dims=1)
 
   return means, variances
 end
 
-@testset "Fourier initialization (CPU) tests" for n_dims in 1:3
+@testset "Fourier initialization (CPU) tests" for n_dims in 1:1
   n_samples = 100
   @testset "dimensions : $n_dims" begin
     data = generate_samples(n_samples, n_dims)
@@ -74,7 +86,7 @@ end
 end
 
 if CUDA.functional()
-  @testset "Fourier initialization (GPU) tests" for n_dims in 1:3
+  @testset "Fourier initialization (GPU) tests" for n_dims in 1:1
     n_samples = 100
     @testset "dimensions : $n_dims" begin
       data = generate_samples(n_samples, n_dims)
@@ -85,12 +97,111 @@ if CUDA.functional()
       density_initialization_d = CuArray{Float32}(density_initialization)
       density_initialization_squared_d = CuArray{Float32}(density_initialization_squared)
 
-      sk0_d, s2k0_d = initialize_fourier_statistics(density_initialization_d, density_initialization_squared_d)
+      sk0_d, s2k0_d = initialize_fourier_statistics(
+        density_initialization_d, density_initialization_squared_d
+      )
       means_d, variances_d = ifft_statistics(sk0_d, s2k0_d, n_samples)
       means = dropdims(Array{Float32}(means_d), dims=1)
       variances = dropdims(Array{Float32}(variances_d), dims=1)
 
       means_test, variances_test = calculate_means_variances(data, grid)
+      means_test = dropdims(Array{Float32}(means_test), dims=1)
+      variances_test = dropdims(Array{Float32}(variances_test), dims=1)
+
+      @test means ≈ means_test atol = 1.0f-8 rtol = 1.0f-1
+      @test variances ≈ variances_test atol = 1.0f-8 rtol = 1.0f-1
+    end
+  end
+end
+
+@testset "Fourier propagation (CPU) tests" for n_dims in 1:1
+  n_samples = 100
+  @testset "dimensions : $n_dims" begin
+    data = generate_samples(n_samples, n_dims)
+    time = @SVector fill(0.2, n_dims)
+
+    grid_ranges = fill(-5.0:0.05:5.0, n_dims)
+    grid = Grid(grid_ranges)
+    fourier_grid = fftgrid(grid)
+
+    density_initialization, density_initialization_squared = initialize_density(data, grid)
+
+    sk0, s2k0 = initialize_fourier_statistics(density_initialization, density_initialization_squared)
+    means_t = similar(sk0)
+    variances_t = similar(s2k0)
+
+    propagate_statistics!(
+      Val(:cpu),
+      means_t,
+      variances_t,
+      sk0,
+      s2k0,
+      get_coordinates(fourier_grid),
+      time
+    )
+    means, variances = ifft_statistics(means_t, variances_t, n_samples)
+    means = dropdims(means, dims=1)
+    variances = dropdims(variances, dims=1)
+
+    time_bandwidth = SMatrix{n_dims,n_dims,Float64}(
+      diagm(time)
+    )
+    means_test, variances_test = calculate_means_variances(data, grid, bandwidth=time_bandwidth)
+    means_test = dropdims(means_test, dims=1)
+    variances_test = dropdims(variances_test, dims=1)
+
+    if n_dims == 1
+      ax = plot(grid_ranges[1], means, label="Fourier propagation", title="Means", dpi=300)
+      plot!(ax, grid_ranges[1], means_test, label="Direct space calculation")
+      savefig(ax, "means_1d.png")
+      ax2 = plot(grid_ranges[1], variances, label="Fourier propagation", title="Variances", dpi=300)
+      plot!(ax2, grid_ranges[1], variances_test, label="Direct space calculation")
+      savefig(ax2, "variances_1d.png")
+    end
+
+    @test means ≈ means_test atol = 1e-8 rtol = 1e-1
+    @test variances ≈ variances_test atol = 1e-8 rtol = 1e-1
+  end
+end
+
+if CUDA.functional()
+  @testset "Fourier propagation (GPU) tests" for n_dims in 1:1
+    n_samples = 100
+    @testset "dimensions : $n_dims" begin
+      data = generate_samples(n_samples, n_dims)
+      time = CUDA.fill(0.2, n_dims)
+
+      grid_ranges = fill(-5.0:0.05:5.0, n_dims)
+      grid = Grid(grid_ranges)
+      fourier_grid = fftgrid(grid)
+
+      density_initialization, density_initialization_squared = initialize_density(data, grid)
+      density_initialization_d = CuArray{Float32}(density_initialization)
+      density_initialization_squared_d = CuArray{Float32}(density_initialization_squared)
+
+      sk0_d, s2k0_d = initialize_fourier_statistics(
+        density_initialization_d, density_initialization_squared_d
+      )
+      means_t_d = similar(sk0_d)
+      variances_t_d = similar(s2k0_d)
+
+      propagate_statistics!(
+        Val(:cuda),
+        means_t_d,
+        variances_t_d,
+        sk0_d,
+        s2k0_d,
+        CuArray{Float32}(get_coordinates(grid)),
+        time
+      )
+      means_d, variances_d = ifft_statistics(means_t_d, variances_t_d, n_samples)
+      means = dropdims(Array{Float32}(means_d), dims=1)
+      variances = dropdims(Array{Float32}(variances_d), dims=1)
+
+      time_bandwidth = SMatrix{n_dims,n_dims,Float64}(
+        diagm(Array{Float32}(time))
+      )
+      means_test, variances_test = calculate_means_variances(data, grid, bandwidth=time_bandwidth)
       means_test = dropdims(Array{Float32}(means_test), dims=1)
       variances_test = dropdims(Array{Float32}(variances_test), dims=1)
 

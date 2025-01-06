@@ -7,7 +7,8 @@ using StaticArrays,
 using CUDA: i32
 
 export initialize_fourier_statistics,
-  ifft_statistics
+  ifft_statistics,
+  propagate_statistics!
 
 function initialize_fourier_statistics(
   dirac_series::Array{T,M},
@@ -68,7 +69,7 @@ function propagate_statistics!(
   variances_t::Array{Complex{T},M},
   means_0::Array{Complex{T},M},
   variances_0::Array{Complex{T},M},
-  grid_array::Array{S,M},
+  grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
@@ -94,7 +95,7 @@ function propagate_statistics!(
   ::Val{:cpu},
   means_t::Array{Complex{T},M},
   means_0::Array{Complex{T},M},
-  grid_array::Array{S,M},
+  grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
@@ -120,7 +121,7 @@ function propagate_statistics!(
   variances_t::Array{Complex{T},M},
   means_0::Array{Complex{T},M},
   variances_0::Array{Complex{T},M},
-  grid_array::Array{S,M},
+  grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
@@ -144,9 +145,9 @@ function propagate_statistics!(
 end
 function propagate_statistics!(
   ::Val{:threaded},
-  means_t::Array{Complex{T},M},
-  means_0::Array{Complex{T},M},
-  grid_array::Array{S,M},
+  means_t::AbstractArray{Complex{T},M},
+  means_0::AbstractArray{Complex{T},M},
+  grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
@@ -168,27 +169,31 @@ function propagate_statistics!(
 end
 
 function propagate_time_cpu!(
-  means_t::Array{Complex{T},N},
-  variances_t::Array{Complex{T},N},
-  means_0::Array{Complex{T},N},
-  variance_0::Array{Complex{T},N},
-  grid_array::Array{S,M},
-  time::SVector{<:Real},
+  means_t::AbstractArray{Complex{T},N},
+  variances_t::AbstractArray{Complex{T},N},
+  means_0::AbstractArray{Complex{T},N},
+  variances_0::AbstractArray{Complex{T},N},
+  grid_array::AbstractArray{S,M},
+  time::SVector{N,<:Real},
 ) where {T<:Real,N,S<:Real,M}
-  time_squared = reshape(time .^ 2, :, ones(Int, N)...)
-  propagator_exponent = Array{T,N}(undef, size(means_t))
+  time_reshaped = reshape(time, :, ones(Int, N)...)
+  propagator_exponential = Array{T,M}(undef, size(grid_array))
 
-  propagator_exponent .= dropdims(-1.0 .* sum(grid_array .^ 2 .* time_squared, dims=1), dims=1)
-  @. means_t = exp(propagator_exponent / 2.0) * means_0
-  @. variances_t = exp(propagator_exponent / 4.0) * variance_0
+  @. propagator_exponential = exp(-0.5 * grid_array^2 * time_reshaped^2)
+
+  means_t .= means_0 .* dropdims(prod(propagator_exponential, dims=1), dims=1)
+  variances_t .= variances_0 .* dropdims(
+    prod((propagator_exponential .^ 0.5) .* time_reshaped ./ √π, dims=1),
+    dims=1
+  )
 
   return nothing
 end
 function propagate_time_cpu!(
-  means_t::Array{Complex{T},N},
-  means_0::Array{Complex{T},N},
-  grid_array::Array{S,M},
-  time::SVector{<:Real},
+  means_t::AbstractArray{Complex{T},N},
+  means_0::AbstractArray{Complex{T},N},
+  grid_array::AbstractArray{S,M},
+  time::SVector{N,<:Real},
 ) where {T<:Real,N,S<:Real,M}
   time_squared = reshape(time .^ 2, :, ones(Int, N)...)
   propagator_exponent = Array{T,N}(undef, size(means_t))

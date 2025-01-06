@@ -117,14 +117,18 @@ function find_density(
   ifft_plan_single = plan_ifft(complete_distribution, dims=2:N+1)
 
   fourier_grid = fftgrid(kde.grid)
+  fourier_grid_array = get_coordinates(fourier_grid)# .* 2π
   times = reinterpret(reshape, T, collect(zip(time_range...)))
 
   means_t = Array{Complex{T},N + 1}(undef, size(means_0))
   variances_t = Array{Complex{T},N + 1}(undef, size(variances_0))
 
+  means = Array{Complex{T},N + 1}(undef, size(means_0))
+  variances = Array{Complex{T},N + 1}(undef, size(variances_0))
+
   for time in eachcol(times)
-    propagate_bandwidth!(means_t, variances_t, means_0, variances_0, fourier_grid, time, method)
-    means, variances = calculate_statistics(means_t, variances_t, ifft_plan_multi, method)
+    propagate_bandwidth!(means_t, variances_t, means_0, variances_0, fourier_grid_array, time, method)
+    calculate_statistics!(means, variances, means_t, variances_t, ifft_plan_multi, method)
 
     assign_density!(
       density,
@@ -164,6 +168,7 @@ function find_denisty(
   ifft_plan_single = plan_ifft(complete_distribution, dims=2:N+1)
 
   fourier_grid = fftgrid(kde.grid)
+  fourier_grid_array = get_coordinates(fourier_grid) .* Float32(2π)
   times = CuArray{T,N}(
     reinterpret(reshape, T, collect(zip(time_range...)))
   )
@@ -171,11 +176,14 @@ function find_denisty(
   means_t = CuArray{Complex{T},N + 1}(undef, size(means_0))
   variances_t = CuArray{Complex{T},N + 1}(undef, size(variances_0))
 
+  means = CuArray{Complex{T},N + 1}(undef, size(means_0))
+  variances = CuArray{Complex{T},N + 1}(undef, size(variances_0))
+
   for col in 1:size(times, 2)
     time = view(times, :, col)
 
-    propagate_bandwidth!(means_t, variances_t, means_0, variances_0, fourier_grid, time)
-    means, variances = calculate_statistics(means_t, variances_t, ifft_plan_multi)
+    propagate_bandwidth!(means_t, variances_t, means_0, variances_0, fourier_grid_array, time)
+    calculate_statistics!(means, variances, means_t, variances_t, ifft_plan_multi)
 
     assign_density!(density, means, variances, complete_distribution, time, threshold, ifft_plan_single)
 
@@ -244,11 +252,10 @@ function propagate_bandwidth!(
   variances_t::Array{Complex{T},M},
   means_0::Array{Complex{T},M},
   variances_0::Array{Complex{T},M},
-  fourier_grid::Grid{N,S},
+  grid_array::AbstractArray{S,M},
   time::Vector{<:Real},
   method::Symbol,
-)::NTuple{2,Array{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
-  grid_array = get_coordinates(fourier_grid)
+)::NTuple{2,Array{Complex{T}}} where {T<:Real,S<:Real,M}
   propagate_statistics!(
     Val(method),
     means_t,
@@ -256,7 +263,7 @@ function propagate_bandwidth!(
     means_0,
     variances_0,
     grid_array,
-    SVector{N,Float64}(time)
+    SVector{M - 1,Float64}(time)
   )
 
   return nothing
@@ -266,11 +273,11 @@ function propagate_bandwidth!(
   variances_t::CuArray{Complex{T},M},
   means_0::CuArray{Complex{T},M},
   variances_0::CuArray{Complex{T},M},
-  fourier_grid::CuGrid{N,S},
+  fourier_grid::CuArray{S,M},
   time::CuVector{<:Real},
-)::NTuple{2,Array{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
+)::NTuple{2,Array{Complex{T},M}} where {T<:Real,S<:Real,M}
   grid_array = get_coordinates(fourier_grid)
-  propagate_statistics(Val(:cuda), means_t, variances_t, means_0, variances_0, grid_array, time)
+  propagate_statistics!(Val(:cuda), means_t, variances_t, means_0, variances_0, grid_array, time)
 
   return nothing
 end

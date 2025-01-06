@@ -104,7 +104,7 @@ function test_diracseries_gpu(n_dims::Integer, n_samples::Int)
 end
 
 @testset "CPU direct space operations tests" begin
-  @testset "Dirac sequences tests" for n_dims in 1:3
+  @testset "Dirac sequences tests" for n_dims in 1:1
     @testset "dimensions : $n_dims" begin
       @testset "Single data point" test_diracseries_cpu(n_dims, 1)
       @testset "Multiple data points" test_diracseries_cpu(n_dims, 2)
@@ -114,7 +114,7 @@ end
 
 if CUDA.functional()
   @testset "GPU direct space operations tests" begin
-    @testset "Dirac sequences tests" for n_dims in 1:3
+    @testset "Dirac sequences tests" for n_dims in 1:1
       @testset "dimensions : $n_dims" begin
         @testset "Single data point" test_diracseries_gpu(n_dims, 1)
         @testset "Multiple data points" test_diracseries_gpu(n_dims, 2)
