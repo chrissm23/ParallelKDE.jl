@@ -119,6 +119,7 @@ function find_density(
   fourier_grid = fftgrid(kde.grid)
   fourier_grid_array = get_coordinates(fourier_grid)# .* 2π
   times = reinterpret(reshape, T, collect(zip(time_range...)))
+  time_initial = initial_bandwidth(kde.grid)
 
   means_t = Array{Complex{T},N + 1}(undef, size(means_0))
   variances_t = Array{Complex{T},N + 1}(undef, size(variances_0))
@@ -127,7 +128,16 @@ function find_density(
   variances = Array{Complex{T},N + 1}(undef, size(variances_0))
 
   for time in eachcol(times)
-    propagate_bandwidth!(means_t, variances_t, means_0, variances_0, fourier_grid_array, time, method)
+    propagate_bandwidth!(
+      means_t,
+      variances_t,
+      means_0,
+      variances_0,
+      fourier_grid_array,
+      time,
+      time_initial,
+      method
+    )
     calculate_statistics!(means, variances, means_t, variances_t, ifft_plan_multi, method)
 
     assign_density!(
@@ -172,6 +182,7 @@ function find_denisty(
   times = CuArray{T,N}(
     reinterpret(reshape, T, collect(zip(time_range...)))
   )
+  time_initial = initial_bandwidth(kde.grid)
 
   means_t = CuArray{Complex{T},N + 1}(undef, size(means_0))
   variances_t = CuArray{Complex{T},N + 1}(undef, size(variances_0))
@@ -182,7 +193,15 @@ function find_denisty(
   for col in 1:size(times, 2)
     time = view(times, :, col)
 
-    propagate_bandwidth!(means_t, variances_t, means_0, variances_0, fourier_grid_array, time)
+    propagate_bandwidth!(
+      means_t,
+      variances_t,
+      means_0,
+      variances_0,
+      fourier_grid_array,
+      time,
+      time_initial
+    )
     calculate_statistics!(means, variances, means_t, variances_t, ifft_plan_multi)
 
     assign_density!(density, means, variances, complete_distribution, time, threshold, ifft_plan_single)
@@ -254,6 +273,7 @@ function propagate_bandwidth!(
   variances_0::Array{Complex{T},M},
   grid_array::AbstractArray{S,M},
   time::Vector{<:Real},
+  time_initial::Vector{<:Real},
   method::Symbol,
 )::NTuple{2,Array{Complex{T}}} where {T<:Real,S<:Real,M}
   propagate_statistics!(
@@ -263,7 +283,8 @@ function propagate_bandwidth!(
     means_0,
     variances_0,
     grid_array,
-    SVector{M - 1,Float64}(time)
+    SVector{M - 1,Float64}(time),
+    SVector{M - 1,Float64}(time_initial)
   )
 
   return nothing
@@ -275,9 +296,19 @@ function propagate_bandwidth!(
   variances_0::CuArray{Complex{T},M},
   fourier_grid::CuArray{S,M},
   time::CuVector{<:Real},
+  time_initial::CuVector{<:Real}
 )::NTuple{2,Array{Complex{T},M}} where {T<:Real,S<:Real,M}
   grid_array = get_coordinates(fourier_grid)
-  propagate_statistics!(Val(:cuda), means_t, variances_t, means_0, variances_0, grid_array, time)
+  propagate_statistics!(
+    Val(:cuda),
+    means_t,
+    variances_t,
+    means_0,
+    variances_0,
+    grid_array,
+    time,
+    time_initial
+  )
 
   return nothing
 end

@@ -71,6 +71,7 @@ function propagate_statistics!(
   variances_0::Array{Complex{T},M},
   grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
+  time_intial::SVector{N,Float64},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
@@ -85,7 +86,8 @@ function propagate_statistics!(
       selectdim(means_0, 1, i),
       selectdim(variances_0, 1, i),
       grid_array,
-      time
+      time,
+      time_intial
     )
   end
 
@@ -123,6 +125,7 @@ function propagate_statistics!(
   variances_0::Array{Complex{T},M},
   grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
+  time_initial::SVector{N,Float64},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
@@ -137,7 +140,8 @@ function propagate_statistics!(
       selectdim(means_0, 1, i),
       selectdim(variances_0, 1, i),
       grid_array,
-      time
+      time,
+      time_initial
     )
   end
 
@@ -175,15 +179,22 @@ function propagate_time_cpu!(
   variances_0::AbstractArray{Complex{T},N},
   grid_array::AbstractArray{S,M},
   time::SVector{N,<:Real},
+  time_initial::SVector{N,<:Real},
 ) where {T<:Real,N,S<:Real,M}
-  time_reshaped = reshape(time, :, ones(Int, N)...)
+  time_squared = reshape(time .^ 2, :, ones(Int, N)...)
+  time_initial_reshaped = reshape(time_initial, :, ones(Int, N)...)
+
   propagator_exponential = Array{T,M}(undef, size(grid_array))
 
-  @. propagator_exponential = exp(-0.5 * grid_array^2 * time_reshaped^2)
+  @. propagator_exponential = exp(-0.5 * grid_array^2 * time_squared)
 
   means_t .= means_0 .* dropdims(prod(propagator_exponential, dims=1), dims=1)
   variances_t .= variances_0 .* dropdims(
-    prod((propagator_exponential .^ 0.5) .* time_reshaped ./ √π, dims=1),
+    prod(
+      time_initial_reshaped .* (propagator_exponential .^ 0.5) ./
+      sqrt.(time_initial_reshaped .^ 2 .+ time_squared),
+      dims=1
+    ),
     dims=1
   )
 
@@ -198,8 +209,8 @@ function propagate_time_cpu!(
   time_squared = reshape(time .^ 2, :, ones(Int, N)...)
   propagator_exponent = Array{T,N}(undef, size(means_t))
 
-  propagator_exponent .= dropdims(-1.0 .* sum(grid_array .^ 2 .* time_squared, dims=1), dims=1)
-  @. means_t = exp(propagator_exponent / 2.0) * means_0
+  propagator_exponent .= dropdims(-0.5 .* sum(grid_array .^ 2 .* time_squared, dims=1), dims=1)
+  @. means_t = exp(propagator_exponent) * means_0
 
   return nothing
 end
@@ -212,6 +223,7 @@ function propagate_statistics!(
   variances_0::CuArray{Complex{T},M},
   grid_array::CuArray{S,M},
   time::CuVector{<:Real},
+  time_initial::CuVector{<:Real},
 ) where {T<:Real,S<:Real,M}
   n_points = prod(size(means_t)[2:end])
   time_squared = time .^ 2
@@ -223,6 +235,7 @@ function propagate_statistics!(
     variances_0,
     grid_array,
     time_squared,
+    time_initial
   )
 
   config = launch_configuration(kernel.fun)
@@ -236,7 +249,8 @@ function propagate_statistics!(
       means_0,
       variances_0,
       grid_array,
-      time_squared;
+      time_squared,
+      time_initial;
       threads,
       blocks
     )
@@ -286,12 +300,13 @@ function propagate_time_gpu!(
   variances_0::CuDeviceArray{Complex{T},M},
   grid_array::CuDeviceArray{S,M},
   time_squared::CuDeviceVector{<:Real},
+  time_initial::CuDeviceVector{<:Real},
 ) where {T<:Real,S<:Real,M}
-  N = M - 1
+  N = M - 1i32
   idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
   n_bootstraps = size(means_t, 1i32)
-  grid_size = size(grid_array)[2:end]
+  grid_size = size(grid_array)[2i32:end]
   n_gridpoints = prod(grid_size)
   n_points = n_bootstraps * n_gridpoints
 
@@ -303,20 +318,27 @@ function propagate_time_gpu!(
     return
   end
 
-  cartesian_indices = CartesianIndices(grid_size)
+  cartesian_indices = CartesianIndices(
+    grid_size
+  )
   cartesian_idx = Tuple(cartesian_indices[point_idx])
 
-  propagator_exponent = 0.0f0
+  propagator_exponential = 1.0f0
   i = 1i32
   while i <= N
     grid_index = (i, cartesian_idx...)
-    @inbounds propagator_exponent -= grid_array[grid_index...]^2 * time_squared[i]
-    i += 1
+    @inbounds propagator_exponential *= exp(
+      -0.5f0 * grid_array[grid_index...]^2i32 * time_squared[i]
+    )
+
+    if idx == 100
+      @cuprintln grid_array[grid_index...]
+    end
+    i += 1i32
   end
 
   array_index = (bootstrap_idx, cartesian_idx...)
-  @inbounds means_t[array_index...] = exp(propagator_exponent / 2.0f0) * means_0[array_index...]
-  @inbounds variances_t[array_index...] = exp(propagator_exponent / 4.0f0) * variances_0[array_index...]
+  @inbounds means_t[array_index...] = propagator_exponential * means_0[array_index...]
 
   return
 end
@@ -326,11 +348,11 @@ function propagate_time_gpu!(
   grid_array::CuDeviceArray{S,M},
   time_squared::CuDeviceVector{<:Real},
 ) where {T<:Real,S<:Real,M}
-  N = M - 1
+  N = M - 1i32
   idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
   n_bootstraps = size(means_t, 1i32)
-  grid_size = size(grid_array)[2:end]
+  grid_size = size(grid_array)[2i32:end]
   n_gridpoints = prod(grid_size)
   n_points = n_bootstraps * n_gridpoints
 
@@ -349,8 +371,8 @@ function propagate_time_gpu!(
   i = 1i32
   while i <= N
     grid_index = (i, cartesian_idx...)
-    @inbounds propagator_exponent -= grid_array[grid_index...]^2 * time_squared[i]
-    i += 1
+    @inbounds propagator_exponent -= grid_array[grid_index...]^2i32 * time_squared[i]
+    i += 1i32
   end
 
   array_index = (bootstrap_idx, cartesian_idx...)
