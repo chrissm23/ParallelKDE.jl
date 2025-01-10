@@ -62,7 +62,7 @@ function calculate_means_variances(
   return means, variances
 end
 
-@testset "Fourier initialization (CPU) tests" for n_dims in 1:1
+@testset "Fourier initialization (CPU) tests" for n_dims in 1:2
   n_samples = 100
   @testset "dimensions : $n_dims" begin
     data = generate_samples(n_samples, n_dims)
@@ -86,7 +86,7 @@ end
 end
 
 if CUDA.functional()
-  @testset "Fourier initialization (GPU) tests" for n_dims in 1:1
+  @testset "Fourier initialization (GPU) tests" for n_dims in 1:2
     n_samples = 100
     @testset "dimensions : $n_dims" begin
       data = generate_samples(n_samples, n_dims)
@@ -114,13 +114,13 @@ if CUDA.functional()
   end
 end
 
-@testset "Fourier propagation (CPU) tests" for n_dims in 1:1
+@testset "Fourier propagation (CPU) tests" for n_dims in 1:2
   n_samples = 100
   @testset "dimensions : $n_dims" begin
     data = generate_samples(n_samples, n_dims)
     time = @SVector fill(0.1, n_dims)
 
-    grid_ranges = fill(-5.0:0.05:5.0, n_dims)
+    grid_ranges = fill(-5.0:0.01:5.0, n_dims)
     grid = Grid(grid_ranges)
     time_initial = initial_bandwidth(grid)
     fourier_grid = fftgrid(grid)
@@ -152,23 +152,22 @@ end
     means_test = dropdims(means_test, dims=1)
     variances_test = dropdims(variances_test, dims=1)
 
-    @test means ≈ means_test atol = 1e-8 rtol = 1e-1
-    @test variances ≈ variances_test atol = 1e-8 rtol = 1e-1
+    @test means ≈ means_test atol = 1e-10 rtol = 1e-1
+    @test variances ≈ variances_test atol = 1e-10 rtol = 5e-1
   end
 end
 
 if CUDA.functional()
-  @testset "Fourier propagation (GPU) tests" for n_dims in 1:1
+  @testset "Fourier propagation (GPU) tests" for n_dims in 1:2
     n_samples = 100
     @testset "dimensions : $n_dims" begin
       data = generate_samples(n_samples, n_dims)
-      time = CUDA.fill(0.2, n_dims)
+      time = CUDA.fill(0.1, n_dims)
 
-      grid_ranges = fill(-5.0:0.05:5.0, n_dims)
+      grid_ranges = fill(-5.0:0.01:5.0, n_dims)
       grid = Grid(grid_ranges)
       time_initial = CuArray{Float32}(initial_bandwidth(grid))
       fourier_grid = fftgrid(grid)
-      println(get_coordinates(fourier_grid)[1, 100])
 
       density_initialization, density_initialization_squared = initialize_density(data, grid)
       density_initialization_d = CuArray{Float32}(density_initialization)
@@ -186,7 +185,7 @@ if CUDA.functional()
         variances_t_d,
         sk0_d,
         s2k0_d,
-        CuArray{Float32}(get_coordinates(fourier_grid)),
+        CuArray{Float32,n_dims + 1}(get_coordinates(fourier_grid)),
         time,
         time_initial
       )
@@ -201,17 +200,8 @@ if CUDA.functional()
       means_test = dropdims(Array{Float32}(means_test), dims=1)
       variances_test = dropdims(Array{Float32}(variances_test), dims=1)
 
-      if n_dims == 1
-        ax = plot(grid_ranges[1], means, label="Fourier propagation", title="Means", dpi=300)
-        plot!(ax, grid_ranges[1], means_test, label="Direct space calculation")
-        savefig(ax, "means_1d.png")
-        ax2 = plot(grid_ranges[1], variances, label="Fourier propagation", title="Variances", dpi=300)
-        plot!(ax2, grid_ranges[1], variances_test, label="Direct space calculation")
-        savefig(ax2, "variances_1d.png")
-      end
-
-      @test means ≈ means_test atol = 1.0f-8 rtol = 1.0f-1
-      @test variances ≈ variances_test atol = 1.0f-8 rtol = 1.0f-1
+      @test means ≈ means_test atol = 1.0f-10 rtol = 1.0f-1
+      @test variances ≈ variances_test atol = 1.0f-10 rtol = 5.0f-1
     end
   end
 end

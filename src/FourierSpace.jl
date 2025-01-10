@@ -181,22 +181,19 @@ function propagate_time_cpu!(
   time::SVector{N,<:Real},
   time_initial::SVector{N,<:Real},
 ) where {T<:Real,N,S<:Real,M}
-  time_squared = reshape(time .^ 2, :, ones(Int, N)...)
-  time_initial_reshaped = reshape(time_initial, :, ones(Int, N)...)
+  det_t = prod(time .^ 2)
+  det_t0 = prod(time_initial .^ 2)
+
+  time_reshaped = reshape(time, :, ones(Int, N)...)
 
   propagator_exponential = Array{T,M}(undef, size(grid_array))
-
-  @. propagator_exponential = exp(-0.5 * grid_array^2 * time_squared)
-
-  means_t .= means_0 .* dropdims(prod(propagator_exponential, dims=1), dims=1)
-  variances_t .= variances_0 .* dropdims(
-    prod(
-      time_initial_reshaped .* (propagator_exponential .^ 0.5) ./
-      sqrt.(time_initial_reshaped .^ 2 .+ time_squared),
-      dims=1
-    ),
+  propagator_exponential = dropdims(
+    exp.(-0.5 .* sum((grid_array .* time_reshaped) .^ 2, dims=1)),
     dims=1
   )
+
+  @. means_t = means_0 * propagator_exponential
+  @. variances_t = variances_0 * sqrt(det_t0) * sqrt.(propagator_exponential) / sqrt(det_t + det_t0)
 
   return nothing
 end
@@ -226,7 +223,6 @@ function propagate_statistics!(
   time_initial::CuVector{<:Real},
 ) where {T<:Real,S<:Real,M}
   n_points = prod(size(means_t)[2:end])
-  time_squared = time .^ 2
 
   kernel = @cuda launch = false propagate_time_gpu!(
     means_t,
@@ -234,7 +230,7 @@ function propagate_statistics!(
     means_0,
     variances_0,
     grid_array,
-    time_squared,
+    time,
     time_initial
   )
 
@@ -249,7 +245,7 @@ function propagate_statistics!(
       means_0,
       variances_0,
       grid_array,
-      time_squared,
+      time,
       time_initial;
       threads,
       blocks
@@ -299,7 +295,7 @@ function propagate_time_gpu!(
   means_0::CuDeviceArray{Complex{T},M},
   variances_0::CuDeviceArray{Complex{T},M},
   grid_array::CuDeviceArray{S,M},
-  time_squared::CuDeviceVector{<:Real},
+  time::CuDeviceVector{<:Real},
   time_initial::CuDeviceVector{<:Real},
 ) where {T<:Real,S<:Real,M}
   N = M - 1i32
@@ -310,7 +306,7 @@ function propagate_time_gpu!(
   n_gridpoints = prod(grid_size)
   n_points = n_bootstraps * n_gridpoints
 
-  bootstrap_idx_temp, point_idx_temp = divrem(idx - 1i32, n_bootstraps)
+  bootstrap_idx_temp, point_idx_temp = divrem(idx - 1i32, n_gridpoints)
   bootstrap_idx = bootstrap_idx_temp + 1i32
   point_idx = point_idx_temp + 1i32
 
@@ -323,22 +319,25 @@ function propagate_time_gpu!(
   )
   cartesian_idx = Tuple(cartesian_indices[point_idx])
 
-  propagator_exponential = 1.0f0
+  exponent = 0.0f0
+  det_t0 = 1.0f0
+  det_t = 1.0f0
   i = 1i32
   while i <= N
     grid_index = (i, cartesian_idx...)
-    @inbounds propagator_exponential *= exp(
-      -0.5f0 * grid_array[grid_index...]^2i32 * time_squared[i]
-    )
+    @inbounds exponent += (grid_array[grid_index...] * time[i])^2i32
+    @inbounds det_t0 *= time_initial[i]^2i32
+    @inbounds det_t *= time[i]^2i32
 
-    if idx == 100
-      @cuprintln grid_array[grid_index...]
-    end
     i += 1i32
   end
 
+  propagator_mean = exp(-0.5f0 * exponent)
+  propagator_variance = sqrt(det_t0) * sqrt(propagator_mean) / sqrt(det_t + det_t0)
+
   array_index = (bootstrap_idx, cartesian_idx...)
-  @inbounds means_t[array_index...] = propagator_exponential * means_0[array_index...]
+  @inbounds means_t[array_index...] = propagator_mean * means_0[array_index...]
+  @inbounds variances_t[array_index...] = propagator_variance * variances_0[array_index...]
 
   return
 end
@@ -356,7 +355,7 @@ function propagate_time_gpu!(
   n_gridpoints = prod(grid_size)
   n_points = n_bootstraps * n_gridpoints
 
-  bootstrap_idx_temp, point_idx_temp = divrem(idx - 1i32, n_bootstraps)
+  bootstrap_idx_temp, point_idx_temp = divrem(idx - 1i32, n_gridpoints)
   bootstrap_idx = bootstrap_idx_temp + 1i32
   point_idx = point_idx_temp + 1i32
 
@@ -367,16 +366,19 @@ function propagate_time_gpu!(
   cartesian_indices = CartesianIndices(grid_size)
   cartesian_idx = Tuple(cartesian_indices[point_idx])
 
-  propagator_exponent = 0.0f0
+  propagator_exponential = 1.0f0
   i = 1i32
   while i <= N
     grid_index = (i, cartesian_idx...)
-    @inbounds propagator_exponent -= grid_array[grid_index...]^2i32 * time_squared[i]
+    @inbounds propagator_exponential *= exp(
+      -0.5f0 * grid_array[grid_index...]^2i32 * time_squared[i]
+    )
+
     i += 1i32
   end
 
   array_index = (bootstrap_idx, cartesian_idx...)
-  @inbounds means_t[array_index...] = exp(propagator_exponent / 2.0f0) * means_0[array_index...]
+  @inbounds means_t[array_index...] = propagator_exponential * means_0[array_index...]
 
   return
 end
