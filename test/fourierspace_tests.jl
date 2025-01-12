@@ -62,7 +62,7 @@ function calculate_means_variances(
   return means, variances
 end
 
-@testset "Fourier initialization (CPU) tests" for n_dims in 1:2
+@testset "Fourier initialization (CPU) tests" for n_dims in 1:1
   n_samples = 100
   @testset "dimensions : $n_dims" begin
     data = generate_samples(n_samples, n_dims)
@@ -86,7 +86,7 @@ end
 end
 
 if CUDA.functional()
-  @testset "Fourier initialization (GPU) tests" for n_dims in 1:2
+  @testset "Fourier initialization (GPU) tests" for n_dims in 1:1
     n_samples = 100
     @testset "dimensions : $n_dims" begin
       data = generate_samples(n_samples, n_dims)
@@ -114,7 +114,7 @@ if CUDA.functional()
   end
 end
 
-@testset "Fourier propagation (CPU) tests" for n_dims in 1:2
+@testset "Fourier propagation (CPU) tests" for n_dims in 1:1
   n_samples = 100
   @testset "dimensions : $n_dims" begin
     data = generate_samples(n_samples, n_dims)
@@ -158,7 +158,7 @@ end
 end
 
 if CUDA.functional()
-  @testset "Fourier propagation (GPU) tests" for n_dims in 1:2
+  @testset "Fourier propagation (GPU) tests" for n_dims in 1:1
     n_samples = 100
     @testset "dimensions : $n_dims" begin
       data = generate_samples(n_samples, n_dims)

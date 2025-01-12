@@ -2,6 +2,7 @@ module DirectSpace
 
 using ..Grids
 using ..KDEs
+using ..FourierSpace
 
 using StaticArrays,
   CUDA

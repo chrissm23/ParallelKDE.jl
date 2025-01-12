@@ -2,13 +2,13 @@ module ParallelKDE
 
 include("Grids.jl")
 include("KDEs.jl")
-include("DirectSpace.jl")
 include("FourierSpace.jl")
+include("DirectSpace.jl")
 
 using .Grids
 using .KDEs
-using .DirectSpace
 using .FourierSpace
+using .DirectSpace
 
 using StaticArrays,
   FFTW,
@@ -112,7 +112,7 @@ function find_density(
   density = fill(NaN, size(kde.grid))
 
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps, method)
-  ifft_plan_multi = plan_ifft(means_0, dims=2:N+1)
+  ifft_plan_multi = plan_ifft!(means_0, dims=2:N+1)
   complete_distribution = initialize_distribution(kde, method)
   ifft_plan_single = plan_ifft(complete_distribution, dims=2:N+1)
 
@@ -124,8 +124,7 @@ function find_density(
   means_t = Array{Complex{T},N + 1}(undef, size(means_0))
   variances_t = Array{Complex{T},N + 1}(undef, size(variances_0))
 
-  means = Array{Complex{T},N + 1}(undef, size(means_0))
-  variances = Array{Complex{T},N + 1}(undef, size(variances_0))
+  #TODO: Check what is the minimum number of arrays needed for the algorithm
 
   for time in eachcol(times)
     propagate_bandwidth!(
@@ -138,12 +137,12 @@ function find_density(
       time_initial,
       method
     )
-    calculate_statistics!(means, variances, means_t, variances_t, ifft_plan_multi, method)
+    calculate_statistics!(means_t, variances_t, ifft_plan_multi, method)
 
     assign_density!(
       density,
-      means,
-      variances,
+      selectdim(means_t, 1, 1),
+      selectdim(variances_t, 1, 1),
       complete_distribution,
       time,
       threshold,
@@ -173,7 +172,7 @@ function find_denisty(
   density = CUDA.fill(NaN32, size(kde.grid))
 
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps)
-  ifft_plan_multi = plan_ifft(means_0, dims=2:N+1)
+  ifft_plan_multi = plan_ifft!(means_0, dims=2:N+1)
   complete_distribution = initialize_distribution(kde)
   ifft_plan_single = plan_ifft(complete_distribution, dims=2:N+1)
 
@@ -187,9 +186,7 @@ function find_denisty(
   means_t = CuArray{Complex{T},N + 1}(undef, size(means_0))
   variances_t = CuArray{Complex{T},N + 1}(undef, size(variances_0))
 
-  means = CuArray{Complex{T},N + 1}(undef, size(means_0))
-  variances = CuArray{Complex{T},N + 1}(undef, size(variances_0))
-
+  # TODO: Check what is the minimum number of arrays needed for the algorithm
   for col in 1:size(times, 2)
     time = view(times, :, col)
 
@@ -202,9 +199,17 @@ function find_denisty(
       time,
       time_initial
     )
-    calculate_statistics!(means, variances, means_t, variances_t, ifft_plan_multi)
+    calculate_statistics!(means_t, variances_t, ifft_plan_multi)
 
-    assign_density!(density, means, variances, complete_distribution, time, threshold, ifft_plan_single)
+    assign_density!(
+      density,
+      selectdim(means_t, 1, 1),
+      selectdim(variances_t, 1, 1),
+      complete_distribution,
+      time,
+      threshold,
+      ifft_plan_single
+    )
 
     if all(isfinite, density)
       kde.t .= time
