@@ -86,8 +86,7 @@ function fit_kde!(
 
   threshold = get_smoothness(smoothness, n_samples, N)
 
-  t0 = kde.t
-  time_range = get_times(dt, n_steps, t_final, t0, ignore_t0, kde.grid)
+  time_range = get_times(dt, n_steps, t_final, kde.t, ignore_t0, kde.grid)
 
   if ignore_t0
     set_nan_density!(kde)
@@ -167,14 +166,9 @@ function find_density!(
       time,
       threshold,
       ifft_plan_single,
-      method
+      method,
+      dst_var_products=vmr_variance
     )
-
-    # TODO: Implement this as part of assign_density
-    if all(isfinite, kde.density)
-      kde.t .= time
-      break
-    end
 
     if time === times[end]
       @warn "Not all points converged with the specified time ranges."
@@ -246,14 +240,9 @@ function find_denisty!(
       vmr_variance,
       time,
       threshold,
-      ifft_plan_single
+      ifft_plan_single,
+      dst_var_products=vmr_variance
     )
-
-    # TODO: Implement this as part of assign_density
-    if all(isfinite, kde.density)
-      kde.t .= time
-      break
-    end
 
     if col == size(times, 2)
       @warn "Not all points converged with the specified time ranges."
@@ -368,7 +357,7 @@ end
 function calculate_statistics!(
   means_bootstraps::AbstractArray{Complex{T},M},
   variances_bootstraps::AbstractArray{Complex{T},M},
-  ifft_plan::AbstractFFTs.ScaledPlan,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
   method::Symbol;
   dst_vmr::AbstractArray{Complex{T},N}=Array{Complex{T},M - 1}(undef, size(means_bootstraps))
 )::AbstractArray{T,N} where {N,T<:Real,M}
@@ -385,7 +374,7 @@ end
 function calculate_statistics!(
   means_bootstraps::CuArray{Complex{T},M},
   variances_bootstraps::CuArray{Complex{T},M},
-  ifft_plan::AbstractFFTs.ScaledPlan;
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}};
   dst_vmr::CuArray{Complex{T},N}=CuArray{Complex{T},M - 1}(undef, size(means_bootstraps))
 )::CuArray{T,N} where {N,T<:Real,M}
   vmr_variance = mean_var_vmr!(
@@ -397,6 +386,63 @@ function calculate_statistics!(
   )
 
   return vmr_variance
+end
+
+function assign_density!(
+  kde::KDE{N,T,S,M},
+  mean_complete::AbstractArray{Complex{T},N},
+  variance_complete::AbstractArray{Complex{T},N},
+  vmr_variance::Array{T,N},
+  time::Vector{<:Real},
+  threshold::Real,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  method::Symbol;
+  dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(variance_complete))
+)::Nothing where {N,T<:Real,S<:Real,M}
+
+  variance_products = calculate_variance_products!(
+    Val(method),
+    vmr_variance,
+    variance_complete,
+    time,
+    ifft_plan,
+    dst_var_products
+  )
+
+  assign_converged_density!(
+    Val(method), kde.density, mean_complete, variance_products, threshold, ifft_plan
+  )
+
+  kde.t .= time
+
+  return nothing
+end
+function assign_density!(
+  kde::CuKDE{N,T,S,M},
+  mean_complete::CuArray{Complex{T},N},
+  variance_complete::CuArray{Complex{T},N},
+  vmr_variance::CuArray{T,N},
+  time::CuVector{<:Real},
+  threshold::Real,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}};
+  dst_var_products::CuArray{Complex{T},N}=CuArray{Complex{T},N}(undef, size(variance_complete))
+)::Nothing where {N,T<:Real,S<:Real,M}
+  variance_products = calculate_variance_products!(
+    Val(:cuda),
+    vmr_variance,
+    variance_complete,
+    time,
+    ifft_plan,
+    dst_var_products
+  )
+
+  assign_converged_density!(
+    Val(:cuda), kde.density, mean_complete, variance_products, threshold, ifft_plan
+  )
+
+  kde.t .= time
+
+  return nothing
 end
 
 function get_times(
@@ -451,9 +497,13 @@ function get_smoothness(smoothness::Real, n_samples::Integer, n_dims::Int)
   elseif smoothness < 0.0
     throw(ArgumentError("Smoothness must be positive."))
   end
-  threshold = smoothness * optimal_variance(n_samples, n_dims)
+  threshold = smoothness / optimal_threshold(n_samples, n_dims)
 
   return threshold
+end
+
+function optimal_threshold(n_samples::Integer, n_dims::Int)
+  return (2^n_dims - 3^(n_dims / 2)) * 2^(3n_dims - 1) * π^(2n_dims) * Float64(n_samples)^5
 end
 
 function get_available_memory(::IsCPUKDE)

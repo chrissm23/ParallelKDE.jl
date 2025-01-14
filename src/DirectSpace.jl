@@ -12,7 +12,7 @@ using StaticArrays,
 
 using CUDA: i32
 
-export initialize_dirac_series, mean_var_vmr!
+export initialize_dirac_series, mean_var_vmr!, calculate_variance_products!, assign_converged_density!
 
 function initialize_dirac_series(
   ::Val{:serial},
@@ -383,6 +383,111 @@ function vmr_gpu!(
   @. variances = variances / means
 
   return
+end
+
+function calculate_variance_products!(
+  ::Val{:serial},
+  vmr_variance::AbstractArray{T,N},
+  variance_complete::AbstractArray{Complex{T},N},
+  time::AbstractVector{<:Real},
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  dst_var_products::AbstractArray{T,N},
+) where {N,T<:Real}
+  ifft_plan * variance_complete
+  @. variance_complete = abs(variance_complete)
+  var_real = selectdim(reinterpret(reshape, T, variance_complete), 1, 1)
+
+  det_t = prod(time .^ 2)
+
+  dst_var_products .= vmr_variance .* var_real .* det_t
+
+  return dst_var_products
+end
+function calculate_variance_products!(
+  ::Val{:threaded},
+  vmr_variance::AbstractArray{T,N},
+  variance_complete::AbstractArray{Complex{T},N},
+  time::AbstractVector{<:Real},
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  dst_var_products::AbstractArray{T,N},
+) where {N,T<:Real}
+  @warn "Threaded calculation of variance products not implemented. Using serial implementation."
+
+  return calculate_variance_products!(
+    Val{:serial},
+    vmr_variance,
+    variance_complete,
+    time,
+    ifft_plan,
+    dst_var_products
+  )
+end
+function calculate_variance_products!(
+  ::Val{:cuda},
+  vmr_variance::CuArray{T,N},
+  variance_complete::CuArray{Complex{T},N},
+  time::CuVector{<:Real},
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  dst_var_products::CuArray{T,N},
+) where {N,T<:Real}
+  ifft_plan * variance_complete
+  @. variance_complete = abs(variance_complete)
+  var_real = selectdim(reinterpret(reshape, T, variance_complete), 1, 1)
+
+  det_t = prod(time .^ 2)
+
+  dst_var_products .= vmr_variance .* var_real .* det_t
+
+  return dst_var_products
+end
+
+function assign_converged_density!(
+  ::Val{:serial},
+  dst::AbstractArray{T,N},
+  src::AbstractArray{Complex{T},N},
+  indicator::AbstractArray{T,N},
+  threshold::T,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+)::Nothing where {N,T<:Real}
+  ifft_plan * src
+  @. src = abs(src)
+  src_real = selectdim(reinterpret(reshape, T, src), 1, 1)
+
+  @. dst = ifelse((indicator < threshold) && !(isfinite(dst)), src_real, dst)
+
+end
+function assign_converged_density!(
+  ::Val{:threaded},
+  dst::AbstractArray{T,N},
+  src::AbstractArray{Complex{T},N},
+  indicator::AbstractArray{T,N},
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  threshold::T,
+)::Nothing where {N,T<:Real}
+  @warn "Threaded assignment of converged density not implemented. Using serial implementation."
+  assign_converged_density!(
+    Val{:serial},
+    dst,
+    src,
+    indicator,
+    threshold,
+    ifft_plan
+  )
+end
+function assign_converged_density!(
+  ::Val{:cuda},
+  dst::CuArray{T,N},
+  src::CuArray{Complex{T},N},
+  indicator::CuArray{T,N},
+  threshold::T,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+)::Nothing where {N,T<:Real}
+  ifft_plan * src
+  @. src = abs(src)
+  src_real = selectdim(reinterpret(reshape, T, src), 1, 1)
+
+  @. dst = ifelse((indicator < threshold) && !(isfinite(dst)), src_real, dst)
+
 end
 
 end
