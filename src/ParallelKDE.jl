@@ -70,19 +70,22 @@ function initialize_kde(
   return kde
 end
 
+# TODO: Change the threshold_factor into smoothness once the unknown factor is known
 function fit_kde!(
   kde::AbstractKDE{N,T,S,M};
   dt::Union{Real,Vector{<:Real},Nothing}=nothing,
   n_steps::Union{Int,Nothing}=nothing,
   t_final::Union{Real,Vector{<:Real},Nothing}=nothing,
   n_bootstraps::Union{Int,Nothing}=nothing,
-  smoothness::Real=1.0,
+  smoothness::Real=1 / 150,
   ignore_t0::Bool=true,
   method::Symbol=:serial
 ) where {N,T<:Real,S<:Real,M}
   n_bootstraps = get_nbootstraps(n_bootstraps)
   n_samples = get_nsamples(kde)
+
   threshold = get_smoothness(smoothness, n_samples, N)
+
   t0 = kde.t
   time_range = get_times(dt, n_steps, t_final, t0, ignore_t0, kde.grid)
 
@@ -91,17 +94,16 @@ function fit_kde!(
   end
 
   if method == :serial || method == :threaded
-    density = find_density(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold, method=method)
+    find_density!(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold, method=method)
   elseif method == :cuda
-    density = find_density(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold)
+    find_density!(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold)
   else
     throw(ArgumentError("Invalid method: $method"))
   end
 
-  set_density!(kde, density)
 end
 
-function find_density(
+function find_density!(
   ::IsCPUKDE,
   kde::KDE{N,T,S,M},
   time_range::Vector{<:AbstractRange{<:Real}},
@@ -109,48 +111,66 @@ function find_density(
   threshold::Real;
   method::Symbol=:serial
 )::Array{T,N} where {N,T<:Real,S<:Real,M}
-  density = fill(NaN, size(kde.grid))
-
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps, method)
   ifft_plan_multi = plan_ifft!(means_0, dims=2:N+1)
-  complete_distribution = initialize_distribution(kde, method)
-  ifft_plan_single = plan_ifft(complete_distribution, dims=2:N+1)
+
+  density_0, var_0 = initialize_distribution(kde, method)
+  ifft_plan_single = plan_ifft!(density_0, 1:N)
 
   fourier_grid = fftgrid(kde.grid)
-  fourier_grid_array = get_coordinates(fourier_grid)# .* 2π
+  fourier_grid_array = get_coordinates(fourier_grid)
+
   times = reinterpret(reshape, T, collect(zip(time_range...)))
   time_initial = initial_bandwidth(kde.grid)
 
-  means_t = Array{Complex{T},N + 1}(undef, size(means_0))
-  variances_t = Array{Complex{T},N + 1}(undef, size(variances_0))
-
-  #TODO: Check what is the minimum number of arrays needed for the algorithm
+  means_dst = Array{Complex{T},N + 1}(undef, size(means_0))
+  variances_dst = Array{Complex{T},N + 1}(undef, size(variances_0))
 
   for time in eachcol(times)
-    propagate_bandwidth!(
-      means_t,
-      variances_t,
+    means_bootstraps, variances_bootstraps = propagate_bandwidth!(
       means_0,
       variances_0,
       fourier_grid_array,
       time,
       time_initial,
-      method
+      method,
+      dst_mean=means_dst,
+      dst_var=variances_dst,
     )
-    calculate_statistics!(means_t, variances_t, ifft_plan_multi, method)
+
+    vmr_variance = calculate_statistics!(
+      means_bootstraps,
+      variances_bootstraps,
+      ifft_plan_multi,
+      method,
+      dst_vmr=selectdim(variances_dst, 1, 1)
+    )
+
+    means_complete, variances_complete = propagate_bandwidth!(
+      reshape(density_0, 1, size(density_0)...),
+      reshape(var_0, 1, size(var_0)...),
+      fourier_grid_array,
+      time,
+      time_initial,
+      method,
+      dst_mean=reshape(selectdim(means_dst, 1, 1), 1, size(means_dst)[2:end]...),
+      dst_var=reshape(selectdim(means_dst, 1, 2), 1, size(means_dst)[2:end]...),
+    )
+    means_complete = dropdims(means_complete, dims=1)
+    variances_complete = dropdims(variances_complete, dims=1)
 
     assign_density!(
-      density,
-      selectdim(means_t, 1, 1),
-      selectdim(variances_t, 1, 1),
-      complete_distribution,
+      kde,
+      means_complete,
+      variances_complete,
+      vmr_variance,
       time,
       threshold,
       ifft_plan_single,
       method
     )
 
-    if all(isfinite, density)
+    if all(isfinite, kde.density)
       kde.t .= time
       break
     end
@@ -160,58 +180,75 @@ function find_density(
     end
   end
 
-  return density
+  return nothing
 end
-function find_denisty(
+function find_denisty!(
   ::IsGPUKDE,
   kde::CuKDE{N,T,S,M},
   time_range::Vector{<:AbstractRange{<:Real}},
   n_bootstraps::Integer,
   threshold::Real;
 )::CuArray{T,N} where {N,T<:Real,S<:Real,M}
-  density = CUDA.fill(NaN32, size(kde.grid))
-
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps)
-  ifft_plan_multi = plan_ifft!(means_0, dims=2:N+1)
-  complete_distribution = initialize_distribution(kde)
-  ifft_plan_single = plan_ifft(complete_distribution, dims=2:N+1)
+  ifft_plan_multi = plan_ifft!(means_0, 2:N+1)
+
+  density_0, var_0 = initialize_distribution(kde)
+  ifft_plan_single = plan_ifft!(density_0, 1:N)
 
   fourier_grid = fftgrid(kde.grid)
-  fourier_grid_array = get_coordinates(fourier_grid) .* Float32(2π)
+  fourier_grid_array = get_coordinates(fourier_grid)
+
   times = CuArray{T,N}(
     reinterpret(reshape, T, collect(zip(time_range...)))
   )
   time_initial = initial_bandwidth(kde.grid)
 
-  means_t = CuArray{Complex{T},N + 1}(undef, size(means_0))
-  variances_t = CuArray{Complex{T},N + 1}(undef, size(variances_0))
+  means_dst = CuArray{Complex{T},N + 1}(undef, size(means_0))
+  variances_dst = CuArray{Complex{T},N + 1}(undef, size(variances_0))
 
-  # TODO: Check what is the minimum number of arrays needed for the algorithm
   for col in 1:size(times, 2)
     time = view(times, :, col)
 
-    propagate_bandwidth!(
-      means_t,
-      variances_t,
+    means_bootstraps, variances_bootstraps = propagate_bandwidth!(
       means_0,
       variances_0,
       fourier_grid_array,
       time,
-      time_initial
+      time_initial,
+      dst_mean=means_dst,
+      dst_var=variances_dst,
     )
-    calculate_statistics!(means_t, variances_t, ifft_plan_multi)
+
+    vmr_variance = calculate_statistics!(
+      means_bootstraps,
+      variances_bootstraps,
+      ifft_plan_multi,
+      dst_vmr=selectdim(variances_dst, 1, 1)
+    )
+
+    means_complete, variances_complete = propagate_bandwidth!(
+      reshape(density_0, 1, size(density_0)...),
+      reshape(var_0, 1, size(var_0)...),
+      fourier_grid_array,
+      time,
+      time_initial,
+      dst_mean=reshape(selectdim(means_dst, 1, 1), 1, size(means_dst)[2:end]...),
+      dst_var=reshape(selectdim(means_dst, 1, 2), 1, size(means_dst)[2:end]...),
+    )
+    means_complete = dropdims(means_complete, dims=1)
+    variances_complete = dropdims(variances_complete, dims=1)
 
     assign_density!(
-      density,
-      selectdim(means_t, 1, 1),
-      selectdim(variances_t, 1, 1),
-      complete_distribution,
+      kde,
+      means_complete,
+      variances_complete,
+      vmr_variance,
       time,
       threshold,
       ifft_plan_single
     )
 
-    if all(isfinite, density)
+    if all(isfinite, kde.density)
       kde.t .= time
       break
     end
@@ -221,7 +258,7 @@ function find_denisty(
     end
   end
 
-  return density
+  return nothing
 end
 
 function initialize_statistics(
@@ -257,34 +294,43 @@ end
 function initialize_distribution(
   kde::KDE{N,T,S,M}, method::Symbol
 )::Array{Complex{T},N} where {N,T<:Real,S<:Real,M}
-  dirac_series = initialize_dirac_series(Val(method), kde)
-  s_0 = initialize_fourier_statistics(dirac_series)
+  dirac_series, dirac_series_squared = initialize_dirac_series(
+    Val(method),
+    kde,
+    calculate_squared=true
+  )
+  s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
 
-  return dropdims(s_0, dims=1)
+  return dropdims(s_0, dims=1), dropdims(s2_0, dims=1)
 end
 function initialize_distribution(
   kde::CuKDE{N,T,S,M}
 )::CuArray{Complex{T},N} where {N,T<:Real,S<:Real,M}
-  dirac_series = initialize_dirac_series(Val(:cuda), kde)
-  s_0 = initialize_fourier_statistics(dirac_series)
+  dirac_series, dirac_series_squared = initialize_dirac_series(
+    Val(:cuda),
+    kde,
+    calculate_squared=true
+  )
 
-  return dropdims(s_0, dims=1)
+  s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
+
+  return dropdims(s_0, dims=1), dropdims(s2_0, dims=1)
 end
 
 function propagate_bandwidth!(
-  means_t::Array{Complex{T},M},
-  variances_t::Array{Complex{T},M},
   means_0::Array{Complex{T},M},
   variances_0::Array{Complex{T},M},
   grid_array::AbstractArray{S,M},
   time::Vector{<:Real},
   time_initial::Vector{<:Real},
-  method::Symbol,
-)::NTuple{2,Array{Complex{T}}} where {T<:Real,S<:Real,M}
+  method::Symbol;
+  dst_mean::AbstractArray{Complex{T},M}=Array{Complex{T},M}(undef, size(means_0)),
+  dst_var::AbstractArray{Complex{T},M}=Array{Complex{T},M}(undef, size(variances_0)),
+)::Nothing where {T<:Real,S<:Real,M}
   propagate_statistics!(
     Val(method),
-    means_t,
-    variances_t,
+    dst_mean,
+    dst_mean,
     means_0,
     variances_0,
     grid_array,
@@ -292,22 +338,21 @@ function propagate_bandwidth!(
     SVector{M - 1,Float64}(time_initial)
   )
 
-  return nothing
+  return dst_mean, dst_var
 end
 function propagate_bandwidth!(
-  means_t::CuArray{Complex{T},M},
-  variances_t::CuArray{Complex{T},M},
   means_0::CuArray{Complex{T},M},
   variances_0::CuArray{Complex{T},M},
-  fourier_grid::CuArray{S,M},
+  grid_array::CuArray{S,M},
   time::CuVector{<:Real},
-  time_initial::CuVector{<:Real}
-)::NTuple{2,Array{Complex{T},M}} where {T<:Real,S<:Real,M}
-  grid_array = get_coordinates(fourier_grid)
+  time_initial::CuVector{<:Real};
+  dst_mean::CuArray{Complex{T},M}=CuArray{Complex{T},M}(undef, size(means_0)),
+  dst_var::CuArray{Complex{T},M}=CuArray{Complex{T},M}(undef, size(variances_0)),
+)::Nothing where {T<:Real,S<:Real,M}
   propagate_statistics!(
     Val(:cuda),
-    means_t,
-    variances_t,
+    dst_mean,
+    dst_var,
     means_0,
     variances_0,
     grid_array,
@@ -315,7 +360,41 @@ function propagate_bandwidth!(
     time_initial
   )
 
-  return nothing
+  return dst_mean, dst_var
+end
+
+function calculate_statistics!(
+  means_bootstraps::AbstractArray{Complex{T},M},
+  variances_bootstraps::AbstractArray{Complex{T},M},
+  ifft_plan::AbstractFFTs.ScaledPlan,
+  method::Symbol;
+  dst_vmr::AbstractArray{Complex{T},N}=Array{Complex{T},M - 1}(undef, size(means_bootstraps))
+)::AbstractArray{T,N} where {N,T<:Real,M}
+  vmr_variance = mean_var_vmr!(
+    Val(method),
+    means_bootstraps,
+    variances_bootstraps,
+    ifft_plan,
+    dst_vmr
+  )
+
+  return vmr_variance
+end
+function calculate_statistics!(
+  means_bootstraps::CuArray{Complex{T},M},
+  variances_bootstraps::CuArray{Complex{T},M},
+  ifft_plan::AbstractFFTs.ScaledPlan;
+  dst_vmr::CuArray{Complex{T},N}=CuArray{Complex{T},M - 1}(undef, size(means_bootstraps))
+)::CuArray{T,N} where {N,T<:Real,M}
+  vmr_variance = mean_var_vmr!(
+    Val(:cuda),
+    means_bootstraps,
+    variances_bootstraps,
+    ifft_plan,
+    dst_vmr
+  )
+
+  return vmr_variance
 end
 
 function get_times(

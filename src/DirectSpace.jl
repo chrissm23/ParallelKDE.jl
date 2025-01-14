@@ -4,12 +4,15 @@ using ..Grids
 using ..KDEs
 using ..FourierSpace
 
+using Statistics
+
 using StaticArrays,
-  CUDA
+  CUDA,
+  FFTW
 
 using CUDA: i32
 
-export initialize_dirac_series
+export initialize_dirac_series, mean_var_vmr!
 
 function initialize_dirac_series(
   ::Val{:serial},
@@ -294,6 +297,62 @@ function generate_dirac_gpu!(
   @inbounds CUDA.@atomic dirac_series_squared[dirac_idx...] += dirac_series_term^2i32
 
   return
+end
+
+function mean_var_vmr!(
+  ::Val{:serial},
+  means::AbstractArray{Complex{T},M},
+  variances::AbstractArray{Complex{T},M},
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  dst_vmr::AbstractArray{Complex{T},N},
+)::AbstractArray{T,N} where {N,T<:Real,M}
+  ifft_plan * means
+  ifft_plan * variances
+
+  n_bootstraps = size(means, 1)
+  for i in 1:n_bootstraps
+    vmr_cpu!(
+      selectdim(means, 1, i),
+      selectdim(variances, 1, i)
+    )
+  end
+
+  dst_vmr .= var(variances, dims=1)
+
+  return selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
+end
+function mean_var_vmr!(
+  ::Val{:threaded},
+  means::AbstractArray{Complex{T},M},
+  variances::AbstractArray{Complex{T},M},
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  dst_vmr::AbstractArray{Complex{T},N},
+)::AbstractArray{T,N} where {N,T<:Real,M}
+  ifft_plan * means
+  ifft_plan * variances
+
+  n_bootstraps = size(means, 1)
+  Threads.@threads for i in 1:n_bootstraps
+    vmr_cpu!(
+      selectdim(means, 1, i),
+      selectdim(variances, 1, i)
+    )
+  end
+
+  dst_vmr .= var(variances, dims=1)
+
+  return selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
+end
+
+function vmr_cpu!(
+  means::AbstractArray{Complex{T},N},
+  variances::AbstractArray{Complex{T},N},
+)::Nothing where {N,T<:Real}
+  @. means = abs(means)
+  @. variances = abs(variances)
+
+  @. variances = variances / means
+  return nothing
 end
 
 end
