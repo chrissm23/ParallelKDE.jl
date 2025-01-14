@@ -352,7 +352,37 @@ function vmr_cpu!(
   @. variances = abs(variances)
 
   @. variances = variances / means
+
   return nothing
+end
+
+function mean_var_vmr!(
+  ::Val{:cuda},
+  means::CuArray{Complex{T},M},
+  variances::CuArray{Complex{T},M},
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  dst_vmr::CuArray{Complex{T},N},
+) where {N,T<:Real,M}
+  ifft_plan * means
+  ifft_plan * variances
+
+  vmr_gpu!(means, variances)
+
+  dst_vmr .= var(variances, dims=1)
+
+  return selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
+end
+
+function vmr_gpu!(
+  means::CuArray{Complex{T},N},
+  variances::CuArray{Complex{T},N},
+) where {N,T<:Real}
+  @. means = abs(means)
+  @. variances = abs(variances)
+
+  @. variances = variances / means
+
+  return
 end
 
 end

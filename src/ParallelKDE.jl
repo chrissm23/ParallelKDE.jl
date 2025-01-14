@@ -146,7 +146,7 @@ function find_density!(
       dst_vmr=selectdim(variances_dst, 1, 1)
     )
 
-    means_complete, variances_complete = propagate_bandwidth!(
+    mean_complete, variance_complete = propagate_bandwidth!(
       reshape(density_0, 1, size(density_0)...),
       reshape(var_0, 1, size(var_0)...),
       fourier_grid_array,
@@ -156,13 +156,13 @@ function find_density!(
       dst_mean=reshape(selectdim(means_dst, 1, 1), 1, size(means_dst)[2:end]...),
       dst_var=reshape(selectdim(means_dst, 1, 2), 1, size(means_dst)[2:end]...),
     )
-    means_complete = dropdims(means_complete, dims=1)
-    variances_complete = dropdims(variances_complete, dims=1)
+    mean_complete = dropdims(mean_complete, dims=1)
+    variance_complete = dropdims(variance_complete, dims=1)
 
     assign_density!(
       kde,
-      means_complete,
-      variances_complete,
+      mean_complete,
+      variance_complete,
       vmr_variance,
       time,
       threshold,
@@ -170,6 +170,7 @@ function find_density!(
       method
     )
 
+    # TODO: Implement this as part of assign_density
     if all(isfinite, kde.density)
       kde.t .= time
       break
@@ -248,6 +249,7 @@ function find_denisty!(
       ifft_plan_single
     )
 
+    # TODO: Implement this as part of assign_density
     if all(isfinite, kde.density)
       kde.t .= time
       break
