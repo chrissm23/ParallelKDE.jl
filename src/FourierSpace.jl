@@ -64,11 +64,11 @@ function initialize_fourier_statistics(
 end
 
 function propagate_statistics!(
-  ::Val{:cpu},
-  means_t::Array{Complex{T},M},
-  variances_t::Array{Complex{T},M},
-  means_0::Array{Complex{T},M},
-  variances_0::Array{Complex{T},M},
+  ::Val{:serial},
+  means_t::AbstractArray{Complex{T},M},
+  variances_t::AbstractArray{Complex{T},M},
+  means_0::AbstractArray{Complex{T},M},
+  variances_0::AbstractArray{Complex{T},M},
   grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
   time_intial::SVector{N,Float64},
@@ -94,9 +94,9 @@ function propagate_statistics!(
   return nothing
 end
 function propagate_statistics!(
-  ::Val{:cpu},
-  means_t::Array{Complex{T},M},
-  means_0::Array{Complex{T},M},
+  ::Val{:serial},
+  means_t::AbstractArray{Complex{T},M},
+  means_0::AbstractArray{Complex{T},M},
   grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
 ) where {N,T<:Real,S<:Real,M}
@@ -119,10 +119,10 @@ function propagate_statistics!(
 end
 function propagate_statistics!(
   ::Val{:threaded},
-  means_t::Array{Complex{T},M},
-  variances_t::Array{Complex{T},M},
-  means_0::Array{Complex{T},M},
-  variances_0::Array{Complex{T},M},
+  means_t::AbstractArray{Complex{T},M},
+  variances_t::AbstractArray{Complex{T},M},
+  means_0::AbstractArray{Complex{T},M},
+  variances_0::AbstractArray{Complex{T},M},
   grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
   time_initial::SVector{N,Float64},

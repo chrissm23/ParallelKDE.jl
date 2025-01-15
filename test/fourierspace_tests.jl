@@ -1,13 +1,3 @@
-function normal_distribution(
-  x::SVector{N,S},
-  μ::SVector{N,S},
-  bandwidth::SMatrix{N,N,<:Real}
-) where {N,S<:Real}
-  normal_distro = MvNormal(μ, bandwidth .^ 2)
-
-  return pdf(normal_distro, x)
-end
-
 function initialize_kernels(
   data::Vector{SVector{N,S}},
   grid::Grid{N,S};
@@ -132,7 +122,7 @@ end
     variances_t = similar(s2k0)
 
     propagate_statistics!(
-      Val(:cpu),
+      Val(:serial),
       means_t,
       variances_t,
       sk0,

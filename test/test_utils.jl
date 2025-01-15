@@ -1,6 +1,19 @@
+function normal_distribution(
+  x::SVector{N,S},
+  μ::SVector{N,S},
+  bandwidth::SMatrix{N,N,<:Real}
+) where {N,S<:Real}
+  normal_distro = MvNormal(μ, bandwidth .^ 2)
+
+  return pdf(normal_distro, x)
+end
+
 function generate_samples(n_samples::Integer, n_dims::Int)
-  normal_distro = Normal(0.0, 1.0)
-  samples = [@SVector rand(normal_distro, n_dims) for _ in 1:n_samples]
+  μ = zeros(n_dims)
+  cov = Diagonal(ones(n_dims))
+  normal_distro = MvNormal(μ, cov)
+
+  samples = SVector{n_dims,Float64}.(eachcol(rand(normal_distro, n_samples)))
 
   return samples
 end

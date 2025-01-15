@@ -27,7 +27,7 @@ abstract type AbstractKDE{N,T,S,M} end
 struct KDE{N,T<:Real,S<:Real,M} <: AbstractKDE{N,T,S,M}
   data::Vector{SVector{N,S}}
   grid::Grid{N,S,M}
-  t::SVector{N,Float64}
+  t::MVector{N,Float64}
   density::Array{T,N}
 end
 

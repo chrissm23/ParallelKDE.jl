@@ -49,7 +49,7 @@ function test_diracseries_cpu(n_dims::Integer, n_samples::Int)
   dirac_series = zeros(Float64, length.(grid_ranges)...)
   dirac_series_squared = zeros(Float64, length.(grid_ranges)...)
 
-  DirectSpace.generate_dirac_cpu!(dirac_series, dirac_series_squared, data, spacing, low_bound, true)
+  DirectSpace.generate_dirac_cpu!(dirac_series, dirac_series_squared, data, spacing, low_bound)
 
   result, result_squared = calculate_test_result(n_dims, n_samples)
 

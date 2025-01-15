@@ -12,72 +12,102 @@ using StaticArrays,
 
 using CUDA: i32
 
-export initialize_dirac_series, mean_var_vmr!, calculate_variance_products!, assign_converged_density!
+export initialize_dirac_series,
+  mean_var_vmr!,
+  calculate_variance_products!,
+  assign_converged_density!
 
 function initialize_dirac_series(
   ::Val{:serial},
   kde::KDE{N,T,S,M};
   n_bootstraps::Integer=1,
   calculate_squared::Bool=false,
-)::Array{T,N + 1} where {N,T<:Real,S<:Real,M}
+)::Union{Array{T,N + 1},NTuple{2,Array{T,N + 1}}} where {N,T<:Real,S<:Real,M}
   grid_size = size(kde.grid)
 
   dirac_series = zeros(T, n_bootstraps, grid_size...)
-  dirac_series_squared = zeros(T, n_bootstraps, grid_size...)
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
   spacing = spacings(kde.grid)
   low_bound = low_bounds(kde.grid)
 
-  for i in 1:n_bootstraps
-    generate_dirac_cpu!(
-      selectdim(dirac_series, 1, i),
-      selectdim(dirac_series_squared, 1, i),
-      view(kde.data, bootstrap_idxs[:, i]),
-      spacing,
-      low_bound,
-      calculate_squared
-    )
+  if calculate_squared
+    dirac_series_squared = zeros(T, n_bootstraps, grid_size...)
+
+    for i in 1:n_bootstraps
+      generate_dirac_cpu!(
+        selectdim(dirac_series, 1, i),
+        selectdim(dirac_series_squared, 1, i),
+        view(kde.data, bootstrap_idxs[:, i]),
+        spacing,
+        low_bound,
+      )
+    end
+
+    return dirac_series, dirac_series_squared
+  else
+    for i in 1:n_bootstraps
+      generate_dirac_cpu!(
+        selectdim(dirac_series, 1, i),
+        view(kde.data, bootstrap_idxs[:, i]),
+        spacing,
+        low_bound,
+      )
+    end
+
+    return dirac_series
   end
 
-  return dirac_series, dirac_series_squared
 end
 function initialize_dirac_series(
   ::Val{:threaded},
   kde::KDE{N,T,S,M};
   n_bootstraps::Integer=1,
   calculate_squared::Bool=false,
-)::Array{T,N + 1} where {N,T<:Real,S<:Real,M}
+)::Union{Array{T,N + 1},NTuple{2,Array{T,N + 1}}} where {N,T<:Real,S<:Real,M}
   grid_size = size(kde.grid)
 
   dirac_series = zeros(T, n_bootstraps, grid_size...)
-  dirac_series_squared = zeros(T, n_bootstraps, grid_size...)
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
   spacing = spacings(kde.grid)
   low_bound = low_bounds(kde.grid)
 
-  Threads.@threads for i in 1:n_bootstraps
-    generate_dirac_cpu!(
-      selectdim(dirac_series, 1, i),
-      selectdim(dirac_series_squared, 1, i),
-      view(kde.data, bootstrap_idxs[:, i]),
-      spacing,
-      low_bound,
-      calculate_squared
-    )
+  if calculate_squared
+    dirac_series_squared = zeros(T, n_bootstraps, grid_size...)
+
+    Threads.@threads for i in 1:n_bootstraps
+      generate_dirac_cpu!(
+        selectdim(dirac_series, 1, i),
+        selectdim(dirac_series_squared, 1, i),
+        view(kde.data, bootstrap_idxs[:, i]),
+        spacing,
+        low_bound,
+      )
+    end
+
+    return dirac_series, dirac_series_squared
+  else
+    Threads.@threads for i in 1:n_bootstraps
+      generate_dirac_cpu!(
+        selectdim(dirac_series, 1, i),
+        view(kde.data, bootstrap_idxs[:, i]),
+        spacing,
+        low_bound,
+      )
+    end
+
+    return dirac_series
   end
 
-  return dirac_series, dirac_series_squared
 end
 
 function generate_dirac_cpu!(
-  dirac_series::Array{T,N},
-  dirac_series_squared::Array{T,N},
+  dirac_series::AbstractArray{T,N},
+  dirac_series_squared::AbstractArray{T,N},
   data::AbstractVector{SVector{N,S}},
   spacing::SVector{N,T},
   low_bound::SVector{N,T},
-  calculate_squared::Bool
 ) where {N,T<:Real,S<:Real}
   n_samples = length(data)
   spacing_squared = prod(spacing)^2
@@ -101,9 +131,39 @@ function generate_dirac_cpu!(
 
     dirac_series_term = products / (n_samples * spacing_squared)
     @inbounds dirac_series[grid_points] .+= dirac_series_term
-    if calculate_squared
-      @inbounds dirac_series_squared[grid_points] .+= dirac_series_term .^ 2
-    end
+    @inbounds dirac_series_squared[grid_points] .+= dirac_series_term .^ 2
+  end
+
+  return nothing
+end
+function generate_dirac_cpu!(
+  dirac_series::AbstractArray{T,N},
+  data::AbstractVector{SVector{N,S}},
+  spacing::SVector{N,T},
+  low_bound::SVector{N,T},
+) where {N,T<:Real,S<:Real}
+  n_samples = length(data)
+  spacing_squared = prod(spacing)^2
+
+  indices_l = @MVector zeros(Int64, N)
+  indices_h = @MVector zeros(Int64, N)
+  remainder_l = @MVector zeros(T, N)
+  remainder_h = @MVector zeros(T, N)
+
+  products = @MArray zeros(T, fill(2, N)...)
+  grid_points = Array{CartesianIndex{N}}(undef, fill(2, N)...)
+
+  for sample in data
+    @. indices_l = floor(Int64, (sample - low_bound) / spacing) + 1
+    @. remainder_l = (sample - low_bound) % spacing
+    @. indices_h = indices_l + 1
+    @. remainder_h = spacing - remainder_l
+
+    products .= map(prod, Iterators.product(zip(remainder_l, remainder_h)...))
+    grid_points .= CartesianIndex{N}.(collect(Iterators.product(zip(indices_l, indices_h)...)))
+
+    dirac_series_term = products / (n_samples * spacing_squared)
+    @inbounds dirac_series[grid_points] .+= dirac_series_term
   end
 
   return nothing
@@ -114,11 +174,10 @@ function initialize_dirac_series(
   kde::CuKDE{N,T,S,M};
   n_bootstraps::Integer=1,
   calculate_squared::Bool=false,
-)::Array{T,N + 1} where {N,T<:Real,S<:Real,M}
+)::Union{CuArray{T,N + 1},NTuple{2,CuArray{T,N + 1}}} where {N,T<:Real,S<:Real,M}
   grid_size = size(kde.grid)
 
   dirac_series = CUDA.zeros(T, n_bootstraps, grid_size...)
-  dirac_series_squared = CUDA.zeros(T, n_bootstraps, grid_size...)
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
   spacing = spacings(kde.grid)
@@ -128,6 +187,7 @@ function initialize_dirac_series(
   n_modified_gridpoints = n_samples * 2^N * n_bootstraps
 
   if calculate_squared
+    dirac_series_squared = CUDA.zeros(T, n_bootstraps, grid_size...)
     kernel = @cuda launch = false generate_dirac_gpu!(
       dirac_series, dirac_series_squared, kde.data, bootstrap_idxs, spacing, low_bound
     )
@@ -317,7 +377,7 @@ function mean_var_vmr!(
     )
   end
 
-  dst_vmr .= var(variances, dims=1)
+  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
 
   return selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
 end
@@ -339,7 +399,7 @@ function mean_var_vmr!(
     )
   end
 
-  dst_vmr .= var(variances, dims=1)
+  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
 
   return selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
 end
@@ -368,7 +428,7 @@ function mean_var_vmr!(
 
   vmr_gpu!(means, variances)
 
-  dst_vmr .= var(variances, dims=1)
+  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
 
   return selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
 end
@@ -455,6 +515,7 @@ function assign_converged_density!(
 
   @. dst = ifelse((indicator < threshold) && !(isfinite(dst)), src_real, dst)
 
+  return nothing
 end
 function assign_converged_density!(
   ::Val{:threaded},
@@ -473,6 +534,8 @@ function assign_converged_density!(
     threshold,
     ifft_plan
   )
+
+  return nothing
 end
 function assign_converged_density!(
   ::Val{:cuda},
@@ -488,6 +551,7 @@ function assign_converged_density!(
 
   @. dst = ifelse((indicator < threshold) && !(isfinite(dst)), src_real, dst)
 
+  return nothing
 end
 
 end

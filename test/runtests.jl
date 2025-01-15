@@ -18,7 +18,7 @@ using StaticArrays,
 
 include("test_utils.jl")
 
-# TODO: Once the package is ready and tested, limit tests to 1D to run on
+# TODO: Once the package is ready and tested, limit tests to 2D to run on
 # GitHub hosted runners
 @testset "ParallelKDE.jl" begin
   @testset "Code quality (Aqua.jl)" begin
@@ -42,6 +42,10 @@ include("test_utils.jl")
 
   @testset "Fourier space tests" begin
     include("fourierspace_tests.jl")
+  end
+
+  @testset "Convergence tests" begin
+    include("convergence_tests.jl")
   end
 
 end
