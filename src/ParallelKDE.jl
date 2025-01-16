@@ -70,7 +70,7 @@ function initialize_kde(
   return kde
 end
 
-# TODO: Change the threshold_factor into smoothness once the unknown factor is known
+# TODO: Normalize the smoothness to 1 once the threshold factor is known
 function fit_kde!(
   kde::AbstractKDE{N,T,S,M};
   dt::Union{Real,Vector{<:Real},Nothing}=nothing,
@@ -139,8 +139,6 @@ function find_density!(
       dst_mean=means_dst,
       dst_var=variances_dst,
     )
-    println("means_bootstraps: ", means_bootstraps)
-    println("variances_bootstraps: ", variances_bootstraps)
 
     vmr_variance = calculate_statistics!(
       means_bootstraps,
@@ -182,6 +180,7 @@ function find_density!(
 
   return nothing
 end
+# FIXME: Implement a better way to dispatch CuArrays and their subarrays (using AnyCuArray)
 function find_denisty!(
   ::IsGPUKDE,
   kde::CuKDE{N,T,S,M},
@@ -329,7 +328,7 @@ function propagate_bandwidth!(
   propagate_statistics!(
     Val(method),
     dst_mean,
-    dst_mean,
+    dst_var,
     means_0,
     variances_0,
     grid_array,

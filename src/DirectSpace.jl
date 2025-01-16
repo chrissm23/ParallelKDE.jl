@@ -377,9 +377,14 @@ function mean_var_vmr!(
     )
   end
 
-  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
+  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
+  dst_vmr_real = selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
+  dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
 
-  return selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
+  # Variance with Inf will give NaN
+  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), Inf, dst_vmr_real)
+
+  return dst_vmr_real
 end
 function mean_var_vmr!(
   ::Val{:threaded},
@@ -399,9 +404,14 @@ function mean_var_vmr!(
     )
   end
 
-  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
+  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
+  dst_vmr_real = selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
+  dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
 
-  return selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
+  # Variance with Inf will give NaN
+  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), Inf, dst_vmr_real)
+
+  return dst_vmr_real
 end
 
 function vmr_cpu!(
@@ -411,7 +421,9 @@ function vmr_cpu!(
   @. means = abs(means)
   @. variances = abs(variances)
 
-  @. variances = variances / means
+  means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
+  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
+  @. variances_real /= means_real
 
   return nothing
 end
@@ -428,9 +440,14 @@ function mean_var_vmr!(
 
   vmr_gpu!(means, variances)
 
-  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
+  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
+  dst_vmr_real = selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
+  dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
 
-  return selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
+  # Variance with Inf will give NaN
+  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), Inf, dst_vmr_real)
+
+  return dst_vmr_real
 end
 
 function vmr_gpu!(
@@ -440,11 +457,14 @@ function vmr_gpu!(
   @. means = abs(means)
   @. variances = abs(variances)
 
-  @. variances = variances / means
+  means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
+  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
+  @. variances_real /= means_real
 
   return
 end
 
+# TODO: Change the determinant to include also the initial bandwidth
 function calculate_variance_products!(
   ::Val{:serial},
   vmr_variance::AbstractArray{T,N},
@@ -459,7 +479,7 @@ function calculate_variance_products!(
 
   det_t = prod(time .^ 2)
 
-  dst_var_products .= vmr_variance .* var_real .* det_t
+  dst_var_products .= vmr_variance .* var_real .* det_t^2
 
   return dst_var_products
 end
@@ -496,7 +516,7 @@ function calculate_variance_products!(
 
   det_t = prod(time .^ 2)
 
-  dst_var_products .= vmr_variance .* var_real .* det_t
+  dst_var_products .= vmr_variance .* var_real .* det_t^2
 
   return dst_var_products
 end
@@ -513,7 +533,11 @@ function assign_converged_density!(
   @. src = abs(src)
   src_real = selectdim(reinterpret(reshape, T, src), 1, 1)
 
-  @. dst = ifelse((indicator < threshold) && !(isfinite(dst)), src_real, dst)
+  @. dst = ifelse(
+    ((indicator < threshold) || isinf(indicator)) && !(isfinite(dst)),
+    src_real,
+    dst
+  )
 
   return nothing
 end
@@ -549,7 +573,11 @@ function assign_converged_density!(
   @. src = abs(src)
   src_real = selectdim(reinterpret(reshape, T, src), 1, 1)
 
-  @. dst = ifelse((indicator < threshold) && !(isfinite(dst)), src_real, dst)
+  @. dst = ifelse(
+    ((indicator < threshold) || isinf(indicator)) && !(isfinite(dst)),
+    src_real,
+    dst
+  )
 
   return nothing
 end
