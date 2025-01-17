@@ -277,7 +277,7 @@ end
 function initialize_statistics(
   kde::CuKDE{N,T,S,M},
   n_bootstraps::Integer,
-)::NTuple{2,CuArray{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
+)::NTuple{2,AnyCuArray{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
   dirac_series, dirac_series_squared = initialize_dirac_series(
     Val(:cuda),
     kde,
@@ -303,7 +303,7 @@ function initialize_distribution(
 end
 function initialize_distribution(
   kde::CuKDE{N,T,S,M}
-)::NTuple{2,CuArray{Complex{T},N}} where {N,T<:Real,S<:Real,M}
+)::NTuple{2,AnyCuArray{Complex{T},N}} where {N,T<:Real,S<:Real,M}
   dirac_series, dirac_series_squared = initialize_dirac_series(
     Val(:cuda),
     kde,
@@ -339,13 +339,13 @@ function propagate_bandwidth!(
   return dst_mean, dst_var
 end
 function propagate_bandwidth!(
-  means_0::CuArray{Complex{T},M},
-  variances_0::CuArray{Complex{T},M},
-  grid_array::CuArray{S,M},
+  means_0::AnyCuArray{Complex{T},M},
+  variances_0::AnyCuArray{Complex{T},M},
+  grid_array::AnyCuArray{S,M},
   time::CuVector{<:Real},
   time_initial::CuVector{<:Real};
-  dst_mean::CuArray{Complex{T},M}=CuArray{Complex{T},M}(undef, size(means_0)),
-  dst_var::CuArray{Complex{T},M}=CuArray{Complex{T},M}(undef, size(variances_0)),
+  dst_mean::AnyCuArray{Complex{T},M}=CuArray{Complex{T},M}(undef, size(means_0)),
+  dst_var::AnyCuArray{Complex{T},M}=CuArray{Complex{T},M}(undef, size(variances_0)),
 ) where {T<:Real,S<:Real,M}
   propagate_statistics!(
     Val(:cuda),
@@ -379,11 +379,11 @@ function calculate_statistics!(
   return vmr_variance
 end
 function calculate_statistics!(
-  means_bootstraps::CuArray{Complex{T},M},
-  variances_bootstraps::CuArray{Complex{T},M},
+  means_bootstraps::AnyCuArray{Complex{T},M},
+  variances_bootstraps::AnyCuArray{Complex{T},M},
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}};
-  dst_vmr::CuArray{Complex{T},N}=CuArray{Complex{T},M - 1}(undef, size(means_bootstraps))
-)::CuArray{T,N} where {N,T<:Real,M}
+  dst_vmr::AnyCuArray{Complex{T},N}=CuArray{Complex{T},M - 1}(undef, size(means_bootstraps))
+)::AnyCuArray{T,N} where {N,T<:Real,M}
   vmr_variance = mean_var_vmr!(
     Val(:cuda),
     means_bootstraps,
@@ -425,13 +425,13 @@ function assign_density!(
 end
 function assign_density!(
   kde::CuKDE{N,T,S,M},
-  mean_complete::CuArray{Complex{T},N},
-  variance_complete::CuArray{Complex{T},N},
-  vmr_variance::CuArray{T,N},
+  mean_complete::AnyCuArray{Complex{T},N},
+  variance_complete::AnyCuArray{Complex{T},N},
+  vmr_variance::AnyCuArray{T,N},
   time::CuVector{<:Real},
   threshold::Real,
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}};
-  dst_var_products::CuArray{Complex{T},N}=CuArray{Complex{T},N}(undef, size(variance_complete))
+  dst_var_products::AnyCuArray{Complex{T},N}=CuArray{Complex{T},N}(undef, size(variance_complete))
 )::Nothing where {N,T<:Real,S<:Real,M}
   variance_products = calculate_variance_products!(
     Val(:cuda),
@@ -464,7 +464,7 @@ function get_times(
     bandwidth_0 = initial_bandwidth(grid)
     t0 = bandwidth_0
   end
-  if t0 isa CuArray
+  if t0 isa AnyCuArray
     t0 = Array{Float64}(t0)
   end
 

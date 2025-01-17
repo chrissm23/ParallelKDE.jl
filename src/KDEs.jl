@@ -106,7 +106,7 @@ function set_density!(::IsCPUKDE, kde::KDE{N,T,S,M}, density::Array{T,N}) where 
   kde.density .= density
   return nothing
 end
-function set_density!(::IsGPUKDE, kde::CuKDE{N,T,S,M}, density::CuArray{T,N}) where {N,T<:Real,S<:Real,M}
+function set_density!(::IsGPUKDE, kde::CuKDE{N,T,S,M}, density::AnyCuArray{T,N}) where {N,T<:Real,S<:Real,M}
   kde.density .= density
   return nothing
 end

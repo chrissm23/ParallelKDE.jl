@@ -17,6 +17,8 @@ export initialize_dirac_series,
   calculate_variance_products!,
   assign_converged_density!
 
+include("statistics.jl")
+
 function initialize_dirac_series(
   ::Val{:serial},
   kde::KDE{N,T,S,M};
@@ -174,7 +176,7 @@ function initialize_dirac_series(
   kde::CuKDE{N,T,S,M};
   n_bootstraps::Integer=1,
   calculate_squared::Bool=false,
-)::Union{CuArray{T,N + 1},NTuple{2,CuArray{T,N + 1}}} where {N,T<:Real,S<:Real,M}
+)::Union{AnyCuArray{T,N + 1},NTuple{2,AnyCuArray{T,N + 1}}} where {N,T<:Real,S<:Real,M}
   grid_size = size(kde.grid)
 
   dirac_series = CUDA.zeros(T, n_bootstraps, grid_size...)
@@ -430,10 +432,10 @@ end
 
 function mean_var_vmr!(
   ::Val{:cuda},
-  means::CuArray{Complex{T},M},
-  variances::CuArray{Complex{T},M},
+  means::AnyCuArray{Complex{T},M},
+  variances::AnyCuArray{Complex{T},M},
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
-  dst_vmr::CuArray{Complex{T},N},
+  dst_vmr::AnyCuArray{Complex{T},N},
 ) where {N,T<:Real,M}
   ifft_plan * means
   ifft_plan * variances
@@ -442,24 +444,26 @@ function mean_var_vmr!(
 
   variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
   dst_vmr_real = selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
-  dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
+  CUDA.@sync blocking = true dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
 
   # Variance with Inf will give NaN
-  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), Inf, dst_vmr_real)
+  CUDA.@sync blocking = true @. dst_vmr_real = ifelse(
+    isnan(dst_vmr_real), Inf, dst_vmr_real
+  )
 
   return dst_vmr_real
 end
 
 function vmr_gpu!(
-  means::CuArray{Complex{T},N},
-  variances::CuArray{Complex{T},N},
+  means::AnyCuArray{Complex{T},N},
+  variances::AnyCuArray{Complex{T},N},
 ) where {N,T<:Real}
-  @. means = abs(means)
-  @. variances = abs(variances)
+  CUDA.@sync blocking = true @. means = abs(means)
+  CUDA.@sync blocking = true @. variances = abs(variances)
 
   means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
   variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
-  @. variances_real /= means_real
+  CUDA.@sync blocking = true @. variances_real /= means_real
 
   return
 end
@@ -504,11 +508,11 @@ function calculate_variance_products!(
 end
 function calculate_variance_products!(
   ::Val{:cuda},
-  vmr_variance::CuArray{T,N},
-  variance_complete::CuArray{Complex{T},N},
+  vmr_variance::AnyCuArray{T,N},
+  variance_complete::AnyCuArray{Complex{T},N},
   time::CuVector{<:Real},
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
-  dst_var_products::CuArray{T,N},
+  dst_var_products::AnyCuArray{T,N},
 ) where {N,T<:Real}
   ifft_plan * variance_complete
   @. variance_complete = abs(variance_complete)
@@ -563,9 +567,9 @@ function assign_converged_density!(
 end
 function assign_converged_density!(
   ::Val{:cuda},
-  dst::CuArray{T,N},
-  src::CuArray{Complex{T},N},
-  indicator::CuArray{T,N},
+  dst::AnyCuArray{T,N},
+  src::AnyCuArray{Complex{T},N},
+  indicator::AnyCuArray{T,N},
   threshold::T,
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
 )::Nothing where {N,T<:Real}

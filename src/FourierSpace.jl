@@ -37,8 +37,8 @@ function initialize_fourier_statistics(
   return sk_0
 end
 function initialize_fourier_statistics(
-  dirac_series::CuArray{T,M},
-  dirac_series_squared::CuArray{T,M}
+  dirac_series::AnyCuArray{T,M},
+  dirac_series_squared::AnyCuArray{T,M}
 ) where {T<:Real,M}
   N = M - 1
   if N < 1
@@ -51,7 +51,7 @@ function initialize_fourier_statistics(
   return sk_0, s2k_0
 end
 function initialize_fourier_statistics(
-  dirac_series::CuArray{T,M},
+  dirac_series::AnyCuArray{T,M},
 ) where {T<:Real,M}
   N = M - 1
   if N < 1
@@ -214,11 +214,11 @@ end
 
 function propagate_statistics!(
   ::Val{:cuda},
-  means_t::CuArray{Complex{T},M},
-  variances_t::CuArray{Complex{T},M},
-  means_0::CuArray{Complex{T},M},
-  variances_0::CuArray{Complex{T},M},
-  grid_array::CuArray{S,M},
+  means_t::AnyCuArray{Complex{T},M},
+  variances_t::AnyCuArray{Complex{T},M},
+  means_0::AnyCuArray{Complex{T},M},
+  variances_0::AnyCuArray{Complex{T},M},
+  grid_array::AnyCuArray{S,M},
   time::CuVector{<:Real},
   time_initial::CuVector{<:Real},
 ) where {T<:Real,S<:Real,M}
@@ -256,9 +256,9 @@ function propagate_statistics!(
 end
 function propagate_statistics!(
   ::Val{:cuda},
-  means_t::CuArray{Complex{T},M},
-  means_0::CuArray{Complex{T},M},
-  grid_array::CuArray{S,M},
+  means_t::AnyCuArray{Complex{T},M},
+  means_0::AnyCuArray{Complex{T},M},
+  grid_array::AnyCuArray{S,M},
   time::CuVector{<:Real},
 ) where {T<:Real,S<:Real,M}
   n_points = prod(size(means_t)[2:end])
@@ -421,8 +421,8 @@ function ifft_statistics(
   return means, variances
 end
 function ifft_statistics(
-  sk::CuArray{Complex{T},M},
-  s2k::CuArray{Complex{T},M},
+  sk::AnyCuArray{Complex{T},M},
+  s2k::AnyCuArray{Complex{T},M},
   n_samples::Integer;
 ) where {T<:Real,M}
   N = M - 1
@@ -439,8 +439,8 @@ function ifft_statistics(
   return means, variances
 end
 function ifft_statistics(
-  sk::CuArray{Complex{T},M},
-  s2k::CuArray{Complex{T},M},
+  sk::AnyCuArray{Complex{T},M},
+  s2k::AnyCuArray{Complex{T},M},
   n_samples::Integer,
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
 ) where {T<:Real,M}
