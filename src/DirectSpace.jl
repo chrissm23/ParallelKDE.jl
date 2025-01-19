@@ -365,12 +365,8 @@ function mean_var_vmr!(
   ::Val{:serial},
   means::AbstractArray{Complex{T},M},
   variances::AbstractArray{Complex{T},M},
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
   dst_vmr::AbstractArray{Complex{T},N},
 )::AbstractArray{T,N} where {N,T<:Real,M}
-  ifft_plan * means
-  ifft_plan * variances
-
   n_bootstraps = size(means, 1)
   for i in 1:n_bootstraps
     vmr_cpu!(
@@ -392,12 +388,8 @@ function mean_var_vmr!(
   ::Val{:threaded},
   means::AbstractArray{Complex{T},M},
   variances::AbstractArray{Complex{T},M},
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
   dst_vmr::AbstractArray{Complex{T},N},
 )::AbstractArray{T,N} where {N,T<:Real,M}
-  ifft_plan * means
-  ifft_plan * variances
-
   n_bootstraps = size(means, 1)
   Threads.@threads for i in 1:n_bootstraps
     vmr_cpu!(
@@ -420,9 +412,6 @@ function vmr_cpu!(
   means::AbstractArray{Complex{T},N},
   variances::AbstractArray{Complex{T},N},
 )::Nothing where {N,T<:Real}
-  @. means = abs(means)
-  @. variances = abs(variances)
-
   means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
   variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
   @. variances_real /= means_real
@@ -434,22 +423,16 @@ function mean_var_vmr!(
   ::Val{:cuda},
   means::AnyCuArray{Complex{T},M},
   variances::AnyCuArray{Complex{T},M},
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
   dst_vmr::AnyCuArray{Complex{T},N},
 ) where {N,T<:Real,M}
-  ifft_plan * means
-  ifft_plan * variances
-
   vmr_gpu!(means, variances)
 
   variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
   dst_vmr_real = selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
-  CUDA.@sync blocking = true dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
+  dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
 
   # Variance with Inf will give NaN
-  CUDA.@sync blocking = true @. dst_vmr_real = ifelse(
-    isnan(dst_vmr_real), Inf, dst_vmr_real
-  )
+  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), Inf, dst_vmr_real)
 
   return dst_vmr_real
 end
@@ -458,12 +441,9 @@ function vmr_gpu!(
   means::AnyCuArray{Complex{T},N},
   variances::AnyCuArray{Complex{T},N},
 ) where {N,T<:Real}
-  CUDA.@sync blocking = true @. means = abs(means)
-  CUDA.@sync blocking = true @. variances = abs(variances)
-
   means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
   variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
-  CUDA.@sync blocking = true @. variances_real /= means_real
+  @. variances_real /= means_real
 
   return
 end
@@ -474,14 +454,12 @@ function calculate_variance_products!(
   vmr_variance::AbstractArray{T,N},
   variance_complete::AbstractArray{Complex{T},N},
   time::AbstractVector{<:Real},
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  time_initial::AbstractVector{<:Real},
   dst_var_products::AbstractArray{T,N},
 ) where {N,T<:Real}
-  ifft_plan * variance_complete
-  @. variance_complete = abs(variance_complete)
   var_real = selectdim(reinterpret(reshape, T, variance_complete), 1, 1)
 
-  det_t = prod(time .^ 2)
+  det_t = prod(time .^ 2 .+ time_initial .^ 2)
 
   dst_var_products .= vmr_variance .* var_real .* det_t^2
 
@@ -492,7 +470,6 @@ function calculate_variance_products!(
   vmr_variance::AbstractArray{T,N},
   variance_complete::AbstractArray{Complex{T},N},
   time::AbstractVector{<:Real},
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
   dst_var_products::AbstractArray{T,N},
 ) where {N,T<:Real}
   @warn "Threaded calculation of variance products not implemented. Using serial implementation."
@@ -502,7 +479,6 @@ function calculate_variance_products!(
     vmr_variance,
     variance_complete,
     time,
-    ifft_plan,
     dst_var_products
   )
 end
@@ -511,11 +487,8 @@ function calculate_variance_products!(
   vmr_variance::AnyCuArray{T,N},
   variance_complete::AnyCuArray{Complex{T},N},
   time::CuVector{<:Real},
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
   dst_var_products::AnyCuArray{T,N},
 ) where {N,T<:Real}
-  ifft_plan * variance_complete
-  @. variance_complete = abs(variance_complete)
   var_real = selectdim(reinterpret(reshape, T, variance_complete), 1, 1)
 
   det_t = prod(time .^ 2)
@@ -531,10 +504,7 @@ function assign_converged_density!(
   src::AbstractArray{Complex{T},N},
   indicator::AbstractArray{T,N},
   threshold::T,
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
 )::Nothing where {N,T<:Real}
-  ifft_plan * src
-  @. src = abs(src)
   src_real = selectdim(reinterpret(reshape, T, src), 1, 1)
 
   @. dst = ifelse(
@@ -550,7 +520,6 @@ function assign_converged_density!(
   dst::AbstractArray{T,N},
   src::AbstractArray{Complex{T},N},
   indicator::AbstractArray{T,N},
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
   threshold::T,
 )::Nothing where {N,T<:Real}
   @warn "Threaded assignment of converged density not implemented. Using serial implementation."
@@ -560,7 +529,6 @@ function assign_converged_density!(
     src,
     indicator,
     threshold,
-    ifft_plan
   )
 
   return nothing
@@ -571,10 +539,7 @@ function assign_converged_density!(
   src::AnyCuArray{Complex{T},N},
   indicator::AnyCuArray{T,N},
   threshold::T,
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
 )::Nothing where {N,T<:Real}
-  ifft_plan * src
-  @. src = abs(src)
   src_real = selectdim(reinterpret(reshape, T, src), 1, 1)
 
   @. dst = ifelse(

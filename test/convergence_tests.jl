@@ -1,114 +1,147 @@
-@testset "Convergence criterium test (CPU)" for n_dims in 1:1
-  # Set up
+@testset "Density-variance proportionality test (CPU)" for n_dims in 1:1
   n_samples = 10000
-  n_bootstraps = 50
-  data = generate_samples(n_samples, n_dims)
-
-  grid_ranges = fill(-5.0:0.05:5.0, n_dims)
-  grid = Grid(grid_ranges)
-
-  kde = initialize_kde(data, grid_ranges, :cpu)
-  dt = fill(0.1, n_dims)
-  t0 = Grids.initial_bandwidth(grid)
-
-  # Time propagation
-  means_0, variances_0 = ParallelKDE.initialize_statistics(kde, n_bootstraps, :serial)
-  density_0, var_0 = ParallelKDE.initialize_distribution(kde, :serial)
-
-  ifft_plan_multi = plan_ifft!(means_0, 2:n_dims+1)
-
-  fourier_grid = fftgrid(grid)
-  fourier_grid_array = get_coordinates(fourier_grid)
-
-  means_dst = Array{ComplexF64,n_dims + 1}(undef, size(means_0))
-  variances_dst = Array{ComplexF64,n_dims + 1}(undef, size(variances_0))
-
-  means_bootstraps, variances_bootstraps = ParallelKDE.propagate_bandwidth!(
-    means_0,
-    variances_0,
-    fourier_grid_array,
-    dt,
-    t0,
-    :serial,
-    dst_mean=means_dst,
-    dst_var=variances_dst,
-  )
-
-  vmr_variance = ParallelKDE.calculate_statistics!(
-    means_bootstraps,
-    variances_bootstraps,
-    ifft_plan_multi,
-    :serial,
-    dst_vmr=selectdim(variances_dst, 1, 1)
-  )
-
-  # Calculation of true PDF
-  normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
-  true_pdf = pdf.(
-    Ref(normal_distro),
-    eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
-  )
-
-  # Calculation of optimal threshold
-  det_t_squared = prod(dt .^ 2 .+ t0 .^ 2)
-  adjustable_factor = 1 / 150
-  threshold_factor = 1 / (
-    2^(n_dims - 1) * (2^n_dims - 3^(n_dims / 2)) * (π^n_dims * det_t_squared)^(3 / 2) * Float64(n_samples)^3
-  )
-  optimal_threshold = threshold_factor * adjustable_factor
-
-  vmr_true = optimal_threshold ./ true_pdf
-
-  # if n_dims == 1
-  #   p = plot(grid_ranges[1], vmr_true, label="PDF", dpi=300, ylimits=(1e-12, 1e-8), yaxis=:log)
-  #   plot!(p, grid_ranges[1], vmr_variance, label="KDE")
-  #   savefig(p, "calculated_vmr_cpu.png")
-  # end
-
-  @test isapprox(
-    view(vmr_variance, fill(50:150, n_dims)...), view(vmr_true, fill(50:150, n_dims)...),
-    rtol=1e0
-  )
-end
-
-if CUDA.functional()
-  @testset "Convergence criterium test (GPU)" for n_dims in 1:1
+  @testset "Dimensions: $n_dims" begin
     # Set up
-    n_samples = 10000
-    n_bootstraps = 50
+    data = generate_samples(n_samples, n_dims)
+
+    grid_ranges = fill(-5.0:0.05:5.0, n_dims)
+    grid = Grid(grid_ranges)
+
+    kde = initialize_kde(data, grid_ranges, :cpu)
+    dt = fill(0.1, n_dims)
+    t0 = Grids.initial_bandwidth(grid)
+
+    # Time propagation
+    density_0, var_0 = ParallelKDE.initialize_distribution(kde, :serial)
+    density_0_reshaped = reshape(density_0, 1, size(density_0)...)
+    var_0_reshaped = reshape(var_0, 1, size(var_0)...)
+
+    fourier_grid = fftgrid(grid)
+    fourier_grid_array = get_coordinates(fourier_grid)
+
+    means_dst = Array{ComplexF64,n_dims + 1}(undef, size(density_0_reshaped))
+    variances_dst = Array{ComplexF64,n_dims + 1}(undef, size(var_0_reshaped))
+
+    mean_complete, variance_complete = ParallelKDE.propagate_bandwidth!(
+      density_0_reshaped,
+      var_0_reshaped,
+      fourier_grid_array,
+      dt,
+      t0,
+      :serial,
+      dst_mean=means_dst,
+      dst_var=variances_dst,
+    )
+    mean_complete = dropdims(mean_complete, dims=1)
+    variance_complete = dropdims(variance_complete, dims=1)
+
+    ifft_statistics!(
+      mean_complete,
+      variance_complete,
+      n_samples,
+      bootstraps_dim=false
+    )
+
+    # Calculation of true PDF
+    normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
+    true_pdf = pdf.(
+      Ref(normal_distro),
+      eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
+    )
+
+    # Calculation of optimal threshold
+    det_t = prod(dt .^ 2 .+ t0 .^ 2)
+    scaling_factor = 1 / (2^n_dims * Float64(n_samples)^2 * sqrt(π^n_dims * det_t))
+
+    var_true = true_pdf .* scaling_factor
+
+    @test var_true ≈ real.(variance_complete) atol = 1e-1
+  end
+end
+@testset "Density-variance proportionality test (GPU)" for n_dims in 1:1
+  n_samples = 10000
+  @testset "dimensions: $n_dims" begin
+    # Set up
     data = generate_samples(n_samples, n_dims)
 
     grid_ranges = fill(-5.0:0.05:5.0, n_dims)
     grid = Grid(grid_ranges)
     grid_d = CuGrid(grid_ranges)
 
-    kde = initialize_kde(data, grid_ranges, :cpu)
     kde_d = initialize_kde(data, grid_ranges, :gpu)
-
-    dt = fill(0.1, n_dims)
     dt_d = CUDA.fill(1.0f-1, n_dims)
-
-    t0 = Grids.initial_bandwidth(grid)
     t0_d = Grids.initial_bandwidth(grid_d)
 
     # Time propagation
-    means_0, variances_0 = ParallelKDE.initialize_statistics(kde, n_bootstraps, :serial)
-    means_0_d, variances_0_d = ParallelKDE.initialize_statistics(kde_d, n_bootstraps)
-    density_0, var_0 = ParallelKDE.initialize_distribution(kde, :serial)
     density_0_d, var_0_d = ParallelKDE.initialize_distribution(kde_d)
+    density_0_reshaped_d = reshape(density_0_d, 1, size(density_0_d)...)
+    var_0_reshaped_d = reshape(var_0_d, 1, size(var_0_d)...)
 
-    ifft_plan_multi = plan_ifft!(means_0, 2:n_dims+1)
-    ifft_plan_multi_d = plan_ifft!(means_0_d, 2:n_dims+1)
+    fourier_grid_d = fftgrid(grid_d)
+    fourier_grid_array_d = get_coordinates(fourier_grid_d)
+
+    means_dst_d = CuArray{ComplexF32,n_dims + 1}(undef, size(density_0_reshaped_d))
+    variances_dst_d = CuArray{ComplexF32,n_dims + 1}(undef, size(var_0_reshaped_d))
+
+    mean_complete_d, variance_complete_d = ParallelKDE.propagate_bandwidth!(
+      density_0_reshaped_d,
+      var_0_reshaped_d,
+      fourier_grid_array_d,
+      dt_d,
+      t0_d,
+      dst_mean=means_dst_d,
+      dst_var=variances_dst_d,
+    )
+    mean_complete_d = dropdims(mean_complete_d, dims=1)
+    variance_complete_d = dropdims(variance_complete_d, dims=1)
+
+    ifft_statistics!(
+      mean_complete_d,
+      variance_complete_d,
+      n_samples,
+      bootstraps_dim=false
+    )
+
+    # Calculation of true PDF
+    normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
+    true_pdf = pdf.(
+      Ref(normal_distro),
+      eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
+    )
+
+    # Calculation of optimal threshold
+    det_t = prod(dt_d .^ 2 .+ t0_d .^ 2)
+    scaling_factor = 1 / (2^n_dims * Float64(n_samples)^2 * sqrt(π^n_dims * det_t))
+
+    var_true = true_pdf .* scaling_factor
+
+    @test var_true ≈ Array(real.(variance_complete_d)) atol = 1e-1
+  end
+end
+
+# TODO: Once the adjustable_factor is known for higher dimensions, extend the loop to test them
+@testset "Convergence criterium test (CPU)" for n_dims in 1:1
+  n_samples = 10000
+  n_bootstraps = 50
+  @testset "Dimensions: $n_dims" begin
+    # Set up
+    data = generate_samples(n_samples, n_dims)
+
+    grid_ranges = fill(-5.0:0.05:5.0, n_dims)
+    grid = Grid(grid_ranges)
+
+    kde = initialize_kde(data, grid_ranges, :cpu)
+    dt = fill(0.1, n_dims)
+    t0 = Grids.initial_bandwidth(grid)
+
+    # Time propagation
+    means_0, variances_0 = ParallelKDE.initialize_statistics(kde, n_bootstraps, :serial)
 
     fourier_grid = fftgrid(grid)
-    fourier_grid_d = fftgrid(grid_d)
     fourier_grid_array = get_coordinates(fourier_grid)
-    fourier_grid_array_d = get_coordinates(fourier_grid_d)
 
     means_dst = Array{ComplexF64,n_dims + 1}(undef, size(means_0))
     variances_dst = Array{ComplexF64,n_dims + 1}(undef, size(variances_0))
-    means_dst_d = CuArray{ComplexF32,n_dims + 1}(undef, size(means_0))
-    variances_dst_d = CuArray{ComplexF32,n_dims + 1}(undef, size(variances_0))
 
     means_bootstraps, variances_bootstraps = ParallelKDE.propagate_bandwidth!(
       means_0,
@@ -120,116 +153,239 @@ if CUDA.functional()
       dst_mean=means_dst,
       dst_var=variances_dst,
     )
-    means_bootstraps_d, variances_bootstraps_d = ParallelKDE.propagate_bandwidth!(
-      means_0_d,
-      variances_0_d,
-      fourier_grid_array_d,
-      dt_d,
-      t0_d,
-      dst_mean=means_dst_d,
-      dst_var=variances_dst_d,
+    ifft_statistics!(
+      means_bootstraps,
+      variances_bootstraps,
+      n_samples,
+      bootstraps_dim=true
     )
 
-    ifft_plan_multi * means_bootstraps
-    ifft_plan_multi_d * means_bootstraps_d
+    vmr_variance = ParallelKDE.calculate_statistics!(
+      means_bootstraps,
+      variances_bootstraps,
+      :serial,
+      dst_vmr=selectdim(variances_dst, 1, 1)
+    )
 
-    ifft_plan_multi * variances_bootstraps
-    ifft_plan_multi_d * variances_bootstraps_d
+    # Calculation of true PDF
+    normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
+    true_pdf = pdf.(
+      Ref(normal_distro),
+      eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
+    )
 
-    # TODO: Up to here both CPU and GPU give very similar numbers.
-    # For some reason the differences start from here.
+    # Calculation of optimal threshold
+    det_t = prod(dt .^ 2 .+ t0 .^ 2)
+    adjustable_factor = 1 / 150
+    threshold_factor = 1 / (
+      2^(n_dims - 1) * (2^n_dims - 3^(n_dims / 2)) * (π^n_dims * det_t)^(3 / 2) * Float64(n_samples)^3
+    )
+    optimal_threshold = threshold_factor * adjustable_factor
 
-    # vmrs = @. abs(variances_bootstraps) / abs(means_bootstraps)
-    # vmrs_d = @. abs.(variances_bootstraps_d) / abs(means_bootstraps_d)
+    vmr_true = optimal_threshold ./ true_pdf
 
-    # vmr_variance = ParallelKDE.calculate_statistics!(
-    #   means_bootstraps,
-    #   variances_bootstraps,
-    #   ifft_plan_multi,
-    #   :serial,
-    #   dst_vmr=selectdim(variances_dst, 1, 1)
-    # )
-    # vmr_variance_d = ParallelKDE.calculate_statistics!(
-    #   means_bootstraps_d,
-    #   variances_bootstraps_d,
-    #   ifft_plan_multi_d,
-    #   dst_vmr=selectdim(variances_dst_d, 1, 1)
-    # )
-    #
-    # p_vmr = plot(grid_ranges[1], vmr_variance, label="CPU", dpi=300, ylimits=(1e-12, 1e-8), yaxis=:log)
-    # p2_vmr = twinx()
-    # plot!(p2_vmr, grid_ranges[1], Array(vmr_variance_d), label="GPU", yaxis=:log, lc=:red)
-    # savefig(p_vmr, "vmr_variance_cpu_vs_gpu.png")
-    #
-    # @test isapprox(vmr_variance, Array(vmr_variance_d), rtol=1e0)
-    #
-    # # Calculation of true PDF
-    # normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
-    # true_pdf = pdf.(
-    #   Ref(normal_distro),
-    #   eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
-    # )
-    #
-    # # Calculation of optimal threshold
-    # det_t_squared = prod(dt .^ 2 .+ t0 .^ 2)
-    # adjustable_factor = 1 / 150
-    # threshold_factor = 1 / (
-    #   2^(n_dims - 1) * (2^n_dims - 3^(n_dims / 2)) * (π^n_dims * det_t_squared)^(3 / 2) * Float64(n_samples)^3
-    # )
-    # optimal_threshold = threshold_factor * adjustable_factor
-    #
-    # vmr_true = optimal_threshold ./ true_pdf
-
-    # if n_dims == 1
-    #   p = plot(grid_ranges[1], vmr_true, label="PDF", dpi=300, ylimits=(1e-12, 1e-8), yaxis=:log)
-    #   plot!(p, grid_ranges[1], vmr_variance, label="KDE")
-    #   savefig(p, "calculated_vmr_gpu.png")
-    # end
-
-    # @test isapprox(
-    #   view(vmr_variance, fill(50:150, n_dims)...), view(vmr_true, fill(50:150, n_dims)...),
-    #   rtol=1e0
-    # )
+    @test isapprox(
+      view(vmr_variance, fill(50:150, n_dims)...), view(vmr_true, fill(50:150, n_dims)...),
+      rtol=1e0
+    )
   end
 end
 
-# TODO: Implement the density-variance proportionality test
+if CUDA.functional()
+  @testset "Convergence criterium test (GPU)" for n_dims in 1:1
+    n_samples = 10000
+    n_bootstraps = 50
+    @testset "dimensions: $n_dims" begin
+      # Set up
+      data = generate_samples(n_samples, n_dims)
 
-# @testset "Density-variance proportionality test (CPU)"
+      grid_ranges = fill(-5.0:0.05:5.0, n_dims)
+      grid = Grid(grid_ranges)
+      grid_d = CuGrid(grid_ranges)
+
+      kde_d = initialize_kde(data, grid_ranges, :gpu)
+      dt_d = CUDA.fill(1.0f-1, n_dims)
+      t0_d = Grids.initial_bandwidth(grid_d)
+
+      # Time propagation
+      means_0_d, variances_0_d = ParallelKDE.initialize_statistics(kde_d, n_bootstraps)
+
+      fourier_grid_d = fftgrid(grid_d)
+      fourier_grid_array_d = get_coordinates(fourier_grid_d)
+
+      means_dst_d = CuArray{ComplexF32,n_dims + 1}(undef, size(means_0_d))
+      variances_dst_d = CuArray{ComplexF32,n_dims + 1}(undef, size(variances_0_d))
+
+      means_bootstraps_d, variances_bootstraps_d = ParallelKDE.propagate_bandwidth!(
+        means_0_d,
+        variances_0_d,
+        fourier_grid_array_d,
+        dt_d,
+        t0_d,
+        dst_mean=means_dst_d,
+        dst_var=variances_dst_d,
+      )
+      ifft_statistics!(
+        means_bootstraps_d,
+        variances_bootstraps_d,
+        n_samples,
+        bootstraps_dim=true
+      )
+
+      vmr_variance_d = ParallelKDE.calculate_statistics!(
+        means_bootstraps_d,
+        variances_bootstraps_d,
+        dst_vmr=selectdim(variances_dst_d, 1, 1)
+      )
+      vmr_variance = Array(vmr_variance_d)
+
+      # Calculation of true PDF
+      normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
+      true_pdf = pdf.(
+        Ref(normal_distro),
+        eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
+      )
+
+      # Calculation of optimal threshold
+      det_t = prod(dt_d .^ 2 .+ t0_d .^ 2)
+      adjustable_factor = 1 / 150
+      threshold_factor = 1 / (
+        2^(n_dims - 1) * (2^n_dims - 3^(n_dims / 2)) * (π^n_dims * det_t)^(3 / 2) * Float64(n_samples)^3
+      )
+      optimal_threshold = threshold_factor * adjustable_factor
+
+      vmr_true = optimal_threshold ./ true_pdf
+
+      @test isapprox(
+        view(vmr_variance, fill(50:150, n_dims)...), view(vmr_true, fill(50:150, n_dims)...),
+        rtol=1e0
+      )
+    end
+  end
+end
+
+@testset "Testing product of variances (CPU)" for n_dims in 1:1
+  n_samples = 100
+  n_bootstraps = 50
+
+  @testset "Dimensions: $n_dims" begin
+    data = generate_samples(n_samples, n_dims)
+
+    grid_ranges = fill(-5.0:0.005:5.0, n_dims)
+    grid = Grid(grid_ranges)
+
+    adjustable_factor = 1 / 150
+    threshold_factor = 1 / (
+      2^(3n_dims - 1) * Float64(n_samples)^5 * π^(2n_dims) * (2^n_dims - 3^(n_dims / 2))
+    )
+
+    threshold_line = fill(adjustable_factor * threshold_factor, length.(grid_ranges)...)
+
+    p = plot(grid_ranges[1], threshold_line, label="Threshold", dpi=300, yaxis=:log)
+
+    kde = initialize_kde(data, grid_ranges, :cpu)
+    t0 = Grids.initial_bandwidth(grid)
+
+    means_0, variances_0 = ParallelKDE.initialize_statistics(kde, n_bootstraps, :serial)
+    density_0, var_0 = ParallelKDE.initialize_distribution(kde, :serial)
+
+    fourier_grid = fftgrid(grid)
+    fourier_grid_array = get_coordinates(fourier_grid)
+
+    means_dst = Array{ComplexF64,n_dims + 1}(undef, size(means_0))
+    variances_dst = Array{ComplexF64,n_dims + 1}(undef, size(variances_0))
+
+    # TODO: Acoording to this, the criterium is var_products > threshold.
+    # I think it would work to set the density if the variance is ≈ 0 but allow to
+    # modify it if at some point the variance is not 0.
+    dts = collect(0.0:0.02:0.30)
+    for dt_scalar in dts
+      dt = fill(dt_scalar, n_dims)
+      det_t = prod(dt .^ 2 .+ t0 .^ 2)
+
+      means_bootstraps, variances_bootstraps = ParallelKDE.propagate_bandwidth!(
+        means_0,
+        variances_0,
+        fourier_grid_array,
+        dt,
+        t0,
+        :serial,
+        dst_mean=means_dst,
+        dst_var=variances_dst,
+      )
+      ifft_statistics!(
+        means_bootstraps,
+        variances_bootstraps,
+        n_samples,
+        bootstraps_dim=true
+      )
+      vmr_variance = ParallelKDE.calculate_statistics!(
+        means_bootstraps,
+        variances_bootstraps,
+        :serial,
+        dst_vmr=selectdim(variances_dst, 1, 1)
+      )
+
+      mean_complete, variance_complete = ParallelKDE.propagate_bandwidth!(
+        reshape(density_0, 1, size(density_0)...),
+        reshape(var_0, 1, size(var_0)...),
+        fourier_grid_array,
+        dt,
+        t0,
+        :serial,
+        dst_mean=reshape(selectdim(means_dst, 1, 1), 1, size(means_dst)[2:end]...),
+        dst_var=reshape(selectdim(variances_dst, 1, 1), 1, size(variances_dst)[2:end]...)
+      )
+      mean_complete = dropdims(mean_complete, dims=1)
+      variance_complete = dropdims(variance_complete, dims=1)
+      ifft_statistics!(
+        mean_complete,
+        variance_complete,
+        n_samples,
+        bootstraps_dim=false
+      )
+
+      var_products = vmr_variance .* real.(variance_complete) .* det_t^2
+
+      plot!(p, grid_ranges[1], var_products, label="dt = $dt_scalar")
+    end
+    savefig(p, "variance_product.png")
+  end
+end
 
 @testset "Testing results (CPU)" for n_dims in 1:1
-  n_samples = 100
-  data = generate_samples(n_samples, n_dims)
+  n_samples = 10000
+  @testset "dimensions: $n_dims" begin
+    data = generate_samples(n_samples, n_dims)
 
-  grid_ranges = fill(-5.0:0.05:5.0, n_dims)
-  grid = Grid(grid_ranges)
+    grid_ranges = fill(-5.0:0.05:5.0, n_dims)
+    grid = Grid(grid_ranges)
 
-  kde = initialize_kde(data, grid_ranges, :cpu)
-  dt = 0.02
-  n_steps = 50
-  n_bootstraps = 50
-  fit_kde!(
-    kde,
-    dt=dt,
-    n_steps=n_steps,
-    n_bootstraps=n_bootstraps,
-  )
+    kde = initialize_kde(data, grid_ranges, :cpu)
+    dt = 0.02
+    n_steps = 50
+    n_bootstraps = 50
+    fit_kde!(
+      kde,
+      dt=dt,
+      n_steps=n_steps,
+      n_bootstraps=n_bootstraps,
+    )
 
-  normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
-  true_pdf = pdf.(
-    Ref(normal_distro),
-    eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
-  )
+    normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
+    true_pdf = pdf.(
+      Ref(normal_distro),
+      eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
+    )
 
-  # if n_dims == 1
-  #   p = plot(grid_ranges[1], true_pdf, label="PDF", dpi=300)
-  #   plot!(p, grid_ranges[1], kde.density, label="KDE")
-  #   savefig(p, "kde_vs_true_pdf_1d.png")
-  # end
+    # p = plot(grid_ranges[1], true_pdf, label="PDF", dpi=300)
+    # plot!(p, grid_ranges[1], kde.density, label="KDE")
+    # savefig(p, "kde_vs_true_pdf.png")
 
-  dv = prod(step.(grid_ranges))
-  mise = dv * sum((kde.density .- true_pdf) .^ 2)
+    dv = prod(step.(grid_ranges))
+    mise = dv * sum((kde.density .- true_pdf) .^ 2)
 
-  # TODO: Give a more appropriate tolerance for the integrated squared error
-  @test_broken mise < 0.1
+    # TODO: Give a more appropriate tolerance for the integrated squared error
+    @test mise < 0.1
+  end
 end

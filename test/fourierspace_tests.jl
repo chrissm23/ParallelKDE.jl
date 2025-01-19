@@ -61,10 +61,11 @@ end
 
     density_initialization, density_initialization_squared = initialize_density(data, grid)
 
-    sk0, s2k0 = initialize_fourier_statistics(density_initialization, density_initialization_squared)
-    means, variances = ifft_statistics(sk0, s2k0, n_samples)
-    means = dropdims(means, dims=1)
-    variances = dropdims(variances, dims=1)
+    tmp = Array{ComplexF64}(undef, 1, size(grid)...)
+    sk0, s2k0 = initialize_fourier_statistics(density_initialization, density_initialization_squared, tmp)
+    ifft_statistics!(sk0, s2k0, n_samples, tmp=tmp)
+    means = dropdims(sk0, dims=1)
+    variances = dropdims(s2k0, dims=1)
 
     means_test, variances_test = calculate_means_variances(data, grid)
     means_test = dropdims(means_test, dims=1)
@@ -87,12 +88,13 @@ if CUDA.functional()
       density_initialization_d = CuArray{Float32}(density_initialization)
       density_initialization_squared_d = CuArray{Float32}(density_initialization_squared)
 
+      tmp = CuArray{ComplexF32}(undef, 1, size(grid)...)
       sk0_d, s2k0_d = initialize_fourier_statistics(
-        density_initialization_d, density_initialization_squared_d
+        density_initialization_d, density_initialization_squared_d, tmp
       )
-      means_d, variances_d = ifft_statistics(sk0_d, s2k0_d, n_samples)
-      means = dropdims(Array{Float32}(means_d), dims=1)
-      variances = dropdims(Array{Float32}(variances_d), dims=1)
+      ifft_statistics!(sk0_d, s2k0_d, n_samples, tmp=tmp)
+      means = dropdims(Array{Float32}(sk0_d), dims=1)
+      variances = dropdims(Array{Float32}(s2k0_d), dims=1)
 
       means_test, variances_test = calculate_means_variances(data, grid)
       means_test = dropdims(Array{Float32}(means_test), dims=1)
@@ -117,7 +119,8 @@ end
 
     density_initialization, density_initialization_squared = initialize_density(data, grid)
 
-    sk0, s2k0 = initialize_fourier_statistics(density_initialization, density_initialization_squared)
+    tmp = Array{ComplexF64}(undef, 1, size(grid)...)
+    sk0, s2k0 = initialize_fourier_statistics(density_initialization, density_initialization_squared, tmp)
     means_t = similar(sk0)
     variances_t = similar(s2k0)
 
@@ -131,9 +134,9 @@ end
       time,
       time_initial
     )
-    means, variances = ifft_statistics(means_t, variances_t, n_samples)
-    means = dropdims(means, dims=1)
-    variances = dropdims(variances, dims=1)
+    ifft_statistics!(means_t, variances_t, n_samples, tmp=tmp)
+    means = dropdims(means_t, dims=1)
+    variances = dropdims(variances_t, dims=1)
 
     time_bandwidth = SMatrix{n_dims,n_dims,Float64}(
       diagm(time)
@@ -163,8 +166,9 @@ if CUDA.functional()
       density_initialization_d = CuArray{Float32}(density_initialization)
       density_initialization_squared_d = CuArray{Float32}(density_initialization_squared)
 
+      tmp = CuArray{ComplexF32}(undef, 1, size(grid)...)
       sk0_d, s2k0_d = initialize_fourier_statistics(
-        density_initialization_d, density_initialization_squared_d
+        density_initialization_d, density_initialization_squared_d, tmp
       )
       means_t_d = similar(sk0_d)
       variances_t_d = similar(s2k0_d)
@@ -179,9 +183,9 @@ if CUDA.functional()
         time,
         time_initial
       )
-      means_d, variances_d = ifft_statistics(means_t_d, variances_t_d, n_samples)
-      means = dropdims(Array{Float32}(means_d), dims=1)
-      variances = dropdims(Array{Float32}(variances_d), dims=1)
+      ifft_statistics!(means_t_d, variances_t_d, n_samples, tmp=tmp)
+      means = dropdims(Array{Float32}(means_t_d), dims=1)
+      variances = dropdims(Array{Float32}(variances_t_d), dims=1)
 
       time_bandwidth = SMatrix{n_dims,n_dims,Float64}(
         diagm(Array{Float32}(time))

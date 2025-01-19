@@ -1,5 +1,7 @@
 module FourierSpace
 
+using LinearAlgebra
+
 using StaticArrays,
   FFTW,
   CUDA
@@ -7,58 +9,65 @@ using StaticArrays,
 using CUDA: i32
 
 export initialize_fourier_statistics,
-  ifft_statistics,
+  ifft_statistics!,
   propagate_statistics!
 
 function initialize_fourier_statistics(
-  dirac_series::Array{T,M},
-  dirac_series_squared::Array{T,M}
+  dirac_series::AbstractArray{T,M},
+  dirac_series_squared::AbstractArray{T,M},
+  tmp::AbstractArray{Complex{T},M}
 ) where {T<:Real,M}
-  N = M - 1
-  if N < 1
+  if M < 2
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  sk_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
-  s2k_0 = fftshift(fft(dirac_series_squared, 2:N+1), 2:N+1)
+  tmp .= fft(dirac_series, 2:M)
+  sk_0 = fftshift(tmp, 2:M)
+
+  tmp .= fft(dirac_series_squared, 2:M)
+  s2k_0 = fftshift(tmp, 2:M)
 
   return sk_0, s2k_0
 end
 function initialize_fourier_statistics(
-  dirac_series::Array{T,M},
+  dirac_series::AbstractArray{T,M},
+  tmp::AbstractArray{Complex{T},M}
 ) where {T<:Real,M}
-  N = M - 1
-  if N < 1
+  if M < 2
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  sk_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
+  tmp .= fft(dirac_series, 2:M)
+  sk_0 = fftshift(tmp, 2:M)
 
   return sk_0
 end
 function initialize_fourier_statistics(
   dirac_series::AnyCuArray{T,M},
-  dirac_series_squared::AnyCuArray{T,M}
+  dirac_series_squared::AnyCuArray{T,M},
+  tmp::AnyCuArray{Complex{T},M}
 ) where {T<:Real,M}
-  N = M - 1
-  if N < 1
+  if M < 2
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  sk_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
-  s2k_0 = fftshift(fft(dirac_series_squared, 2:N+1), 2:N+1)
+  tmp .= fft(dirac_series, 2:M)
+  sk_0 = fftshift(tmp, 2:M)
+
+  tmp .= fft(dirac_series_squared, 2:M)
+  s2k_0 = fftshift(tmp, 2:M)
 
   return sk_0, s2k_0
 end
 function initialize_fourier_statistics(
   dirac_series::AnyCuArray{T,M},
 ) where {T<:Real,M}
-  N = M - 1
-  if N < 1
+  if M < 2
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  sk_0 = fftshift(fft(dirac_series, 2:N+1), 2:N+1)
+  tmp = fft(dirac_series, 2:M)
+  sk_0 = fftshift(tmp, 2:M)
 
   return sk_0
 end
@@ -222,7 +231,9 @@ function propagate_statistics!(
   time::CuVector{<:Real},
   time_initial::CuVector{<:Real},
 ) where {T<:Real,S<:Real,M}
-  n_points = prod(size(means_t)[2:end])
+  n_points = prod(size(means_t))
+  time_squared = time .^ 2
+  time_initial_squared = time_initial .^ 2
 
   kernel = @cuda launch = false propagate_time_gpu!(
     means_t,
@@ -230,8 +241,8 @@ function propagate_statistics!(
     means_0,
     variances_0,
     grid_array,
-    time,
-    time_initial
+    time_squared,
+    time_initial_squared
   )
 
   config = launch_configuration(kernel.fun)
@@ -245,8 +256,8 @@ function propagate_statistics!(
       means_0,
       variances_0,
       grid_array,
-      time,
-      time_initial;
+      time_squared,
+      time_initial_squared;
       threads,
       blocks
     )
@@ -261,7 +272,7 @@ function propagate_statistics!(
   grid_array::AnyCuArray{S,M},
   time::CuVector{<:Real},
 ) where {T<:Real,S<:Real,M}
-  n_points = prod(size(means_t)[2:end])
+  n_points = prod(size(means_t))
   time_squared = time .^ 2
 
   kernel = @cuda launch = false propagate_time_gpu!(
@@ -295,8 +306,8 @@ function propagate_time_gpu!(
   means_0::CuDeviceArray{Complex{T},M},
   variances_0::CuDeviceArray{Complex{T},M},
   grid_array::CuDeviceArray{S,M},
-  time::CuDeviceVector{<:Real},
-  time_initial::CuDeviceVector{<:Real},
+  time_squared::CuDeviceVector{<:Real},
+  time_initial_squared::CuDeviceVector{<:Real},
 ) where {T<:Real,S<:Real,M}
   N = M - 1i32
   idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
@@ -319,20 +330,19 @@ function propagate_time_gpu!(
   )
   cartesian_idx = Tuple(cartesian_indices[point_idx])
 
-  exponent = 0.0f0
-  det_t0 = 1.0f0
-  det_t = 1.0f0
+  propagator_mean = 1.0f0
   i = 1i32
   while i <= N
     grid_index = (i, cartesian_idx...)
-    @inbounds exponent += (grid_array[grid_index...] * time[i])^2i32
-    @inbounds det_t0 *= time_initial[i]^2i32
-    @inbounds det_t *= time[i]^2i32
+    @inbounds propagator_mean *= exp(
+      -0.5f0 * grid_array[grid_index...]^2i32 * time_squared[i]
+    )
 
     i += 1i32
   end
 
-  propagator_mean = exp(-0.5f0 * exponent)
+  det_t = prod(time_squared)
+  det_t0 = prod(time_initial_squared)
   propagator_variance = sqrt(det_t0) * sqrt(propagator_mean) / sqrt(det_t + det_t0)
 
   array_index = (bootstrap_idx, cartesian_idx...)
@@ -383,79 +393,119 @@ function propagate_time_gpu!(
   return
 end
 
-function ifft_statistics(
-  sk::Array{Complex{T},M},
-  s2k::Array{Complex{T},M},
+function ifft_statistics!(
+  sk::AbstractArray{Complex{T},M},
+  s2k::AbstractArray{Complex{T},M},
   n_samples::Integer;
+  tmp::AbstractArray{Complex{T},M}=similar(sk),
+  bootstraps_dim::Bool=false
 ) where {T<:Real,M}
-  N = M - 1
-  if N < 1
+  if ((M < 2) && bootstraps_dim) || ((M < 1) && !bootstraps_dim)
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  s = abs.(ifft(ifftshift(sk, 2:N+1), 2:N+1))
-  s2 = abs.(ifft(ifftshift(s2k, 2:N+1), 2:N+1))
+  if bootstraps_dim
+    ifftshift!(tmp, sk, 2:M)
+    sk .= ifft(tmp, 2:M)
+    ifftshift!(tmp, s2k, 2:M)
+    s2k .= ifft(tmp, 2:M)
+  else
+    ifftshift!(tmp, sk)
+    sk .= ifft(tmp)
+    ifftshift!(tmp, s2k)
+    s2k .= ifft(tmp)
+  end
 
-  means = s ./ n_samples
-  variances = (s2 ./ n_samples) .- means .^ 2
+  @. sk = abs(sk) / n_samples
+  @. s2k = (abs(s2k) / n_samples) - sk^2
 
-  return means, variances
+  return nothing
 end
-function ifft_statistics(
-  sk::Array{Complex{T},M},
-  s2k::Array{Complex{T},M},
+function ifft_statistics!(
+  sk::AbstractArray{Complex{T},M},
+  s2k::AbstractArray{Complex{T},M},
   n_samples::Integer,
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}};
+  tmp::AbstractArray{Complex{T},M}=similar(sk),
+  bootstraps_dim::Bool=false
 ) where {T<:Real,M}
-  N = M - 1
-  if N < 1
+  if ((M < 2) && bootstraps_dim) || ((M < 1) && !bootstraps_dim)
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  s = abs.(ifft_plan * ifftshift(sk, 2:N+1))
-  s2 = abs.(ifft_plan * ifftshift(s2k, 2:N+1))
+  if bootstraps_dim
+    ifftshift!(tmp, sk, 2:M)
+    sk .= ifft_plan * tmp
+    ifftshift!(tmp, s2k, 2:M)
+    s2k .= ifft_plan * tmp
+  else
+    ifftshift!(tmp, sk)
+    sk .= ifft_plan * tmp
+    ifftshift!(tmp, s2k)
+    s2k .= ifft_plan * tmp
+  end
 
-  means = s ./ n_samples
-  variances = (s2 ./ n_samples) .- means .^ 2
+  @. sk = abs(sk) / n_samples
+  @. s2k = (abs(s2k) / n_samples) - sk^2
 
-  return means, variances
+  return nothing
 end
-function ifft_statistics(
+function ifft_statistics!(
   sk::AnyCuArray{Complex{T},M},
   s2k::AnyCuArray{Complex{T},M},
   n_samples::Integer;
+  tmp::AnyCuArray{Complex{T},M}=similar(sk),
+  bootstraps_dim::Bool=false
 ) where {T<:Real,M}
-  N = M - 1
-  if N < 1
+  if ((M < 2) && bootstraps_dim) || ((M < 1) && !bootstraps_dim)
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  s = abs.(ifft(ifftshift(sk, 2:N+1), 2:N+1))
-  s2 = abs.(ifft(ifftshift(s2k, 2:N+1), 2:N+1))
+  if bootstraps_dim
+    ifftshift!(tmp, sk, 2:M)
+    sk .= ifft(tmp, 2:M)
+    ifftshift!(tmp, s2k, 2:M)
+    s2k .= ifft(tmp, 2:M)
+  else
+    ifftshift!(tmp, sk)
+    sk .= ifft(tmp)
+    ifftshift!(tmp, s2k)
+    s2k .= ifft(tmp)
+  end
 
-  means = s ./ n_samples
-  variances = (s2 ./ n_samples) .- means .^ 2
+  @. sk = abs(sk) / n_samples
+  @. s2k = (abs(s2k) / n_samples) - sk^2
 
-  return means, variances
+  return nothing
 end
-function ifft_statistics(
+function ifft_statistics!(
   sk::AnyCuArray{Complex{T},M},
   s2k::AnyCuArray{Complex{T},M},
   n_samples::Integer,
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}};
+  tmp::AnyCuArray{Complex{T},M}=similar(sk),
+  bootstraps_dim::Bool=false
 ) where {T<:Real,M}
-  N = M - 1
-  if N < 1
+  if ((M < 2) && bootstraps_dim) || ((M < 1) && !bootstraps_dim)
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  s = abs.(ifft_plan * ifftshift(sk, 2:N+1))
-  s2 = abs.(ifft_plan * ifftshift(s2k, 2:N+1))
+  if bootstraps_dim
+    ifftshift!(tmp, sk, 2:M)
+    mul!(sk, ifft_plan, tmp)
+    ifftshift!(tmp, s2k, 2:M)
+    mul!(s2k, ifft_plan, tmp)
+  else
+    ifftshift!(tmp, sk)
+    mul!(sk, ifft_plan, tmp)
+    ifftshift!(tmp, s2k)
+    mul!(s2k, ifft_plan, tmp)
+  end
 
-  means = s ./ n_samples
-  variances = (s2 ./ n_samples) .- means .^ 2
+  @. sk = abs(sk) / n_samples
+  @. s2k = (abs(s2k) / n_samples) - sk^2
 
-  return means, variances
+  return nothing
 end
 
 end

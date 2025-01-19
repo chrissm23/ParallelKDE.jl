@@ -110,11 +110,15 @@ function find_density!(
   threshold::Real;
   method::Symbol=:serial
 )::Nothing where {N,T<:Real,S<:Real,M}
-  means_0, variances_0 = initialize_statistics(kde, n_bootstraps, method)
-  density_0, var_0 = initialize_distribution(kde, method)
+  n_samples = get_nsamples(kde)
 
-  ifft_plan_multi = plan_ifft!(means_0, 2:N+1)
-  ifft_plan_single = plan_ifft!(selectdim(means_0, 1, 1), 1:N)
+  fourier_tmp = Array{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
+
+  means_0, variances_0 = initialize_statistics(kde, n_bootstraps, method, tmp=fourier_tmp)
+  density_0, var_0 = initialize_distribution(kde, method, tmp=selectdim(fourier_tmp, 1, 1))
+
+  ifft_plan_multi = plan_ifft(means_0, 2:N+1)
+  ifft_plan_single = plan_ifft(selectdim(means_0, 1, 1))
 
   fourier_grid = fftgrid(kde.grid)
   fourier_grid_array = get_coordinates(fourier_grid)
@@ -139,16 +143,23 @@ function find_density!(
       dst_mean=means_dst,
       dst_var=variances_dst,
     )
+    ifft_statistics!(
+      means_bootstraps,
+      variances_bootstraps,
+      n_samples,
+      ifft_plan_multi,
+      tmp=fourier_tmp,
+      bootstraps_dim=true
+    )
 
     vmr_variance = calculate_statistics!(
       means_bootstraps,
       variances_bootstraps,
-      ifft_plan_multi,
       method,
-      dst_vmr=selectdim(variances_dst, 1, 1)
+      dst_vmr=selectdim(variances_dst, 1, 1),
     )
 
-    mean_complete, variance_complete = propagate_bandwidth!(
+    means_complete, variances_complete = propagate_bandwidth!(
       reshape(density_0, 1, size(density_0)...),
       reshape(var_0, 1, size(var_0)...),
       fourier_grid_array,
@@ -158,17 +169,26 @@ function find_density!(
       dst_mean=reshape(selectdim(means_dst, 1, 1), 1, size(means_dst)[2:end]...),
       dst_var=reshape(selectdim(means_dst, 1, 2), 1, size(means_dst)[2:end]...),
     )
-    mean_complete = dropdims(mean_complete, dims=1)
-    variance_complete = dropdims(variance_complete, dims=1)
+    means_complete = dropdims(means_complete, dims=1)
+    variances_complete = dropdims(variances_complete, dims=1)
+
+    ifft_statistics!(
+      means_complete,
+      variances_complete,
+      n_samples,
+      ifft_plan_single,
+      tmp=selectdim(fourier_tmp, 1, 1),
+      bootstraps_dim=false
+    )
 
     assign_density!(
       kde,
-      mean_complete,
-      variance_complete,
+      means_complete,
+      variances_complete,
       vmr_variance,
       time,
+      time_initial,
       threshold,
-      ifft_plan_single,
       method,
       dst_var_products=vmr_variance
     )
@@ -180,7 +200,6 @@ function find_density!(
 
   return nothing
 end
-# FIXME: Implement a better way to dispatch CuArrays and their subarrays (using AnyCuArray)
 function find_denisty!(
   ::IsGPUKDE,
   kde::CuKDE{N,T,S,M},
@@ -188,11 +207,15 @@ function find_denisty!(
   n_bootstraps::Integer,
   threshold::Real;
 )::Nothing where {N,T<:Real,S<:Real,M}
-  means_0, variances_0 = initialize_statistics(kde, n_bootstraps)
-  density_0, var_0 = initialize_distribution(kde)
+  n_samples = get_nsamples(kde)
 
-  ifft_plan_multi = plan_ifft!(means_0, 2:N+1)
-  ifft_plan_single = plan_ifft!(selectdim(means_0, 1, 1), 1:N)
+  fourier_tmp = CuArray{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
+
+  means_0, variances_0 = initialize_statistics(kde, n_bootstraps, tmp=fourier_tmp)
+  density_0, var_0 = initialize_distribution(kde, tmp=selectdim(fourier_tmp, 1, 1))
+
+  ifft_plan_multi = plan_ifft(means_0, 2:N+1)
+  ifft_plan_single = plan_ifft(selectdim(means_0, 1, 1))
 
   fourier_grid = fftgrid(kde.grid)
   fourier_grid_array = get_coordinates(fourier_grid)
@@ -220,12 +243,19 @@ function find_denisty!(
       dst_mean=means_dst,
       dst_var=variances_dst,
     )
+    ifft_statistics!(
+      means_bootstraps,
+      variances_bootstraps,
+      n_samples,
+      ifft_plan_multi,
+      tmp=fourier_tmp,
+      bootstraps_dim=true
+    )
 
     vmr_variance = calculate_statistics!(
       means_bootstraps,
       variances_bootstraps,
-      ifft_plan_multi,
-      dst_vmr=selectdim(variances_dst, 1, 1)
+      dst_vmr=selectdim(variances_dst, 1, 1),
     )
 
     means_complete, variances_complete = propagate_bandwidth!(
@@ -240,6 +270,15 @@ function find_denisty!(
     means_complete = dropdims(means_complete, dims=1)
     variances_complete = dropdims(variances_complete, dims=1)
 
+    ifft_statistics!(
+      means_complete,
+      variances_complete,
+      n_samples,
+      ifft_plan_single,
+      tmp=selectdim(fourier_tmp, 1, 1),
+      bootstraps_dim=false
+    )
+
     assign_density!(
       kde,
       means_complete,
@@ -247,7 +286,6 @@ function find_denisty!(
       vmr_variance,
       time,
       threshold,
-      ifft_plan_single,
       dst_var_products=vmr_variance
     )
 
@@ -262,7 +300,8 @@ end
 function initialize_statistics(
   kde::KDE{N,T,S,M},
   n_bootstraps::Integer,
-  method::Symbol
+  method::Symbol;
+  tmp::AbstractArray{Complex{T},M}=Array{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
 )::NTuple{2,Array{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
   dirac_series, dirac_series_squared = initialize_dirac_series(
     Val(method),
@@ -270,13 +309,14 @@ function initialize_statistics(
     n_bootstraps=n_bootstraps,
     calculate_squared=true
   )
-  sk_0, s2k_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
+  sk_0, s2k_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared, tmp)
 
   return sk_0, s2k_0
 end
 function initialize_statistics(
   kde::CuKDE{N,T,S,M},
-  n_bootstraps::Integer,
+  n_bootstraps::Integer;
+  tmp::AnyCuArray{Complex{T},M}=CuArray{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
 )::NTuple{2,AnyCuArray{Complex{T},N + 1}} where {N,T<:Real,S<:Real,M}
   dirac_series, dirac_series_squared = initialize_dirac_series(
     Val(:cuda),
@@ -284,25 +324,30 @@ function initialize_statistics(
     n_bootstraps=n_bootstraps,
     calculate_squared=true
   )
-  s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
+  s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared, tmp)
 
   return s_0, s2_0
 end
 
 function initialize_distribution(
-  kde::KDE{N,T,S,M}, method::Symbol
+  kde::KDE{N,T,S,M},
+  method::Symbol;
+  tmp::AbstractArray{Complex{T},N}=Array{Complex{T},N}(undef, size(kde.grid))
 )::NTuple{2,Array{Complex{T},N}} where {N,T<:Real,S<:Real,M}
   dirac_series, dirac_series_squared = initialize_dirac_series(
     Val(method),
     kde,
     calculate_squared=true
   )
-  s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
+  s_0, s2_0 = initialize_fourier_statistics(
+    dirac_series, dirac_series_squared, reshape(tmp, 1, size(tmp)...)
+  )
 
   return dropdims(s_0, dims=1), dropdims(s2_0, dims=1)
 end
 function initialize_distribution(
-  kde::CuKDE{N,T,S,M}
+  kde::CuKDE{N,T,S,M};
+  tmp::AnyCuArray{Complex{T},N}=CuArray{Complex{T},N}(undef, size(kde.grid))
 )::NTuple{2,AnyCuArray{Complex{T},N}} where {N,T<:Real,S<:Real,M}
   dirac_series, dirac_series_squared = initialize_dirac_series(
     Val(:cuda),
@@ -310,7 +355,7 @@ function initialize_distribution(
     calculate_squared=true
   )
 
-  s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared)
+  s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared, reshape(tmp, 1, size(tmp)...))
 
   return dropdims(s_0, dims=1), dropdims(s2_0, dims=1)
 end
@@ -364,32 +409,28 @@ end
 function calculate_statistics!(
   means_bootstraps::AbstractArray{Complex{T},M},
   variances_bootstraps::AbstractArray{Complex{T},M},
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
   method::Symbol;
-  dst_vmr::AbstractArray{Complex{T},N}=Array{Complex{T},M - 1}(undef, size(means_bootstraps))
+  dst_vmr::AbstractArray{Complex{T},N}=Array{Complex{T},M - 1}(undef, size(means_bootstraps)[2:end]),
 )::AbstractArray{T,N} where {N,T<:Real,M}
   vmr_variance = mean_var_vmr!(
     Val(method),
     means_bootstraps,
     variances_bootstraps,
-    ifft_plan,
-    dst_vmr
+    dst_vmr,
   )
 
   return vmr_variance
 end
 function calculate_statistics!(
   means_bootstraps::AnyCuArray{Complex{T},M},
-  variances_bootstraps::AnyCuArray{Complex{T},M},
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}};
-  dst_vmr::AnyCuArray{Complex{T},N}=CuArray{Complex{T},M - 1}(undef, size(means_bootstraps))
+  variances_bootstraps::AnyCuArray{Complex{T},M};
+  dst_vmr::AnyCuArray{Complex{T},N}=CuArray{Complex{T},M - 1}(undef, size(means_bootstraps)),
 )::AnyCuArray{T,N} where {N,T<:Real,M}
   vmr_variance = mean_var_vmr!(
     Val(:cuda),
     means_bootstraps,
     variances_bootstraps,
-    ifft_plan,
-    dst_vmr
+    dst_vmr,
   )
 
   return vmr_variance
@@ -401,8 +442,8 @@ function assign_density!(
   variance_complete::AbstractArray{Complex{T},N},
   vmr_variance::AbstractArray{T,N},
   time::AbstractVector{<:Real},
+  time_initial::AbstractVector{<:Real},
   threshold::Real,
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
   method::Symbol;
   dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(variance_complete))
 )::Nothing where {N,T<:Real,S<:Real,M}
@@ -411,12 +452,12 @@ function assign_density!(
     vmr_variance,
     variance_complete,
     time,
-    ifft_plan,
+    time_initial,
     dst_var_products
   )
 
   assign_converged_density!(
-    Val(method), kde.density, mean_complete, variance_products, threshold, ifft_plan
+    Val(method), kde.density, mean_complete, variance_products, threshold
   )
 
   kde.t .= time
@@ -429,8 +470,7 @@ function assign_density!(
   variance_complete::AnyCuArray{Complex{T},N},
   vmr_variance::AnyCuArray{T,N},
   time::CuVector{<:Real},
-  threshold::Real,
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}};
+  threshold::Real;
   dst_var_products::AnyCuArray{Complex{T},N}=CuArray{Complex{T},N}(undef, size(variance_complete))
 )::Nothing where {N,T<:Real,S<:Real,M}
   variance_products = calculate_variance_products!(
@@ -438,12 +478,11 @@ function assign_density!(
     vmr_variance,
     variance_complete,
     time,
-    ifft_plan,
     dst_var_products
   )
 
   assign_converged_density!(
-    Val(:cuda), kde.density, mean_complete, variance_products, threshold, ifft_plan
+    Val(:cuda), kde.density, mean_complete, variance_products, threshold
   )
 
   kde.t .= time
