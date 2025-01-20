@@ -380,7 +380,7 @@ function mean_var_vmr!(
   dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
 
   # Variance with Inf will give NaN
-  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), Inf, dst_vmr_real)
+  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), NaN, dst_vmr_real)
 
   return dst_vmr_real
 end
@@ -403,7 +403,7 @@ function mean_var_vmr!(
   dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
 
   # Variance with Inf will give NaN
-  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), Inf, dst_vmr_real)
+  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), NaN, dst_vmr_real)
 
   return dst_vmr_real
 end
@@ -432,7 +432,7 @@ function mean_var_vmr!(
   dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
 
   # Variance with Inf will give NaN
-  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), Inf, dst_vmr_real)
+  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), NaN32, dst_vmr_real)
 
   return dst_vmr_real
 end
@@ -487,11 +487,12 @@ function calculate_variance_products!(
   vmr_variance::AnyCuArray{T,N},
   variance_complete::AnyCuArray{Complex{T},N},
   time::CuVector{<:Real},
+  time_initial::CuVector{<:Real},
   dst_var_products::AnyCuArray{T,N},
 ) where {N,T<:Real}
   var_real = selectdim(reinterpret(reshape, T, variance_complete), 1, 1)
 
-  det_t = prod(time .^ 2)
+  det_t = prod(time .^ 2 .+ time_initial .^ 2)
 
   dst_var_products .= vmr_variance .* var_real .* det_t^2
 
@@ -500,52 +501,61 @@ end
 
 function assign_converged_density!(
   ::Val{:serial},
-  dst::AbstractArray{T,N},
-  src::AbstractArray{Complex{T},N},
-  indicator::AbstractArray{T,N},
+  density::AbstractArray{T,N},
+  means::AbstractArray{Complex{T},N},
+  variance_products::AbstractArray{T,N},
   threshold::T,
-)::Nothing where {N,T<:Real}
-  src_real = selectdim(reinterpret(reshape, T, src), 1, 1)
+  distances_tmp::AbstractArray{T,M}
+)::Nothing where {N,T<:Real,M}
+  means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
 
-  @. dst = ifelse(
-    ((indicator < threshold) || isinf(indicator)) && !(isfinite(dst)),
-    src_real,
-    dst
-  )
+  selectdim(distances_tmp, 1, 2) .= selectdim(distances_tmp, 1, 1)
+  selectdim(distances_tmp, 1, 1) .= variance_products .- threshold
+
+  # density .= means_real
+
+  # println("n_over_threshold: ", count(variance_products .>= threshold))
 
   return nothing
 end
 function assign_converged_density!(
   ::Val{:threaded},
-  dst::AbstractArray{T,N},
-  src::AbstractArray{Complex{T},N},
-  indicator::AbstractArray{T,N},
+  density::AbstractArray{T,N},
+  means::AbstractArray{Complex{T},N},
+  variance_products::AbstractArray{T,N},
   threshold::T,
-)::Nothing where {N,T<:Real}
+  distances_tmp::AbstractArray{T,M}
+)::Nothing where {N,T<:Real,M}
   @warn "Threaded assignment of converged density not implemented. Using serial implementation."
   assign_converged_density!(
     Val{:serial},
-    dst,
-    src,
-    indicator,
+    density,
+    means,
+    variance_products,
     threshold,
+    distances_tmp
   )
 
   return nothing
 end
 function assign_converged_density!(
   ::Val{:cuda},
-  dst::AnyCuArray{T,N},
-  src::AnyCuArray{Complex{T},N},
-  indicator::AnyCuArray{T,N},
+  density::AnyCuArray{T,N},
+  means::AnyCuArray{Complex{T},N},
+  variance_products::AnyCuArray{T,N},
   threshold::T,
-)::Nothing where {N,T<:Real}
-  src_real = selectdim(reinterpret(reshape, T, src), 1, 1)
+  distances_tmp::AbstractArray{T,M}
+)::Nothing where {N,T<:Real,M}
+  means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
 
-  @. dst = ifelse(
-    ((indicator < threshold) || isinf(indicator)) && !(isfinite(dst)),
-    src_real,
-    dst
+  @. density = ifelse(
+    (
+      ((variance_products >= threshold) || isapprox(variances_real, 0.0, atol=1e-8))
+      &&
+      (!isnan(density) || isapprox(density, 0.0, atol=1e-8))
+    ),
+    means_real,
+    density
   )
 
   return nothing

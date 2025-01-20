@@ -110,8 +110,11 @@ function find_density!(
   threshold::Real;
   method::Symbol=:serial
 )::Nothing where {N,T<:Real,S<:Real,M}
+  print("\n")
+  println("Threshold: $threshold")
   n_samples = get_nsamples(kde)
 
+  convergence_tmp = fill(NaN, 2, size(kde.grid)...)
   fourier_tmp = Array{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
 
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps, method, tmp=fourier_tmp)
@@ -180,6 +183,7 @@ function find_density!(
       tmp=selectdim(fourier_tmp, 1, 1),
       bootstraps_dim=false
     )
+    means_complete .*= n_samples
 
     assign_density!(
       kde,
@@ -190,7 +194,8 @@ function find_density!(
       time_initial,
       threshold,
       method,
-      dst_var_products=vmr_variance
+      dst_var_products=vmr_variance,
+      distances_tmp=convergence_tmp
     )
 
     if time === times[end]
@@ -209,6 +214,7 @@ function find_denisty!(
 )::Nothing where {N,T<:Real,S<:Real,M}
   n_samples = get_nsamples(kde)
 
+  convergence_tmp = CUDA.fill(NaN32, 2, size(kde.grid)...)
   fourier_tmp = CuArray{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
 
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps, tmp=fourier_tmp)
@@ -278,6 +284,7 @@ function find_denisty!(
       tmp=selectdim(fourier_tmp, 1, 1),
       bootstraps_dim=false
     )
+    means_complete .*= n_samples
 
     assign_density!(
       kde,
@@ -285,8 +292,10 @@ function find_denisty!(
       variances_complete,
       vmr_variance,
       time,
+      time_initial,
       threshold,
-      dst_var_products=vmr_variance
+      dst_var_products=vmr_variance,
+      distances_tmp=convergence_tmp
     )
 
     if col == size(times, 2)
@@ -445,7 +454,8 @@ function assign_density!(
   time_initial::AbstractVector{<:Real},
   threshold::Real,
   method::Symbol;
-  dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(variance_complete))
+  dst_var_products::AbstractArray{T,N}=similar(vmr_variance),
+  distances_tmp::AbstractArray{T,M}=Array{T,N}(undef, 2, size(variance_complete)...)
 )::Nothing where {N,T<:Real,S<:Real,M}
   variance_products = calculate_variance_products!(
     Val(method),
@@ -457,7 +467,7 @@ function assign_density!(
   )
 
   assign_converged_density!(
-    Val(method), kde.density, mean_complete, variance_products, threshold
+    Val(method), kde.density, mean_complete, variance_products, threshold, distances_tmp
   )
 
   kde.t .= time
@@ -470,19 +480,22 @@ function assign_density!(
   variance_complete::AnyCuArray{Complex{T},N},
   vmr_variance::AnyCuArray{T,N},
   time::CuVector{<:Real},
+  time_initial::CuVector{<:Real},
   threshold::Real;
-  dst_var_products::AnyCuArray{Complex{T},N}=CuArray{Complex{T},N}(undef, size(variance_complete))
+  dst_var_products::AnyCuArray{T,N}=similar(vmr_variance),
+  distances_tmp::AnyCuArray{T,M}=CuArray{T,N}(undef, 2, size(variance_complete)...)
 )::Nothing where {N,T<:Real,S<:Real,M}
   variance_products = calculate_variance_products!(
     Val(:cuda),
     vmr_variance,
     variance_complete,
     time,
+    time_initial,
     dst_var_products
   )
 
   assign_converged_density!(
-    Val(:cuda), kde.density, mean_complete, variance_products, threshold
+    Val(:cuda), kde.density, mean_complete, variance_products, threshold, distances_tmp
   )
 
   kde.t .= time
@@ -541,17 +554,17 @@ end
 
 function get_smoothness(smoothness::Real, n_samples::Integer, n_dims::Int)
   if smoothness === nothing
-    smoothness = 1.0
+    smoothness = 1 / 150
   elseif smoothness < 0.0
     throw(ArgumentError("Smoothness must be positive."))
   end
-  threshold = smoothness / optimal_threshold(n_samples, n_dims)
+  threshold = smoothness * optimal_threshold(n_samples, n_dims)
 
   return threshold
 end
 
 function optimal_threshold(n_samples::Integer, n_dims::Int)
-  return (2^n_dims - 3^(n_dims / 2)) * 2^(3n_dims - 1) * π^(2n_dims) * Float64(n_samples)^5
+  return 1 / ((2^n_dims - 3^(n_dims / 2)) * 2^(3n_dims - 1) * π^(2n_dims) * Float64(n_samples)^5)
 end
 
 function get_available_memory(::IsCPUKDE)
