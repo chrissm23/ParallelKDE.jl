@@ -509,12 +509,24 @@ function assign_converged_density!(
 )::Nothing where {N,T<:Real,M}
   means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
 
-  selectdim(distances_tmp, 1, 2) .= selectdim(distances_tmp, 1, 1)
-  selectdim(distances_tmp, 1, 1) .= variance_products .- threshold
+  current_diff = selectdim(distances_tmp, 1, 1)
+  previous_diff = selectdim(distances_tmp, 1, 2)
 
-  # density .= means_real
+  @. previous_diff = current_diff
+  @. current_diff = variance_products - threshold
 
-  # println("n_over_threshold: ", count(variance_products .>= threshold))
+  # @. density = ifelse(
+  #   (current_diff > previous_diff) || ((current_diff <= previous_diff) & (previous_diff > 0)),
+  #   means_real,
+  #   density
+  # )
+  @. density = ifelse(
+    abs(current_diff) < abs(previous_diff),
+    means_real,
+    density
+  )
+
+  println("n_nans: ", count(isnan, density))
 
   return nothing
 end

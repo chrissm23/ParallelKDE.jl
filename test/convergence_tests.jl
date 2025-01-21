@@ -267,6 +267,7 @@
 @testset "Testing product of variances (CPU)" for n_dims in 1:1
   n_samples = 100
   n_bootstraps = 100
+  Random.seed!(1234)
 
   @testset "Dimensions: $n_dims" begin
     data = generate_samples(n_samples, n_dims)
@@ -274,14 +275,14 @@
     grid_ranges = fill(-5.0:0.005:5.0, n_dims)
     grid = Grid(grid_ranges)
 
-    adjustable_factor = 1 / 150
+    adjustable_factor = 1 / 50
     threshold_factor = 1 / (
       2^(3n_dims - 1) * Float64(n_samples)^5 * π^(2n_dims) * (2^n_dims - 3^(n_dims / 2))
     )
     threshold_line = fill(adjustable_factor * threshold_factor, length.(grid_ranges)...)
     println("Threshold test: $(threshold_line[1])")
 
-    p = plot(grid_ranges[1], threshold_line, label="Threshold", dpi=300, lc=:black, ylimits=(1e-20, 1e-10), yaxis=:log)
+    p = plot(grid_ranges[1], threshold_line, label="Threshold", dpi=300, lc=:black, ylimits=(1e-20, 1e-10), yaxis=:log, legend=false)
 
     kde = initialize_kde(data, grid_ranges, :cpu)
     t0 = Grids.initial_bandwidth(grid)
@@ -299,7 +300,7 @@
     # I think it would work to set the density if the variance is ≈ 0 but allow to
     # modify it if at some point the variance is not 0.
 
-    dts = collect(0.0:0.02:0.5)
+    dts = collect(0.0:0.1:2.0)
     # dts = collect(0.0:0.16:2.0)
     for dt_scalar in dts
       dt = fill(dt_scalar, n_dims)
@@ -364,6 +365,7 @@ end
 
 @testset "Testing results (CPU)" for n_dims in 1:1
   n_samples = 100
+  Random.seed!(1234)
   @testset "dimensions: $n_dims" begin
     data = generate_samples(n_samples, n_dims)
 
@@ -372,14 +374,14 @@ end
 
     kde = initialize_kde(data, grid_ranges, :cpu)
     dt = 0.02
-    n_steps = 26
+    n_steps = 101
     n_bootstraps = 100
     fit_kde!(
       kde,
       dt=dt,
       n_steps=n_steps,
       n_bootstraps=n_bootstraps,
-      smoothness=1 / 150
+      smoothness=1 / 50
     )
 
     normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
@@ -388,9 +390,9 @@ end
       eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
     )
 
-    # p2 = plot(grid_ranges[1], true_pdf, label="PDF", dpi=300)
-    # plot!(p2, grid_ranges[1], kde.density, label="KDE")
-    # savefig(p2, "kde.png")
+    p2 = plot(grid_ranges[1], true_pdf, label="PDF", dpi=300)
+    plot!(p2, grid_ranges[1], kde.density, label="KDE")
+    savefig(p2, "kde.png")
 
     dv = prod(step.(grid_ranges))
     mise = dv * sum((kde.density .- true_pdf) .^ 2)

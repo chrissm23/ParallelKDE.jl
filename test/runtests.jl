@@ -8,7 +8,8 @@ using Test
 using Aqua
 
 using Statistics,
-  LinearAlgebra
+  LinearAlgebra,
+  Random
 
 using StaticArrays,
   FFTW,
