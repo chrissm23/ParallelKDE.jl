@@ -419,7 +419,10 @@ function ifft_statistics!(
   @. sk = abs(sk) / n_samples
   @. s2k = (abs(s2k) / n_samples) - sk^2
 
-  return nothing
+  means = selectdim(reinterpret(reshape, T, sk), 1, 1)
+  variances = selectdim(reinterpret(reshape, T, s2k), 1, 1)
+
+  return means, variances
 end
 function ifft_statistics!(
   sk::AbstractArray{Complex{T},M},
@@ -448,7 +451,10 @@ function ifft_statistics!(
   @. sk = abs(sk) / n_samples
   @. s2k = (abs(s2k) / n_samples) - sk^2
 
-  return nothing
+  means = selectdim(reinterpret(reshape, T, sk), 1, 1)
+  variances = selectdim(reinterpret(reshape, T, s2k), 1, 1)
+
+  return means, variances
 end
 function ifft_statistics!(
   sk::AnyCuArray{Complex{T},M},
@@ -476,7 +482,10 @@ function ifft_statistics!(
   @. sk = abs(sk) / n_samples
   @. s2k = (abs(s2k) / n_samples) - sk^2
 
-  return nothing
+  means = selectdim(reinterpret(reshape, T, sk), 1, 1)
+  variances = selectdim(reinterpret(reshape, T, s2k), 1, 1)
+
+  return means, variances
 end
 function ifft_statistics!(
   sk::AnyCuArray{Complex{T},M},
@@ -505,7 +514,10 @@ function ifft_statistics!(
   @. sk = abs(sk) / n_samples
   @. s2k = (abs(s2k) / n_samples) - sk^2
 
-  return nothing
+  means = selectdim(reinterpret(reshape, T, sk), 1, 1)
+  variances = selectdim(reinterpret(reshape, T, s2k), 1, 1)
+
+  return means, variances
 end
 
 end

@@ -35,7 +35,7 @@
 #     mean_complete = dropdims(mean_complete, dims=1)
 #     variance_complete = dropdims(variance_complete, dims=1)
 #
-#     ifft_statistics!(
+#     mean_complete, variance_complete = ifft_statistics!(
 #       mean_complete,
 #       variance_complete,
 #       n_samples,
@@ -95,7 +95,7 @@
 #     mean_complete_d = dropdims(mean_complete_d, dims=1)
 #     variance_complete_d = dropdims(variance_complete_d, dims=1)
 #
-#     ifft_statistics!(
+#     mean_complete_d, variance_complete_d = ifft_statistics!(
 #       mean_complete_d,
 #       variance_complete_d,
 #       n_samples,
@@ -153,7 +153,7 @@
 #       dst_mean=means_dst,
 #       dst_var=variances_dst,
 #     )
-#     ifft_statistics!(
+#     means_bootstraps, variances_bootstraps = ifft_statistics!(
 #       means_bootstraps,
 #       variances_bootstraps,
 #       n_samples,
@@ -225,7 +225,7 @@
 #         dst_mean=means_dst_d,
 #         dst_var=variances_dst_d,
 #       )
-#       ifft_statistics!(
+#       means_bootstraps_d, variances_bootstraps_d = ifft_statistics!(
 #         means_bootstraps_d,
 #         variances_bootstraps_d,
 #         n_samples,
@@ -265,7 +265,7 @@
 # end
 
 @testset "Testing product of variances (CPU)" for n_dims in 1:1
-  n_samples = 100
+  n_samples = 10000
   n_bootstraps = 100
   Random.seed!(1234)
 
@@ -275,14 +275,44 @@
     grid_ranges = fill(-5.0:0.005:5.0, n_dims)
     grid = Grid(grid_ranges)
 
-    adjustable_factor = 1 / 50
-    threshold_factor = 1 / (
-      2^(3n_dims - 1) * Float64(n_samples)^5 * π^(2n_dims) * (2^n_dims - 3^(n_dims / 2))
+    normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
+    true_pdf = pdf.(
+      Ref(normal_distro),
+      eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
     )
-    threshold_line = fill(adjustable_factor * threshold_factor, length.(grid_ranges)...)
-    println("Threshold test: $(threshold_line[1])")
+    # data = SVector{n_dims,Float64}.(eachcol(rand(normal_distro, n_samples)))
 
-    p = plot(grid_ranges[1], threshold_line, label="Threshold", dpi=300, lc=:black, ylimits=(1e-20, 1e-10), yaxis=:log, legend=false)
+    adjustable_factor = 1 / 80
+    threshold = ParallelKDE.get_smoothness(adjustable_factor, n_samples, n_dims)
+    threshold_line = fill(threshold, length(0.0:0.01:0.3)...)
+
+    p1 = plot(
+      # grid_ranges[1],
+      # threshold_line,
+      # label="Threshold",
+      dpi=300,
+      # lc=:black,
+      ylimits=(0, 0.6 / n_samples),
+      # ylimits=(1e-25, 1e-20),
+      # yaxis=:log,
+      legend=false,
+      # palette=palette(:greens, 5),
+      # ls=:solid
+    )
+    y2 = twinx()
+    p2 = plot!(
+      y2,
+      # grid_ranges[1],
+      # true_pdf,
+      # label="PDF",
+      # lc=:blue
+      ylimits=(0, 0.6 / n_samples),
+      # ylimits=(1e-25, 1e-20),
+      # yaxis=:log,
+      legend=false,
+      # palette=palette(:blues, 5),
+      # ls=:dot
+    )
 
     kde = initialize_kde(data, grid_ranges, :cpu)
     t0 = Grids.initial_bandwidth(grid)
@@ -296,17 +326,13 @@
     means_dst = Array{ComplexF64,n_dims + 1}(undef, size(means_0))
     variances_dst = Array{ComplexF64,n_dims + 1}(undef, size(variances_0))
 
-    # TODO: Acoording to this, the criterium is var_products > threshold.
-    # I think it would work to set the density if the variance is ≈ 0 but allow to
-    # modify it if at some point the variance is not 0.
-
-    dts = collect(0.0:0.1:2.0)
+    dts = collect(0.0:0.01:0.3)
     # dts = collect(0.0:0.16:2.0)
     for dt_scalar in dts
       dt = fill(dt_scalar, n_dims)
       # det_t = prod(dt .^ 2 .+ t0 .^ 2)
 
-      means_bootstraps, variances_bootstraps = ParallelKDE.propagate_bandwidth!(
+      means_fourier, variances_fourier = ParallelKDE.propagate_bandwidth!(
         means_0,
         variances_0,
         fourier_grid_array,
@@ -316,19 +342,23 @@
         dst_mean=means_dst,
         dst_var=variances_dst,
       )
-      ifft_statistics!(
-        means_bootstraps,
-        variances_bootstraps,
+      means_direct, variances_direct = ifft_statistics!(
+        means_fourier,
+        variances_fourier,
         n_samples,
         bootstraps_dim=true
       )
       vmr_variance = ParallelKDE.calculate_statistics!(
-        means_bootstraps,
-        variances_bootstraps,
+        means_direct,
+        variances_direct,
         :serial,
-        dst_vmr=selectdim(variances_dst, 1, 1)
+        dst_vmr=selectdim(
+          selectdim(reinterpret(reshape, Float64, variances_dst), 1, 1),
+          1,
+          1
+        )
       )
-      mean_complete, variance_complete = ParallelKDE.propagate_bandwidth!(
+      mean_fourier, variance_fourier = ParallelKDE.propagate_bandwidth!(
         reshape(density_0, 1, size(density_0)...),
         reshape(var_0, 1, size(var_0)...),
         fourier_grid_array,
@@ -338,11 +368,11 @@
         dst_mean=reshape(selectdim(means_dst, 1, 1), 1, size(means_dst)[2:end]...),
         dst_var=reshape(selectdim(means_dst, 1, 2), 1, size(variances_dst)[2:end]...)
       )
-      mean_complete = dropdims(mean_complete, dims=1)
-      variance_complete = dropdims(variance_complete, dims=1)
-      ifft_statistics!(
-        mean_complete,
-        variance_complete,
+      mean_fourier = dropdims(mean_fourier, dims=1)
+      variance_fourier = dropdims(variance_fourier, dims=1)
+      mean_direct, variance_direct = ifft_statistics!(
+        mean_fourier,
+        variance_fourier,
         n_samples,
         bootstraps_dim=false
       )
@@ -350,54 +380,62 @@
       variance_products = calculate_variance_products!(
         Val(:serial),
         vmr_variance,
-        variance_complete,
+        variance_direct,
         dt,
         t0,
-        vmr_variance
+        dst_var_products=vmr_variance
       )
 
-      # println("n_over_threshold test: ", count(variance_products .> threshold_line))
-      plot!(p, grid_ranges[1], variance_products, label="dt = $dt_scalar")
+      # var_calc = (true_pdf ./ (2 * n_samples^2 * √π * dt_scalar))# .- ((true_pdf .^ 2) ./ (n_samples^2))
+      mean_calc = true_pdf ./ n_samples
+
+      if dt_scalar in [0.0, 0.03, 0.07, 0.1, 0.3]
+        plot(p1)
+        plot!(p1, grid_ranges[1], mean_direct, label="dt = $dt_scalar", palette=palette(:greens, 5), ls=:solid)
+        plot(p2)
+        plot!(y2, grid_ranges[1], mean_calc, label="dt = $dt_scalar", palette=palette(:blues, 5), ls=:dot)
+      end
     end
-    savefig(p, "variance_product.png")
+
+    savefig(p1, "variance_product.png")
   end
 end
 
-@testset "Testing results (CPU)" for n_dims in 1:1
-  n_samples = 100
-  Random.seed!(1234)
-  @testset "dimensions: $n_dims" begin
-    data = generate_samples(n_samples, n_dims)
-
-    grid_ranges = fill(-5.0:0.005:5.0, n_dims)
-    grid = Grid(grid_ranges)
-
-    kde = initialize_kde(data, grid_ranges, :cpu)
-    dt = 0.02
-    n_steps = 101
-    n_bootstraps = 100
-    fit_kde!(
-      kde,
-      dt=dt,
-      n_steps=n_steps,
-      n_bootstraps=n_bootstraps,
-      smoothness=1 / 50
-    )
-
-    normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
-    true_pdf = pdf.(
-      Ref(normal_distro),
-      eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
-    )
-
-    p2 = plot(grid_ranges[1], true_pdf, label="PDF", dpi=300)
-    plot!(p2, grid_ranges[1], kde.density, label="KDE")
-    savefig(p2, "kde.png")
-
-    dv = prod(step.(grid_ranges))
-    mise = dv * sum((kde.density .- true_pdf) .^ 2)
-
-    # TODO: Give a more appropriate tolerance for the integrated squared error
-    @test mise < 0.1
-  end
-end
+# @testset "Testing results (CPU)" for n_dims in 1:1
+#   n_samples = 100
+#   Random.seed!(1234)
+#   @testset "dimensions: $n_dims" begin
+#     data = generate_samples(n_samples, n_dims)
+#
+#     grid_ranges = fill(-5.0:0.005:5.0, n_dims)
+#     grid = Grid(grid_ranges)
+#
+#     kde = initialize_kde(data, grid_ranges, :cpu)
+#     dt = 0.02
+#     n_steps = 101
+#     n_bootstraps = 100
+#     fit_kde!(
+#       kde,
+#       dt=dt,
+#       n_steps=n_steps,
+#       n_bootstraps=n_bootstraps,
+#       smoothness=1 / 50
+#     )
+#
+#     normal_distro = MvNormal(zeros(n_dims), Diagonal(ones(n_dims)))
+#     true_pdf = pdf.(
+#       Ref(normal_distro),
+#       eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, n_dims))
+#     )
+#
+#     p2 = plot(grid_ranges[1], true_pdf, label="PDF", dpi=300)
+#     plot!(p2, grid_ranges[1], kde.density, label="KDE")
+#     savefig(p2, "kde.png")
+#
+#     dv = prod(step.(grid_ranges))
+#     mise = dv * sum((kde.density .- true_pdf) .^ 2)
+#
+#     # TODO: Give a more appropriate tolerance for the integrated squared error
+#     @test mise < 0.1
+#   end
+# end

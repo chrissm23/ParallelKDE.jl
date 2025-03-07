@@ -363,9 +363,9 @@ end
 
 function mean_var_vmr!(
   ::Val{:serial},
-  means::AbstractArray{Complex{T},M},
-  variances::AbstractArray{Complex{T},M},
-  dst_vmr::AbstractArray{Complex{T},N},
+  means::AbstractArray{T,M},
+  variances::AbstractArray{T,M},
+  dst_vmr::AbstractArray{T,N},
 )::AbstractArray{T,N} where {N,T<:Real,M}
   n_bootstraps = size(means, 1)
   for i in 1:n_bootstraps
@@ -375,20 +375,18 @@ function mean_var_vmr!(
     )
   end
 
-  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
-  dst_vmr_real = selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
-  dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
+  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
 
   # Variance with Inf will give NaN
-  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), NaN, dst_vmr_real)
+  @. dst_vmr = ifelse(isnan(dst_vmr), NaN, dst_vmr)
 
-  return dst_vmr_real
+  return dst_vmr
 end
 function mean_var_vmr!(
   ::Val{:threaded},
-  means::AbstractArray{Complex{T},M},
-  variances::AbstractArray{Complex{T},M},
-  dst_vmr::AbstractArray{Complex{T},N},
+  means::AbstractArray{T,M},
+  variances::AbstractArray{T,M},
+  dst_vmr::AbstractArray{T,N},
 )::AbstractArray{T,N} where {N,T<:Real,M}
   n_bootstraps = size(means, 1)
   Threads.@threads for i in 1:n_bootstraps
@@ -398,79 +396,68 @@ function mean_var_vmr!(
     )
   end
 
-  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
-  dst_vmr_real = selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
-  dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
+  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
 
   # Variance with Inf will give NaN
-  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), NaN, dst_vmr_real)
+  @. dst_vmr = ifelse(isnan(dst_vmr), NaN, dst_vmr)
 
-  return dst_vmr_real
+  return dst_vmr
 end
 
 function vmr_cpu!(
-  means::AbstractArray{Complex{T},N},
-  variances::AbstractArray{Complex{T},N},
+  means::AbstractArray{T,N},
+  variances::AbstractArray{T,N},
 )::Nothing where {N,T<:Real}
-  means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
-  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
-  @. variances_real /= means_real
+  @. variances /= means
 
   return nothing
 end
 
 function mean_var_vmr!(
   ::Val{:cuda},
-  means::AnyCuArray{Complex{T},M},
-  variances::AnyCuArray{Complex{T},M},
-  dst_vmr::AnyCuArray{Complex{T},N},
+  means::AnyCuArray{T,M},
+  variances::AnyCuArray{T,M},
+  dst_vmr::AnyCuArray{T,N},
 ) where {N,T<:Real,M}
   vmr_gpu!(means, variances)
 
-  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
-  dst_vmr_real = selectdim(reinterpret(reshape, T, dst_vmr), 1, 1)
-  dst_vmr_real .= dropdims(var(variances_real, dims=1), dims=1)
+  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
 
   # Variance with Inf will give NaN
-  @. dst_vmr_real = ifelse(isnan(dst_vmr_real), NaN32, dst_vmr_real)
+  @. dst_vmr = ifelse(isnan(dst_vmr), NaN32, dst_vmr)
 
-  return dst_vmr_real
+  return dst_vmr
 end
 
 function vmr_gpu!(
-  means::AnyCuArray{Complex{T},N},
-  variances::AnyCuArray{Complex{T},N},
+  means::AnyCuArray{T,N},
+  variances::AnyCuArray{T,N},
 ) where {N,T<:Real}
-  means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
-  variances_real = selectdim(reinterpret(reshape, T, variances), 1, 1)
-  @. variances_real /= means_real
+  @. variances /= means
 
   return
 end
 
-# TODO: Change the determinant to include also the initial bandwidth
 function calculate_variance_products!(
   ::Val{:serial},
   vmr_variance::AbstractArray{T,N},
-  variance_complete::AbstractArray{Complex{T},N},
+  variance_real::AbstractArray{T,N},
   time::AbstractVector{<:Real},
-  time_initial::AbstractVector{<:Real},
-  dst_var_products::AbstractArray{T,N},
+  time_initial::AbstractVector{<:Real};
+  dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(vmr_variance)),
 ) where {N,T<:Real}
-  var_real = selectdim(reinterpret(reshape, T, variance_complete), 1, 1)
-
   det_t = prod(time .^ 2 .+ time_initial .^ 2)
 
-  dst_var_products .= vmr_variance .* var_real .* det_t^2
+  dst_var_products .= vmr_variance .* variance_real .* det_t^2
 
   return dst_var_products
 end
 function calculate_variance_products!(
   ::Val{:threaded},
   vmr_variance::AbstractArray{T,N},
-  variance_complete::AbstractArray{Complex{T},N},
-  time::AbstractVector{<:Real},
-  dst_var_products::AbstractArray{T,N},
+  variance_complete::AbstractArray{T,N},
+  time::AbstractVector{<:Real};
+  dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(vmr_variance)),
 ) where {N,T<:Real}
   @warn "Threaded calculation of variance products not implemented. Using serial implementation."
 
@@ -479,22 +466,20 @@ function calculate_variance_products!(
     vmr_variance,
     variance_complete,
     time,
-    dst_var_products
+    dst_var_products=dst_var_products
   )
 end
 function calculate_variance_products!(
   ::Val{:cuda},
   vmr_variance::AnyCuArray{T,N},
-  variance_complete::AnyCuArray{Complex{T},N},
+  variance_real::AnyCuArray{T,N},
   time::CuVector{<:Real},
-  time_initial::CuVector{<:Real},
-  dst_var_products::AnyCuArray{T,N},
+  time_initial::CuVector{<:Real};
+  dst_var_products::AnyCuArray{T,N}=CuArray{T,N}(undef, size(vmr_variance)),
 ) where {N,T<:Real}
-  var_real = selectdim(reinterpret(reshape, T, variance_complete), 1, 1)
-
   det_t = prod(time .^ 2 .+ time_initial .^ 2)
 
-  dst_var_products .= vmr_variance .* var_real .* det_t^2
+  dst_var_products .= vmr_variance .* variance_real .* det_t^2
 
   return dst_var_products
 end
@@ -502,13 +487,11 @@ end
 function assign_converged_density!(
   ::Val{:serial},
   density::AbstractArray{T,N},
-  means::AbstractArray{Complex{T},N},
+  means::AbstractArray{T,N},
   variance_products::AbstractArray{T,N},
   threshold::T,
   distances_tmp::AbstractArray{T,M}
 )::Nothing where {N,T<:Real,M}
-  means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
-
   current_diff = selectdim(distances_tmp, 1, 1)
   previous_diff = selectdim(distances_tmp, 1, 2)
 
@@ -520,11 +503,12 @@ function assign_converged_density!(
   #   means_real,
   #   density
   # )
-  @. density = ifelse(
-    abs(current_diff) < abs(previous_diff),
-    means_real,
-    density
-  )
+  # @. density = ifelse(
+  #   abs(current_diff) < abs(previous_diff),
+  #   means_real,
+  #   density
+  # )
+  @. density = current_diff
 
   println("n_nans: ", count(isnan, density))
 

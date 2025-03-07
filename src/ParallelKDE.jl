@@ -136,7 +136,7 @@ function find_density!(
   variances_dst = Array{Complex{T},N + 1}(undef, size(variances_0))
 
   for time in eachcol(times)
-    means_bootstraps, variances_bootstraps = propagate_bandwidth!(
+    means_fourier, variances_fourier = propagate_bandwidth!(
       means_0,
       variances_0,
       fourier_grid_array,
@@ -146,9 +146,9 @@ function find_density!(
       dst_mean=means_dst,
       dst_var=variances_dst,
     )
-    ifft_statistics!(
-      means_bootstraps,
-      variances_bootstraps,
+    means_direct, variances_direct = ifft_statistics!(
+      means_fourier,
+      variances_fourier,
       n_samples,
       ifft_plan_multi,
       tmp=fourier_tmp,
@@ -156,13 +156,17 @@ function find_density!(
     )
 
     vmr_variance = calculate_statistics!(
-      means_bootstraps,
-      variances_bootstraps,
+      means_direct,
+      variances_direct,
       method,
-      dst_vmr=selectdim(variances_dst, 1, 1),
+      dst_vmr=selectdim(
+        selectdim(reinterpret(reshape, T, variances_dst), 1, 1),
+        1,
+        1
+      ),
     )
 
-    means_complete, variances_complete = propagate_bandwidth!(
+    mean_fourier, variance_fourier = propagate_bandwidth!(
       reshape(density_0, 1, size(density_0)...),
       reshape(var_0, 1, size(var_0)...),
       fourier_grid_array,
@@ -172,23 +176,23 @@ function find_density!(
       dst_mean=reshape(selectdim(means_dst, 1, 1), 1, size(means_dst)[2:end]...),
       dst_var=reshape(selectdim(means_dst, 1, 2), 1, size(means_dst)[2:end]...),
     )
-    means_complete = dropdims(means_complete, dims=1)
-    variances_complete = dropdims(variances_complete, dims=1)
+    mean_fourier = dropdims(mean_fourier, dims=1)
+    variance_fourier = dropdims(variance_fourier, dims=1)
 
-    ifft_statistics!(
-      means_complete,
-      variances_complete,
+    mean_direct, variance_direct = ifft_statistics!(
+      mean_fourier,
+      variance_fourier,
       n_samples,
       ifft_plan_single,
       tmp=selectdim(fourier_tmp, 1, 1),
       bootstraps_dim=false
     )
-    means_complete .*= n_samples
+    mean_direct .*= n_samples
 
     assign_density!(
       kde,
-      means_complete,
-      variances_complete,
+      mean_direct,
+      variance_direct,
       vmr_variance,
       time,
       time_initial,
@@ -240,7 +244,7 @@ function find_denisty!(
   for col in 1:size(times, 2)
     time = view(times, :, col)
 
-    means_bootstraps, variances_bootstraps = propagate_bandwidth!(
+    means_fourier, variances_fourier = propagate_bandwidth!(
       means_0,
       variances_0,
       fourier_grid_array,
@@ -249,9 +253,9 @@ function find_denisty!(
       dst_mean=means_dst,
       dst_var=variances_dst,
     )
-    ifft_statistics!(
-      means_bootstraps,
-      variances_bootstraps,
+    means_direct, variances_direct = ifft_statistics!(
+      means_fourier,
+      variances_fourier,
       n_samples,
       ifft_plan_multi,
       tmp=fourier_tmp,
@@ -259,12 +263,16 @@ function find_denisty!(
     )
 
     vmr_variance = calculate_statistics!(
-      means_bootstraps,
-      variances_bootstraps,
-      dst_vmr=selectdim(variances_dst, 1, 1),
+      means_direct,
+      variances_direct,
+      dst_vmr=selectdim(
+        selectdim(reinterpret(reshape, T, variances_dst), 1, 1),
+        1,
+        1
+      ),
     )
 
-    means_complete, variances_complete = propagate_bandwidth!(
+    mean_fourier, variance_fourier = propagate_bandwidth!(
       reshape(density_0, 1, size(density_0)...),
       reshape(var_0, 1, size(var_0)...),
       fourier_grid_array,
@@ -273,23 +281,23 @@ function find_denisty!(
       dst_mean=reshape(selectdim(means_dst, 1, 1), 1, size(means_dst)[2:end]...),
       dst_var=reshape(selectdim(means_dst, 1, 2), 1, size(means_dst)[2:end]...),
     )
-    means_complete = dropdims(means_complete, dims=1)
-    variances_complete = dropdims(variances_complete, dims=1)
+    mean_fourier = dropdims(mean_fourier, dims=1)
+    variance_fourier = dropdims(variance_fourier, dims=1)
 
-    ifft_statistics!(
-      means_complete,
-      variances_complete,
+    mean_direct, variance_direct = ifft_statistics!(
+      mean_fourier,
+      variance_fourier,
       n_samples,
       ifft_plan_single,
       tmp=selectdim(fourier_tmp, 1, 1),
       bootstraps_dim=false
     )
-    means_complete .*= n_samples
+    means_direct .*= n_samples
 
     assign_density!(
       kde,
-      means_complete,
-      variances_complete,
+      mean_direct,
+      variance_direct,
       vmr_variance,
       time,
       time_initial,
@@ -416,10 +424,10 @@ function propagate_bandwidth!(
 end
 
 function calculate_statistics!(
-  means_bootstraps::AbstractArray{Complex{T},M},
-  variances_bootstraps::AbstractArray{Complex{T},M},
+  means_bootstraps::AbstractArray{T,M},
+  variances_bootstraps::AbstractArray{T,M},
   method::Symbol;
-  dst_vmr::AbstractArray{Complex{T},N}=Array{Complex{T},M - 1}(undef, size(means_bootstraps)[2:end]),
+  dst_vmr::AbstractArray{T,N}=Array{T,M - 1}(undef, size(means_bootstraps)[2:end]),
 )::AbstractArray{T,N} where {N,T<:Real,M}
   vmr_variance = mean_var_vmr!(
     Val(method),
@@ -431,9 +439,9 @@ function calculate_statistics!(
   return vmr_variance
 end
 function calculate_statistics!(
-  means_bootstraps::AnyCuArray{Complex{T},M},
-  variances_bootstraps::AnyCuArray{Complex{T},M};
-  dst_vmr::AnyCuArray{Complex{T},N}=CuArray{Complex{T},M - 1}(undef, size(means_bootstraps)),
+  means_bootstraps::AnyCuArray{T,M},
+  variances_bootstraps::AnyCuArray{T,M};
+  dst_vmr::AnyCuArray{T,N}=CuArray{T,M - 1}(undef, size(means_bootstraps)),
 )::AnyCuArray{T,N} where {N,T<:Real,M}
   vmr_variance = mean_var_vmr!(
     Val(:cuda),
@@ -463,7 +471,7 @@ function assign_density!(
     variance_complete,
     time,
     time_initial,
-    dst_var_products
+    dst_var_products=dst_var_products
   )
 
   assign_converged_density!(
@@ -491,7 +499,7 @@ function assign_density!(
     variance_complete,
     time,
     time_initial,
-    dst_var_products
+    dst_var_products=dst_var_products
   )
 
   assign_converged_density!(
