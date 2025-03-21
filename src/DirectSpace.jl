@@ -441,21 +441,21 @@ end
 function calculate_variance_products!(
   ::Val{:serial},
   vmr_variance::AbstractArray{T,N},
-  variance_real::AbstractArray{T,N},
+  # variance_real::AbstractArray{T,N},
   time::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real};
   dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(vmr_variance)),
 ) where {N,T<:Real}
   det_t = prod(time .^ 2 .+ time_initial .^ 2)
 
-  dst_var_products .= vmr_variance .* variance_real .* det_t^2
+  dst_var_products .= vmr_variance .* det_t^(3 / 2)
 
   return dst_var_products
 end
 function calculate_variance_products!(
   ::Val{:threaded},
   vmr_variance::AbstractArray{T,N},
-  variance_complete::AbstractArray{T,N},
+  # variance_complete::AbstractArray{T,N},
   time::AbstractVector{<:Real};
   dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(vmr_variance)),
 ) where {N,T<:Real}
@@ -464,7 +464,7 @@ function calculate_variance_products!(
   return calculate_variance_products!(
     Val{:serial},
     vmr_variance,
-    variance_complete,
+    # variance_complete,
     time,
     dst_var_products=dst_var_products
   )
@@ -472,14 +472,14 @@ end
 function calculate_variance_products!(
   ::Val{:cuda},
   vmr_variance::AnyCuArray{T,N},
-  variance_real::AnyCuArray{T,N},
+  # variance_real::AnyCuArray{T,N},
   time::CuVector{<:Real},
   time_initial::CuVector{<:Real};
   dst_var_products::AnyCuArray{T,N}=CuArray{T,N}(undef, size(vmr_variance)),
 ) where {N,T<:Real}
   det_t = prod(time .^ 2 .+ time_initial .^ 2)
 
-  dst_var_products .= vmr_variance .* variance_real .* det_t^2
+  dst_var_products .= vmr_variance .* det_t^(3 / 2)
 
   return dst_var_products
 end
@@ -488,27 +488,25 @@ function assign_converged_density!(
   ::Val{:serial},
   density::AbstractArray{T,N},
   means::AbstractArray{T,N},
-  variance_products::AbstractArray{T,N},
+  vmr_var_scaled::AbstractArray{T,N},
   threshold::T,
-  distances_tmp::AbstractArray{T,M}
+  vmr_var_prev::AbstractArray{T,M}
 )::Nothing where {N,T<:Real,M}
-  current_diff = selectdim(distances_tmp, 1, 1)
-  previous_diff = selectdim(distances_tmp, 1, 2)
+  vmr_prev2 = selectdim(vmr_var_prev, 1, 1)
+  vmr_prev1 = selectdim(vmr_var_prev, 1, 2)
+  vmr_current = vmr_var_scaled
 
-  @. previous_diff = current_diff
-  @. current_diff = variance_products - threshold
+  # OPTIMIZE: Either preallocate is_max or do it inside the ifelse
+  is_max = @. (vmr_prev1 >= vmr_prev2) & (vmr_current < vmr_prev1)
 
-  # @. density = ifelse(
-  #   (current_diff > previous_diff) || ((current_diff <= previous_diff) & (previous_diff > 0)),
-  #   means_real,
-  #   density
-  # )
-  # @. density = ifelse(
-  #   abs(current_diff) < abs(previous_diff),
-  #   means_real,
-  #   density
-  # )
-  @. density = current_diff
+  @. density = ifelse(
+    is_max,
+    means,
+    density
+  )
+
+  @. vmr_prev2 = vmr_prev1
+  @. vmr_prev1 = vmr_current
 
   println("n_nans: ", count(isnan, density))
 
@@ -518,18 +516,18 @@ function assign_converged_density!(
   ::Val{:threaded},
   density::AbstractArray{T,N},
   means::AbstractArray{Complex{T},N},
-  variance_products::AbstractArray{T,N},
+  vmr_var_scaled::AbstractArray{T,N},
   threshold::T,
-  distances_tmp::AbstractArray{T,M}
+  vmr_var_prev::AbstractArray{T,M}
 )::Nothing where {N,T<:Real,M}
   @warn "Threaded assignment of converged density not implemented. Using serial implementation."
   assign_converged_density!(
     Val{:serial},
     density,
     means,
-    variance_products,
+    vmr_var_scaled,
     threshold,
-    distances_tmp
+    vmr_var_prev
   )
 
   return nothing
@@ -538,21 +536,25 @@ function assign_converged_density!(
   ::Val{:cuda},
   density::AnyCuArray{T,N},
   means::AnyCuArray{Complex{T},N},
-  variance_products::AnyCuArray{T,N},
+  vmr_var_scaled::AnyCuArray{T,N},
   threshold::T,
-  distances_tmp::AbstractArray{T,M}
+  vmr_var_prev::AbstractArray{T,M}
 )::Nothing where {N,T<:Real,M}
-  means_real = selectdim(reinterpret(reshape, T, means), 1, 1)
+  vmr_prev2 = selectdim(vmr_var_prev, 1, 1)
+  vmr_prev1 = selectdim(vmr_var_prev, 1, 2)
+  vmr_current = vmr_var_scaled
+
+  # OPTIMIZE: Either preallocate is_max or do it inside the ifelse
+  is_max = @. (vmr_prev1 >= vmr_prev2) & (vmr_current < vmr_prev1)
 
   @. density = ifelse(
-    (
-      ((variance_products >= threshold) || isapprox(variances_real, 0.0, atol=1e-8))
-      &&
-      (!isnan(density) || isapprox(density, 0.0, atol=1e-8))
-    ),
-    means_real,
+    is_max,
+    means,
     density
   )
+
+  @. vmr_prev2 = vmr_prev1
+  @. vmr_prev1 = vmr_current
 
   return nothing
 end

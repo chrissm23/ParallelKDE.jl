@@ -114,6 +114,7 @@ function find_density!(
   println("Threshold: $threshold")
   n_samples = get_nsamples(kde)
 
+  # TODO: Remove creation and propagation of variances of complete samples
   convergence_tmp = fill(NaN, 2, size(kde.grid)...)
   fourier_tmp = Array{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
 
@@ -192,14 +193,13 @@ function find_density!(
     assign_density!(
       kde,
       mean_direct,
-      variance_direct,
       vmr_variance,
       time,
       time_initial,
       threshold,
       method,
       dst_var_products=vmr_variance,
-      distances_tmp=convergence_tmp
+      vmr_var_prev=convergence_tmp,
     )
 
     if time === times[end]
@@ -218,6 +218,7 @@ function find_denisty!(
 )::Nothing where {N,T<:Real,S<:Real,M}
   n_samples = get_nsamples(kde)
 
+  # TODO: Remove creation and propagation of variances of complete samples
   convergence_tmp = CUDA.fill(NaN32, 2, size(kde.grid)...)
   fourier_tmp = CuArray{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
 
@@ -297,13 +298,13 @@ function find_denisty!(
     assign_density!(
       kde,
       mean_direct,
-      variance_direct,
+      # variance_direct,
       vmr_variance,
       time,
       time_initial,
       threshold,
       dst_var_products=vmr_variance,
-      distances_tmp=convergence_tmp
+      vmr_var_prev=convergence_tmp,
     )
 
     if col == size(times, 2)
@@ -455,27 +456,27 @@ end
 
 function assign_density!(
   kde::KDE{N,T,S,M},
-  mean_complete::AbstractArray{Complex{T},N},
-  variance_complete::AbstractArray{Complex{T},N},
+  mean_direct::AbstractArray{T,N},
+  # variance_complete::AbstractArray{Complex{T},N},
   vmr_variance::AbstractArray{T,N},
   time::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real},
   threshold::Real,
   method::Symbol;
   dst_var_products::AbstractArray{T,N}=similar(vmr_variance),
-  distances_tmp::AbstractArray{T,M}=Array{T,N}(undef, 2, size(variance_complete)...)
+  vmr_var_prev::AbstractArray{T,M}=Array{T,N}(undef, 2, size(vmr_variance)...)
 )::Nothing where {N,T<:Real,S<:Real,M}
-  variance_products = calculate_variance_products!(
+  vmr_var_scaled = calculate_variance_products!(
     Val(method),
     vmr_variance,
-    variance_complete,
+    # variance_complete,
     time,
     time_initial,
     dst_var_products=dst_var_products
   )
 
   assign_converged_density!(
-    Val(method), kde.density, mean_complete, variance_products, threshold, distances_tmp
+    Val(method), kde.density, mean_direct, vmr_var_scaled, threshold, vmr_var_prev
   )
 
   kde.t .= time
@@ -484,26 +485,26 @@ function assign_density!(
 end
 function assign_density!(
   kde::CuKDE{N,T,S,M},
-  mean_complete::AnyCuArray{Complex{T},N},
-  variance_complete::AnyCuArray{Complex{T},N},
+  mean_direct::AnyCuArray{Complex{T},N},
+  # variance_complete::AnyCuArray{Complex{T},N},
   vmr_variance::AnyCuArray{T,N},
   time::CuVector{<:Real},
   time_initial::CuVector{<:Real},
   threshold::Real;
   dst_var_products::AnyCuArray{T,N}=similar(vmr_variance),
-  distances_tmp::AnyCuArray{T,M}=CuArray{T,N}(undef, 2, size(variance_complete)...)
+  vmr_var_prev::AnyCuArray{T,M}=CuArray{T,N}(undef, 2, size(vmr_variance)...)
 )::Nothing where {N,T<:Real,S<:Real,M}
-  variance_products = calculate_variance_products!(
+  vmr_var_scaled = calculate_variance_products!(
     Val(:cuda),
     vmr_variance,
-    variance_complete,
+    # variance_complete,
     time,
     time_initial,
     dst_var_products=dst_var_products
   )
 
   assign_converged_density!(
-    Val(:cuda), kde.density, mean_complete, variance_products, threshold, distances_tmp
+    Val(:cuda), kde.density, mean_direct, vmr_var_scaled, threshold, vmr_var_prev
   )
 
   kde.t .= time

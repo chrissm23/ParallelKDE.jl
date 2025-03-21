@@ -286,34 +286,6 @@
     threshold = ParallelKDE.get_smoothness(adjustable_factor, n_samples, n_dims)
     threshold_line = fill(threshold, length(0.0:0.01:0.3)...)
 
-    p1 = plot(
-      # grid_ranges[1],
-      # threshold_line,
-      # label="Threshold",
-      dpi=300,
-      # lc=:black,
-      ylimits=(0, 0.6 / n_samples),
-      # ylimits=(1e-25, 1e-20),
-      # yaxis=:log,
-      legend=false,
-      # palette=palette(:greens, 5),
-      # ls=:solid
-    )
-    y2 = twinx()
-    p2 = plot!(
-      y2,
-      # grid_ranges[1],
-      # true_pdf,
-      # label="PDF",
-      # lc=:blue
-      ylimits=(0, 0.6 / n_samples),
-      # ylimits=(1e-25, 1e-20),
-      # yaxis=:log,
-      legend=false,
-      # palette=palette(:blues, 5),
-      # ls=:dot
-    )
-
     kde = initialize_kde(data, grid_ranges, :cpu)
     t0 = Grids.initial_bandwidth(grid)
 
@@ -325,12 +297,12 @@
 
     means_dst = Array{ComplexF64,n_dims + 1}(undef, size(means_0))
     variances_dst = Array{ComplexF64,n_dims + 1}(undef, size(variances_0))
+    convergence_tmp = fill(NaN, 2, size(kde.grid)...)
 
-    dts = collect(0.0:0.01:0.3)
+    dts = collect(0.0:0.01:1.0)
     # dts = collect(0.0:0.16:2.0)
     for dt_scalar in dts
       dt = fill(dt_scalar, n_dims)
-      # det_t = prod(dt .^ 2 .+ t0 .^ 2)
 
       means_fourier, variances_fourier = ParallelKDE.propagate_bandwidth!(
         means_0,
@@ -377,27 +349,30 @@
         bootstraps_dim=false
       )
 
-      variance_products = calculate_variance_products!(
+      vmr_var_scaled = calculate_variance_products!(
         Val(:serial),
         vmr_variance,
-        variance_direct,
+        # variance_direct,
         dt,
         t0,
         dst_var_products=vmr_variance
       )
 
-      # var_calc = (true_pdf ./ (2 * n_samples^2 * √π * dt_scalar))# .- ((true_pdf .^ 2) ./ (n_samples^2))
-      mean_calc = true_pdf ./ n_samples
+      DirectSpace.assign_converged_density!(
+        Val(:serial),
+        kde.density,
+        mean_direct,
+        vmr_var_scaled,
+        threshold,
+        convergence_tmp
+      )
+      println("# NaN: ", sum(isnan.(kde.density)))
 
-      if dt_scalar in [0.0, 0.03, 0.07, 0.1, 0.3]
-        plot(p1)
-        plot!(p1, grid_ranges[1], mean_direct, label="dt = $dt_scalar", palette=palette(:greens, 5), ls=:solid)
-        plot(p2)
-        plot!(y2, grid_ranges[1], mean_calc, label="dt = $dt_scalar", palette=palette(:blues, 5), ls=:dot)
-      end
     end
 
-    savefig(p1, "variance_product.png")
+    p = plot(grid_ranges[1], kde.density .* n_samples, label="Estimated PDF", dpi=300)
+    plot!(p, grid_ranges[1], true_pdf, label="True PDF")
+    savefig(p, "variance_product.png")
   end
 end
 
