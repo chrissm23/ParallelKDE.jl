@@ -11,10 +11,12 @@ using .FourierSpace
 using .DirectSpace
 
 using StaticArrays,
+  StatsBase,
   FFTW,
   CUDA
 
-using Statistics
+using Statistics,
+  LinearAlgebra
 
 export initialize_kde,
   fit_kde!
@@ -70,21 +72,20 @@ function initialize_kde(
   return kde
 end
 
-# TODO: Normalize the smoothness to 1 once the threshold factor is known
+# TODO: Find reasonable values for smoothness and threshold
 function fit_kde!(
   kde::AbstractKDE{N,T,S,M};
   dt::Union{Real,Vector{<:Real},Nothing}=nothing,
   n_steps::Union{Int,Nothing}=nothing,
   t_final::Union{Real,Vector{<:Real},Nothing}=nothing,
   n_bootstraps::Union{Int,Nothing}=nothing,
-  smoothness::Real=1 / 150,
+  threshold::Real=5e-15,
   ignore_t0::Bool=true,
   method::Symbol=:serial
 ) where {N,T<:Real,S<:Real,M}
   n_bootstraps = get_nbootstraps(n_bootstraps)
-  n_samples = get_nsamples(kde)
-
-  threshold = get_smoothness(smoothness, n_samples, N)
+  # n_samples = get_nsamples(kde)
+  thresholds = silverman_rule(kde.data)
 
   time_range = get_times(dt, n_steps, t_final, kde.t, ignore_t0, kde.grid)
 
@@ -93,9 +94,9 @@ function fit_kde!(
   end
 
   if method == :serial || method == :threaded
-    find_density!(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold, method=method)
+    find_density!(DeviceKDE(kde), kde, time_range, n_bootstraps, thresholds, method=method)
   elseif method == :cuda
-    find_density!(DeviceKDE(kde), kde, time_range, n_bootstraps, threshold)
+    find_density!(DeviceKDE(kde), kde, time_range, n_bootstraps, thresholds)
   else
     throw(ArgumentError("Invalid method: $method"))
   end
@@ -107,36 +108,46 @@ function find_density!(
   kde::KDE{N,T,S,M},
   time_range::AbstractVector{<:AbstractRange{<:Real}},
   n_bootstraps::Integer,
-  threshold::Real;
+  thresholds::NTuple{N,Real};
   method::Symbol=:serial
 )::Nothing where {N,T<:Real,S<:Real,M}
-  print("\n")
-  println("Threshold: $threshold")
   n_samples = get_nsamples(kde)
 
-  # TODO: Remove creation and propagation of variances of complete samples
-  convergence_tmp = fill(NaN, 2, size(kde.grid)...)
+  # OPTIMIZE: Remove creation and propagation of variances of complete samples
+  # (maybe it won't make much of a difference)
+
+  # Initialization of dirac series and transformation into Fourier space
   fourier_tmp = Array{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
 
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps, method, tmp=fourier_tmp)
   density_0, var_0 = initialize_distribution(kde, method, tmp=selectdim(fourier_tmp, 1, 1))
 
-  ifft_plan_multi = plan_ifft(means_0, 2:N+1)
-  ifft_plan_single = plan_ifft(selectdim(means_0, 1, 1))
-
+  # Initialization of grid in Fourier space
   fourier_grid = fftgrid(kde.grid)
   fourier_grid_array = get_coordinates(fourier_grid)
 
+  # Initialization of Fourier plans
+  ifft_plan_multi = plan_ifft(means_0, 2:N+1)
+  ifft_plan_single = plan_ifft(selectdim(means_0, 1, 1))
+
+  # Re-arrangement of time sequences
+  time_step = norm(step.(time_range))
   times = reinterpret(reshape, T, collect(zip(time_range...)))
   if length(time_range) == 1
     times = reshape(times, 1, :)
   end
   time_initial = initial_bandwidth(kde.grid)
 
+  # Pre-allocation of propagated bootstrap arrays
   means_dst = Array{Complex{T},N + 1}(undef, size(means_0))
   variances_dst = Array{Complex{T},N + 1}(undef, size(variances_0))
 
+  # Pre-allocation of arrays for convergence check
+  vmr_prev1 = fill(NaN, size(kde.grid))
+  vmr_prev2 = fill(NaN, size(kde.grid))
+
   for time in eachcol(times)
+    # Time propagation of bootstraps means and variances in Fourier space
     means_fourier, variances_fourier = propagate_bandwidth!(
       means_0,
       variances_0,
@@ -147,6 +158,7 @@ function find_density!(
       dst_mean=means_dst,
       dst_var=variances_dst,
     )
+    # Transformation of bootstraps means and variances back to direct space
     means_direct, variances_direct = ifft_statistics!(
       means_fourier,
       variances_fourier,
@@ -156,6 +168,7 @@ function find_density!(
       bootstraps_dim=true
     )
 
+    # Calculate Variance-to-Mean Ratio (VMR) of bootstraps
     vmr_variance = calculate_statistics!(
       means_direct,
       variances_direct,
@@ -167,6 +180,7 @@ function find_density!(
       ),
     )
 
+    # Time propagation of full samples means and variances in Fourier space
     mean_fourier, variance_fourier = propagate_bandwidth!(
       reshape(density_0, 1, size(density_0)...),
       reshape(var_0, 1, size(var_0)...),
@@ -180,6 +194,7 @@ function find_density!(
     mean_fourier = dropdims(mean_fourier, dims=1)
     variance_fourier = dropdims(variance_fourier, dims=1)
 
+    # Transformation of full samples means and variances back to direct space
     mean_direct, variance_direct = ifft_statistics!(
       mean_fourier,
       variance_fourier,
@@ -190,16 +205,21 @@ function find_density!(
     )
     mean_direct .*= n_samples
 
+    # Check for convergence
+    # TODO: Check if it's necessary to expose tol1 and tol2 to the user
     assign_density!(
       kde,
       mean_direct,
       vmr_variance,
+      vmr_prev1,
+      vmr_prev2,
       time,
       time_initial,
-      threshold,
+      time_step,
       method,
+      tol1=1e-10,
+      tol2=1e-10,
       dst_var_products=vmr_variance,
-      vmr_var_prev=convergence_tmp,
     )
 
     if time === times[end]
@@ -214,23 +234,29 @@ function find_denisty!(
   kde::CuKDE{N,T,S,M},
   time_range::AbstractVector{<:AbstractRange{<:Real}},
   n_bootstraps::Integer,
-  threshold::Real;
+  thresholds::NTuple{N,Real}
 )::Nothing where {N,T<:Real,S<:Real,M}
   n_samples = get_nsamples(kde)
 
-  # TODO: Remove creation and propagation of variances of complete samples
-  convergence_tmp = CUDA.fill(NaN32, 2, size(kde.grid)...)
+  # OPTIMIZE: Remove creation and propagation of variances of complete samples
+  # (maybe it won't make much of a difference)
+
+  # Initialization of dirac series and transformation into Fourier space
   fourier_tmp = CuArray{Complex{T},M}(undef, n_bootstraps, size(kde.grid)...)
 
   means_0, variances_0 = initialize_statistics(kde, n_bootstraps, tmp=fourier_tmp)
   density_0, var_0 = initialize_distribution(kde, tmp=selectdim(fourier_tmp, 1, 1))
 
-  ifft_plan_multi = plan_ifft(means_0, 2:N+1)
-  ifft_plan_single = plan_ifft(selectdim(means_0, 1, 1))
-
+  # Initialization of grid in Fourier space
   fourier_grid = fftgrid(kde.grid)
   fourier_grid_array = get_coordinates(fourier_grid)
 
+  # Initialization of Fourier plans
+  ifft_plan_multi = plan_ifft(means_0, 2:N+1)
+  ifft_plan_single = plan_ifft(selectdim(means_0, 1, 1))
+
+  # Re-arrangement of time sequences
+  time_step = norm(step.(time_range))
   times = CuArray{T,N}(
     reinterpret(reshape, T, collect(zip(time_range...)))
   )
@@ -239,12 +265,21 @@ function find_denisty!(
   end
   time_initial = initial_bandwidth(kde.grid)
 
+  # Load thresholds into GPU memory
+  # thresholds_d = CuVector{Float32}(collect(thresholds))
+
+  # Pre-allocation of propagated bootstrap arrays
   means_dst = CuArray{Complex{T},N + 1}(undef, size(means_0))
   variances_dst = CuArray{Complex{T},N + 1}(undef, size(variances_0))
+
+  # Pre-allocation of arrays for convergence check
+  vmr_prev1 = CUDA.fill(NaN32, size(kde.grid))
+  vmr_prev2 = CUDA.fill(NaN32, size(kde.grid))
 
   for col in 1:size(times, 2)
     time = view(times, :, col)
 
+    # Time propagation of bootstraps means and variances in Fourier space
     means_fourier, variances_fourier = propagate_bandwidth!(
       means_0,
       variances_0,
@@ -254,6 +289,7 @@ function find_denisty!(
       dst_mean=means_dst,
       dst_var=variances_dst,
     )
+    # Transformation of bootstraps means and variances back to direct space
     means_direct, variances_direct = ifft_statistics!(
       means_fourier,
       variances_fourier,
@@ -263,6 +299,7 @@ function find_denisty!(
       bootstraps_dim=true
     )
 
+    # Calculate Variance-to-Mean Ratio (VMR) of bootstraps
     vmr_variance = calculate_statistics!(
       means_direct,
       variances_direct,
@@ -273,6 +310,7 @@ function find_denisty!(
       ),
     )
 
+    # Time propagation of full samples means and variances in Fourier space
     mean_fourier, variance_fourier = propagate_bandwidth!(
       reshape(density_0, 1, size(density_0)...),
       reshape(var_0, 1, size(var_0)...),
@@ -285,6 +323,7 @@ function find_denisty!(
     mean_fourier = dropdims(mean_fourier, dims=1)
     variance_fourier = dropdims(variance_fourier, dims=1)
 
+    # Transformation of full samples means and variances back to direct space
     mean_direct, variance_direct = ifft_statistics!(
       mean_fourier,
       variance_fourier,
@@ -295,16 +334,20 @@ function find_denisty!(
     )
     means_direct .*= n_samples
 
+    # Check convergence
+    # TODO: Check if it's necessary to expose tol1 and tol2 to the user
     assign_density!(
       kde,
       mean_direct,
-      # variance_direct,
       vmr_variance,
+      vmr_prev1,
+      vmr_prev2,
       time,
       time_initial,
-      threshold,
+      time_step,
+      tol1=1e-10,
+      tol2=1e-10,
       dst_var_products=vmr_variance,
-      vmr_var_prev=convergence_tmp,
     )
 
     if col == size(times, 2)
@@ -342,9 +385,9 @@ function initialize_statistics(
     n_bootstraps=n_bootstraps,
     calculate_squared=true
   )
-  s_0, s2_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared, tmp)
+  sk_0, s2k_0 = initialize_fourier_statistics(dirac_series, dirac_series_squared, tmp)
 
-  return s_0, s2_0
+  return sk_0, s2k_0
 end
 
 function initialize_distribution(
@@ -457,27 +500,45 @@ end
 function assign_density!(
   kde::KDE{N,T,S,M},
   mean_direct::AbstractArray{T,N},
-  # variance_complete::AbstractArray{Complex{T},N},
   vmr_variance::AbstractArray{T,N},
+  vmr_prev1::AbstractArray{T,N},
+  vmr_prev2::AbstractArray{T,N},
   time::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real},
-  threshold::Real,
+  time_step::Real,
   method::Symbol;
+  tol1::Real=1e-10,
+  tol2::Real=1e-10,
   dst_var_products::AbstractArray{T,N}=similar(vmr_variance),
-  vmr_var_prev::AbstractArray{T,M}=Array{T,N}(undef, 2, size(vmr_variance)...)
 )::Nothing where {N,T<:Real,S<:Real,M}
   vmr_var_scaled = calculate_variance_products!(
     Val(method),
     vmr_variance,
-    # variance_complete,
     time,
     time_initial,
+    get_nsamples(kde),
     dst_var_products=dst_var_products
   )
 
-  assign_converged_density!(
-    Val(method), kde.density, mean_direct, vmr_var_scaled, threshold, vmr_var_prev
-  )
+  if any(isnan, vmr_prev1) || any(isnan, vmr_prev2)
+    vmr_prev2 .= vmr_prev1
+    vmr_prev1 .= vmr_var_scaled
+  else
+    assign_converged_density!(
+      Val(method),
+      kde.density,
+      mean_direct,
+      vmr_var_scaled,
+      vmr_prev1,
+      vmr_prev2,
+      time_step;
+      tol1,
+      tol2
+    )
+
+    vmr_prev2 .= vmr_prev1
+    vmr_prev1 .= vmr_var_scaled
+  end
 
   kde.t .= time
 
@@ -486,26 +547,44 @@ end
 function assign_density!(
   kde::CuKDE{N,T,S,M},
   mean_direct::AnyCuArray{Complex{T},N},
-  # variance_complete::AnyCuArray{Complex{T},N},
   vmr_variance::AnyCuArray{T,N},
+  vmr_prev1::AnyCuArray{T,N},
+  vmr_prev2::AnyCuArray{T,N},
   time::CuVector{<:Real},
   time_initial::CuVector{<:Real},
-  threshold::Real;
+  time_step::Real;
+  tol1::Real=1e-10,
+  tol2::Real=1e-10,
   dst_var_products::AnyCuArray{T,N}=similar(vmr_variance),
-  vmr_var_prev::AnyCuArray{T,M}=CuArray{T,N}(undef, 2, size(vmr_variance)...)
 )::Nothing where {N,T<:Real,S<:Real,M}
   vmr_var_scaled = calculate_variance_products!(
     Val(:cuda),
     vmr_variance,
-    # variance_complete,
     time,
     time_initial,
+    get_nsamples(kde),
     dst_var_products=dst_var_products
   )
 
-  assign_converged_density!(
-    Val(:cuda), kde.density, mean_direct, vmr_var_scaled, threshold, vmr_var_prev
-  )
+  if any(isnan, vmr_prev1) || any(isnan, vmr_prev2)
+    vmr_prev2 .= vmr_prev1
+    vmr_prev1 .= vmr_var_scaled
+  else
+    assign_converged_density!(
+      Val(:cuda),
+      kde.density,
+      mean_direct,
+      vmr_var_scaled,
+      vmr_prev1,
+      vmr_prev2,
+      time_step;
+      tol1,
+      tol2
+    )
+
+    vmr_prev2 .= vmr_prev1
+    vmr_prev1 .= vmr_var_scaled
+  end
 
   kde.t .= time
 
@@ -559,6 +638,16 @@ function get_nbootstraps(n_bootstraps::Union{Int,Nothing})
   end
 
   return n_bootstraps
+end
+
+function silverman_rule(data::AbstractVector{<:AbstractVector{<:Real}})
+  n_samples = length(data)
+  n_dims = length(data[1])
+
+  iqrs = ntuple(i -> iqr(getindex.(data, i)), n_dims)
+  stds = ntuple(i -> std(getindex.(data, i)), n_dims)
+
+  return min.(stds, iqrs ./ 1.34) .* (n_samples * (n_dims + 2) / 4)^(-1 / (n_dims + 4))
 end
 
 function get_smoothness(smoothness::Real, n_samples::Integer, n_dims::Int)

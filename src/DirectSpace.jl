@@ -4,7 +4,8 @@ using ..Grids
 using ..KDEs
 using ..FourierSpace
 
-using Statistics
+using Statistics,
+  LinearAlgebra
 
 using StaticArrays,
   CUDA,
@@ -441,22 +442,22 @@ end
 function calculate_variance_products!(
   ::Val{:serial},
   vmr_variance::AbstractArray{T,N},
-  # variance_real::AbstractArray{T,N},
   time::AbstractVector{<:Real},
-  time_initial::AbstractVector{<:Real};
+  time_initial::AbstractVector{<:Real},
+  n_samples::Integer;
   dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(vmr_variance)),
 ) where {N,T<:Real}
   det_t = prod(time .^ 2 .+ time_initial .^ 2)
 
-  dst_var_products .= vmr_variance .* det_t^(3 / 2)
+  dst_var_products .= vmr_variance .* (det_t^(3 / 2) * n_samples^4)
 
   return dst_var_products
 end
 function calculate_variance_products!(
   ::Val{:threaded},
   vmr_variance::AbstractArray{T,N},
-  # variance_complete::AbstractArray{T,N},
-  time::AbstractVector{<:Real};
+  time::AbstractVector{<:Real},
+  n_samples::Integer;
   dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(vmr_variance)),
 ) where {N,T<:Real}
   @warn "Threaded calculation of variance products not implemented. Using serial implementation."
@@ -464,22 +465,22 @@ function calculate_variance_products!(
   return calculate_variance_products!(
     Val{:serial},
     vmr_variance,
-    # variance_complete,
     time,
+    n_samples,
     dst_var_products=dst_var_products
   )
 end
 function calculate_variance_products!(
   ::Val{:cuda},
   vmr_variance::AnyCuArray{T,N},
-  # variance_real::AnyCuArray{T,N},
   time::CuVector{<:Real},
-  time_initial::CuVector{<:Real};
+  time_initial::CuVector{<:Real},
+  n_samples::Integer;
   dst_var_products::AnyCuArray{T,N}=CuArray{T,N}(undef, size(vmr_variance)),
 ) where {N,T<:Real}
   det_t = prod(time .^ 2 .+ time_initial .^ 2)
 
-  dst_var_products .= vmr_variance .* det_t^(3 / 2)
+  dst_var_products .= vmr_variance .* (det_t^(3 / 2) * n_samples^4)
 
   return dst_var_products
 end
@@ -488,46 +489,53 @@ function assign_converged_density!(
   ::Val{:serial},
   density::AbstractArray{T,N},
   means::AbstractArray{T,N},
-  vmr_var_scaled::AbstractArray{T,N},
-  threshold::T,
-  vmr_var_prev::AbstractArray{T,M}
-)::Nothing where {N,T<:Real,M}
-  vmr_prev2 = selectdim(vmr_var_prev, 1, 1)
-  vmr_prev1 = selectdim(vmr_var_prev, 1, 2)
-  vmr_current = vmr_var_scaled
-
-  # OPTIMIZE: Either preallocate is_max or do it inside the ifelse
-  is_max = @. (vmr_prev1 >= vmr_prev2) & (vmr_current < vmr_prev1)
-
+  vmr_current::AbstractArray{T,N},
+  vmr_prev1::AbstractArray{T,N},
+  vmr_prev2::AbstractArray{T,N},
+  time_step::Real;
+  tol1::Real=1e-10,
+  tol2::Real=1e-10,
+)::Nothing where {N,T<:Real}
   @. density = ifelse(
-    is_max,
+    (
+      ((abs(vmr_current - vmr_prev1) / (2time_step)) < tol1) &
+      ((abs(vmr_current - 2vmr_prev1 + vmr_prev2) / time_step^2) < tol2) &
+      isnan(density)
+    ),
     means,
-    density
+    density,
   )
 
-  @. vmr_prev2 = vmr_prev1
-  @. vmr_prev1 = vmr_current
-
-  println("n_nans: ", count(isnan, density))
+  # @. density = ifelse(
+  #   isnan(density),
+  #   means,
+  #   density,
+  # )
 
   return nothing
 end
 function assign_converged_density!(
   ::Val{:threaded},
   density::AbstractArray{T,N},
-  means::AbstractArray{Complex{T},N},
-  vmr_var_scaled::AbstractArray{T,N},
-  threshold::T,
-  vmr_var_prev::AbstractArray{T,M}
-)::Nothing where {N,T<:Real,M}
+  means::AbstractArray{T,N},
+  vmr_current::AbstractArray{T,N},
+  vmr_prev1::AbstractArray{T,N},
+  vmr_prev2::AbstractArray{T,N},
+  time_step::Real;
+  tol1::Real=1e-10,
+  tol2::Real=1e-10,
+)::Nothing where {N,T<:Real}
   @warn "Threaded assignment of converged density not implemented. Using serial implementation."
   assign_converged_density!(
     Val{:serial},
     density,
     means,
-    vmr_var_scaled,
-    threshold,
-    vmr_var_prev
+    vmr_current,
+    vmr_prev1,
+    vmr_prev1,
+    time_step;
+    tol1,
+    tol2,
   )
 
   return nothing
@@ -536,25 +544,23 @@ function assign_converged_density!(
   ::Val{:cuda},
   density::AnyCuArray{T,N},
   means::AnyCuArray{Complex{T},N},
-  vmr_var_scaled::AnyCuArray{T,N},
-  threshold::T,
-  vmr_var_prev::AbstractArray{T,M}
-)::Nothing where {N,T<:Real,M}
-  vmr_prev2 = selectdim(vmr_var_prev, 1, 1)
-  vmr_prev1 = selectdim(vmr_var_prev, 1, 2)
-  vmr_current = vmr_var_scaled
-
-  # OPTIMIZE: Either preallocate is_max or do it inside the ifelse
-  is_max = @. (vmr_prev1 >= vmr_prev2) & (vmr_current < vmr_prev1)
+  vmr_current::AnyCuArray{T,N},
+  vmr_prev1::AnyCuArray{T,N},
+  vmr_prev2::AnyCuArray{T,N},
+  time_step::Real;
+  tol1::Real=1.0f-10,
+  tol2::Real=1.0f-10,
+)::Nothing where {N,T<:Real}
+  time_step_32 = T(time_step)
 
   @. density = ifelse(
-    is_max,
+    (
+      ((abs(vmr_current - vmr_prev1) / (2i32 * time_step_32)) < tol1) &
+      ((abs(vmr_current - 2i32 * vmr_prev1 + vmr_prev2) / time_step_32^2i32) < tol2)
+    ),
     means,
-    density
+    density,
   )
-
-  @. vmr_prev2 = vmr_prev1
-  @. vmr_prev1 = vmr_current
 
   return nothing
 end

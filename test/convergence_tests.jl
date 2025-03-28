@@ -265,7 +265,7 @@
 # end
 
 @testset "Testing product of variances (CPU)" for n_dims in 1:1
-  n_samples = 10000
+  n_samples = 1000
   n_bootstraps = 100
   Random.seed!(1234)
 
@@ -283,8 +283,8 @@
     # data = SVector{n_dims,Float64}.(eachcol(rand(normal_distro, n_samples)))
 
     adjustable_factor = 1 / 80
-    threshold = ParallelKDE.get_smoothness(adjustable_factor, n_samples, n_dims)
-    threshold_line = fill(threshold, length(0.0:0.01:0.3)...)
+    # threshold = ParallelKDE.get_smoothness(adjustable_factor, n_samples, n_dims)
+    # threshold_line = fill(threshold, length(0.0:0.01:0.3)...)
 
     kde = initialize_kde(data, grid_ranges, :cpu)
     t0 = Grids.initial_bandwidth(grid)
@@ -297,7 +297,12 @@
 
     means_dst = Array{ComplexF64,n_dims + 1}(undef, size(means_0))
     variances_dst = Array{ComplexF64,n_dims + 1}(undef, size(variances_0))
-    convergence_tmp = fill(NaN, 2, size(kde.grid)...)
+
+    vmr_prev1 = fill(NaN, size(kde.grid))
+    vmr_prev2 = fill(NaN, size(kde.grid))
+    ema_d2 = zeros(Float64, size(kde.grid))
+
+    # thresholds = ParallelKDE.silverman_rule(data)
 
     dts = collect(0.0:0.01:1.0)
     # dts = collect(0.0:0.16:2.0)
@@ -352,20 +357,30 @@
       vmr_var_scaled = calculate_variance_products!(
         Val(:serial),
         vmr_variance,
-        # variance_direct,
         dt,
         t0,
         dst_var_products=vmr_variance
       )
 
-      DirectSpace.assign_converged_density!(
-        Val(:serial),
-        kde.density,
-        mean_direct,
-        vmr_var_scaled,
-        threshold,
-        convergence_tmp
-      )
+      if any(isnan, vmr_prev1) || any(isnan, vmr_prev2)
+        vmr_prev2 .= vmr_prev1
+        vmr_prev1 .= vmr_var_scaled
+      else
+        assign_converged_density!(
+          Val(:serial),
+          kde.density,
+          mean_direct,
+          vmr_var_scaled,
+          vmr_prev1,
+          vmr_prev2,
+          0.01,
+          tol1=1e-10,
+          tol2=1e-10,
+        )
+
+        vmr_prev2 .= vmr_prev1
+        vmr_prev1 .= vmr_var_scaled
+      end
       println("# NaN: ", sum(isnan.(kde.density)))
 
     end
