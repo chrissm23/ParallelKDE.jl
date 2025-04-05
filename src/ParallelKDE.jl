@@ -1,14 +1,18 @@
 module ParallelKDE
 
-include("Grids.jl")
-include("KDEs.jl")
-include("FourierSpace.jl")
-include("DirectSpace.jl")
+include("Devices.jl")
+include("Grids/Grids.jl")
+include("KDEs/KDEs.jl")
+include("StatisticsPropagation/FourierSpace.jl")
+include("StatisticsPropagation/DirectSpace.jl")
+include("DensityEstimations/DensityEstimations.jl")
 
+using .Devices
 using .Grids
 using .KDEs
 using .FourierSpace
 using .DirectSpace
+using .DensityEstimations
 
 using StaticArrays,
   StatsBase,
@@ -18,8 +22,7 @@ using StaticArrays,
 using Statistics,
   LinearAlgebra
 
-export initialize_kde,
-  fit_kde!
+
 
 function initialize_kde(
   data::AbstractVector{<:AbstractVector{<:Real}},

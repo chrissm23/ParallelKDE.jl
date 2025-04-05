@@ -8,101 +8,110 @@ using Statistics,
   LinearAlgebra
 
 using StaticArrays,
+  StatsBase,
   CUDA,
   FFTW
 
 using CUDA: i32
 
-export initialize_dirac_series,
-  mean_var_vmr!,
-  calculate_variance_products!,
-  assign_converged_density!
+export silverman_rule,
+  initialize_dirac_sequence
 
-include("statistics.jl")
+include("../CuStatistics/CuStatistics.jl")
 
-function initialize_dirac_series(
+function initialize_dirac_sequence(
   ::Val{:serial},
-  kde::KDE{N,T,S,M};
-  n_bootstraps::Integer=1,
-  calculate_squared::Bool=false,
-)::Union{Array{T,N + 1},NTuple{2,Array{T,N + 1}}} where {N,T<:Real,S<:Real,M}
-  grid_size = size(kde.grid)
+  data::AbstractVector{SVector{N,S}},
+  grid::AbstractGrid{N,P,M},
+  bootstrap_idxs::AbstractMatrix{Integer};
+  include_var::Bool=false,
+  T=Float64,
+) where {N,S<:Real,M,P<:Real}
+  grid_size = size(grid)
+  n_bootstraps = size(bootstrap_idxs, 2)
 
-  dirac_series = zeros(T, n_bootstraps, grid_size...)
-  bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
+  dirac_sequence = zeros(Complex{T}, grid_size..., n_bootstraps)
+  dirac_sequence_real = selectdim(reinterpret(reshape, T, dirac_sequence), 1, 1)
 
-  spacing = spacings(kde.grid)
-  low_bound = low_bounds(kde.grid)
+  spacing = spacings(grid)
+  low_bound = low_bounds(grid)
 
-  if calculate_squared
-    dirac_series_squared = zeros(T, n_bootstraps, grid_size...)
+  if include_var
+    dirac_sequence_squared = zeros(Complex{T}, grid_size..., n_bootstraps)
+    dirac_sequence_squared_real = selectdim(
+      reinterpret(reshape, T, dirac_sequence_squared), 1, 1
+    )
 
     for i in 1:n_bootstraps
       generate_dirac_cpu!(
-        selectdim(dirac_series, 1, i),
-        selectdim(dirac_series_squared, 1, i),
-        view(kde.data, bootstrap_idxs[:, i]),
+        selectdim(dirac_sequence_real, ndims(dirac_sequence), i),
+        selectdim(dirac_sequence_squared_real, ndims(dirac_sequence_squared), i),
+        view(data, bootstrap_idxs[:, i]),
         spacing,
         low_bound,
       )
     end
 
-    return dirac_series, dirac_series_squared
+    return dirac_sequence, dirac_sequence_squared
   else
     for i in 1:n_bootstraps
       generate_dirac_cpu!(
-        selectdim(dirac_series, 1, i),
-        view(kde.data, bootstrap_idxs[:, i]),
+        selectdim(dirac_sequence_real, ndims(dirac_sequence), i),
+        view(data, bootstrap_idxs[:, i]),
         spacing,
         low_bound,
       )
     end
 
-    return dirac_series
+    return dirac_sequence
   end
-
 end
-function initialize_dirac_series(
+function initialize_dirac_sequence(
   ::Val{:threaded},
-  kde::KDE{N,T,S,M};
-  n_bootstraps::Integer=1,
-  calculate_squared::Bool=false,
-)::Union{Array{T,N + 1},NTuple{2,Array{T,N + 1}}} where {N,T<:Real,S<:Real,M}
-  grid_size = size(kde.grid)
+  data::AbstractVector{SVector{N,S}},
+  grid::AbstractGrid{N,P,M},
+  bootstrap_idxs::AbstractMatrix{Integer};
+  include_var::Bool=false,
+  T=Float64,
+) where {N,S<:Real,M,P<:Real}
+  grid_size = size(grid)
+  n_bootstraps = size(bootstrap_idxs, 2)
 
-  dirac_series = zeros(T, n_bootstraps, grid_size...)
-  bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
+  dirac_sequence = zeros(Complex{T}, grid_size..., n_bootstraps)
+  dirac_sequence_real = selectdim(reinterpret(reshape, T, dirac_sequence), 1, 1)
 
-  spacing = spacings(kde.grid)
-  low_bound = low_bounds(kde.grid)
+  spacing = spacings(grid)
+  low_bound = low_bounds(grid)
 
-  if calculate_squared
-    dirac_series_squared = zeros(T, n_bootstraps, grid_size...)
+  if include_var
+    dirac_sequence_squared = zeros(Complex{T}, grid_size..., n_bootstraps)
+    dirac_sequence_squared_real = selectdim(
+      reinterpret(reshape, T, dirac_sequence_squared), 1, 1
+    )
 
     Threads.@threads for i in 1:n_bootstraps
       generate_dirac_cpu!(
-        selectdim(dirac_series, 1, i),
-        selectdim(dirac_series_squared, 1, i),
-        view(kde.data, bootstrap_idxs[:, i]),
+        selectdim(dirac_sequence_real, ndims(dirac_sequence), i),
+        selectdim(dirac_sequence_squared_real, ndims(dirac_sequence_squared), i),
+        view(data, bootstrap_idxs[:, i]),
         spacing,
         low_bound,
       )
     end
 
-    return dirac_series, dirac_series_squared
+    return dirac_sequence, dirac_sequence_squared
   else
     Threads.@threads for i in 1:n_bootstraps
       generate_dirac_cpu!(
-        selectdim(dirac_series, 1, i),
-        view(kde.data, bootstrap_idxs[:, i]),
+        selectdim(dirac_sequence_real, ndims(dirac_sequence), i),
+        view(data, bootstrap_idxs[:, i]),
         spacing,
         low_bound,
       )
     end
 
-    return dirac_series
+    return dirac_sequence
   end
-
 end
 
 function generate_dirac_cpu!(
@@ -120,8 +129,8 @@ function generate_dirac_cpu!(
   remainder_l = @MVector zeros(T, N)
   remainder_h = @MVector zeros(T, N)
 
-  products = @MArray zeros(T, fill(2, N)...)
-  grid_points = Array{CartesianIndex{N}}(undef, fill(2, N)...)
+  mask = falses(N)
+  grid_indices = @MVector zeros(Int64, N)
 
   for sample in data
     @. indices_l = floor(Int64, (sample - low_bound) / spacing) + 1
@@ -129,12 +138,18 @@ function generate_dirac_cpu!(
     @. indices_h = indices_l + 1
     @. remainder_h = spacing - remainder_l
 
-    products .= map(prod, Iterators.product(zip(remainder_l, remainder_h)...))
-    grid_points .= CartesianIndex{N}.(collect(Iterators.product(zip(indices_l, indices_h)...)))
+    @inbounds for i in 0:(2^N-1)
+      @inbounds @simd for j in 1:N
+        mask[j] = (i >> (N - j)) & 1 == 1
+        grid_indices[j] = ifelse(mask[j], indices_l[j], indices_h[j])
+      end
 
-    dirac_series_term = products / (n_samples * spacing_squared)
-    @inbounds dirac_series[grid_points] .+= dirac_series_term
-    @inbounds dirac_series_squared[grid_points] .+= dirac_series_term .^ 2
+      product = prod(remainder_l[mask]) * prod(remainder_h[.!mask])
+
+      dirac_series_term = product / (n_samples * spacing_squared)
+      dirac_series[grid_indices...] += dirac_series_term
+      dirac_series_squared[grid_indices...] += dirac_series_term^2
+    end
   end
 
   return nothing
@@ -153,8 +168,8 @@ function generate_dirac_cpu!(
   remainder_l = @MVector zeros(T, N)
   remainder_h = @MVector zeros(T, N)
 
-  products = @MArray zeros(T, fill(2, N)...)
-  grid_points = Array{CartesianIndex{N}}(undef, fill(2, N)...)
+  mask = falses(N)
+  grid_indices = @MVector zeros(Int64, N)
 
   for sample in data
     @. indices_l = floor(Int64, (sample - low_bound) / spacing) + 1
@@ -162,41 +177,52 @@ function generate_dirac_cpu!(
     @. indices_h = indices_l + 1
     @. remainder_h = spacing - remainder_l
 
-    products .= map(prod, Iterators.product(zip(remainder_l, remainder_h)...))
-    grid_points .= CartesianIndex{N}.(collect(Iterators.product(zip(indices_l, indices_h)...)))
+    @inbounds for i in 0:(2^N-1)
+      @inbounds @simd for j in 1:N
+        mask[j] = (i >> (N - j)) & 1 == 1
+        grid_indices[j] = ifelse(mask[j], indices_l[j], indices_h[j])
+      end
 
-    dirac_series_term = products / (n_samples * spacing_squared)
-    @inbounds dirac_series[grid_points] .+= dirac_series_term
+      product = prod(remainder_l[mask]) * prod(remainder_h[.!mask])
+
+      dirac_series_term = product / (n_samples * spacing_squared)
+      dirac_series[grid_indices...] += dirac_series_term
+    end
   end
 
   return nothing
 end
 
-function initialize_dirac_series(
+function initialize_dirac_sequence(
   ::Val{:cuda},
-  kde::CuKDE{N,T,S,M};
-  n_bootstraps::Integer=1,
-  calculate_squared::Bool=false,
-)::Union{AnyCuArray{T,N + 1},NTuple{2,AnyCuArray{T,N + 1}}} where {N,T<:Real,S<:Real,M}
-  grid_size = size(kde.grid)
+  data::CuMatrix{S},
+  grid::AbstractGrid{N,P,M},
+  bootstrap_idxs::CuMatrix{Int32};
+  include_var::Bool=false,
+  T=Float32,
+) where {N,S<:Real,M,P<:Real}
+  grid_size = size(grid)
+  n_samples, n_bootstraps = size(bootstrap_idxs)
 
-  dirac_series = CUDA.zeros(T, n_bootstraps, grid_size...)
-  bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
+  dirac_sequence = CUDA.zeros(Complex{T}, grid_size..., n_bootstraps)
+  dirac_sequence_real = selectdim(reinterpret(reshape, T, dirac_sequence), 1, 1)
 
-  spacing = spacings(kde.grid)
-  low_bound = low_bounds(kde.grid)
+  spacing = spacings(grid)
+  low_bound = low_bounds(grid)
 
-  n_samples = get_nsamples(kde)
   n_modified_gridpoints = n_samples * 2^N * n_bootstraps
 
-  if calculate_squared
-    dirac_series_squared = CUDA.zeros(T, n_bootstraps, grid_size...)
-    kernel = @cuda launch = false generate_dirac_gpu!(
-      dirac_series, dirac_series_squared, kde.data, bootstrap_idxs, spacing, low_bound
+  if include_var
+    dirac_sequence_squared = CUDA.zeros(Complex{T}, grid_size..., n_bootstraps)
+    dirac_sequence_squared_real = selectdim(
+      reinterpret(reshape, T, dirac_sequence_squared), 1, 1
+    )
+    kernel = @cuda launch = false generate_dirac_cuda!(
+      dirac_sequence_real, dirac_sequence_squared_real, data, bootstrap_idxs, spacing, low_bound
     )
   else
-    kernel = @cuda launch = false generate_dirac_gpu!(
-      dirac_series, kde.data, bootstrap_idxs, spacing, low_bound
+    kernel = @cuda launch = false generate_dirac_cuda!(
+      dirac_sequence_real, data, bootstrap_idxs, spacing, low_bound
     )
   end
 
@@ -204,12 +230,12 @@ function initialize_dirac_series(
   threads = min(n_modified_gridpoints, config.threads)
   blocks = cld(n_modified_gridpoints, threads)
 
-  if calculate_squared
+  if include_var
     CUDA.@sync blocking = true begin
       kernel(
-        dirac_series,
-        dirac_series_squared,
-        kde.data,
+        dirac_sequence,
+        dirac_sequence_squared,
+        data,
         bootstrap_idxs,
         spacing,
         low_bound;
@@ -218,12 +244,12 @@ function initialize_dirac_series(
       )
     end
 
-    return dirac_series, dirac_series_squared
+    return dirac_sequence, dirac_sequence_squared
   else
     CUDA.@sync blocking = true begin
       kernel(
-        dirac_series,
-        kde.data,
+        dirac_sequence,
+        data,
         bootstrap_idxs,
         spacing,
         low_bound;
@@ -232,24 +258,25 @@ function initialize_dirac_series(
       )
     end
 
-    return dirac_series
+    return dirac_sequence
   end
-
 end
 
-function generate_dirac_gpu!(
+function generate_dirac_cuda!(
   dirac_series::CuDeviceArray{T,M},
   data::CuDeviceArray{S,2},
   bootstrap_idxs::CuDeviceArray{Int32,2},
   spacing::CuDeviceArray{T,1},
   low_bound::CuDeviceArray{T,1}
 ) where {M,T<:Real,S<:Real}
-  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+  spacing_squared = prod(spacing)^2i32
 
   n_dims = Int32(M) - 1i32
   n_samples = size(data, 2i32)
   n_bootstraps = size(bootstrap_idxs, 2i32)
   n_modified_gridpoints = (2i32)^n_dims * n_bootstraps * n_samples
+
+  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
   if idx > n_modified_gridpoints
     return
@@ -257,48 +284,49 @@ function generate_dirac_gpu!(
 
   idx_sample_tmp, remainder = divrem(idx - 1i32, (2i32)^n_dims * n_bootstraps)
   idx_bootstrap_tmp, idx_dim = divrem(remainder, (2i32)^n_dims)
-
-  # idx_dim should be 0-indexed but idx_bootstrap and idx_sample should be 1-indexed
   idx_bootstrap = idx_bootstrap_tmp + 1i32
   idx_sample = idx_sample_tmp + 1i32
 
-  bit_dim_mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
-  tuple_dim_mask = ntuple(
-    i -> ifelse(
-      bit_dim_mask[end-i+1i32],
+  mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
+
+  indices_l = ntuple(
+    i -> (
       floor(
         Int32,
         (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) / spacing[i]
-      ) + 1i32,
-      ceil(
-        Int32,
-        (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) / spacing[i]
-      ) + 1i32
+      )
+      +
+      1i32
     ),
     n_dims
   )
+  indices_h = ntuple(i -> indices_l[i] + 1i32, n_dims)
+  grid_idxs = ntuple(i -> ifelse(mask[end-i+1i32], indices_l[i], indices_h[i]), n_dims)
 
   remainder_product = 1.0f0
   i = 1i32
   @inbounds while i <= n_dims
+    remainder_l = (
+      data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]
+    ) % spacing[i]
+    remainder_h = spacing[i] - remainder_l
+
     remainder_product *= ifelse(
-      bit_dim_mask[end-i+1i32],
-      (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) % spacing[i],
-      spacing[i] - (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) % spacing[i]
+      mask[end-i+1i32],
+      remainder_l,
+      remainder_h,
     )
 
     i += 1i32
   end
 
-  spacing_squared = prod(spacing)^2i32
   dirac_series_term = remainder_product / (n_samples * spacing_squared)
-
-  dirac_idx = (idx_bootstrap, tuple_dim_mask...)
+  dirac_idx = (grid_idxs..., idx_bootstrap)
   @inbounds CUDA.@atomic dirac_series[dirac_idx...] += dirac_series_term
 
   return
 end
-function generate_dirac_gpu!(
+function generate_dirac_cuda!(
   dirac_series::CuDeviceArray{T,M},
   dirac_series_squared::CuDeviceArray{T,M},
   data::CuDeviceArray{S,2},
@@ -306,12 +334,14 @@ function generate_dirac_gpu!(
   spacing::CuDeviceArray{T,1},
   low_bound::CuDeviceArray{T,1}
 ) where {M,T<:Real,S<:Real}
-  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+  spacing_squared = prod(spacing)^2i32
 
   n_dims = Int32(M) - 1i32
   n_samples = size(data, 2i32)
   n_bootstraps = size(bootstrap_idxs, 2i32)
   n_modified_gridpoints = (2i32)^n_dims * n_bootstraps * n_samples
+
+  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
   if idx > n_modified_gridpoints
     return
@@ -319,45 +349,46 @@ function generate_dirac_gpu!(
 
   idx_sample_tmp, remainder = divrem(idx - 1i32, (2i32)^n_dims * n_bootstraps)
   idx_bootstrap_tmp, idx_dim = divrem(remainder, (2i32)^n_dims)
-
-  # idx_dim should be 0-indexed but idx_bootstrap and idx_sample should be 1-indexed
   idx_bootstrap = idx_bootstrap_tmp + 1i32
   idx_sample = idx_sample_tmp + 1i32
 
-  bit_dim_mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
-  tuple_dim_mask = ntuple(
-    i -> ifelse(
-      bit_dim_mask[end-i+1i32],
+  mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
+
+  indices_l = ntuple(
+    i -> (
       floor(
         Int32,
         (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) / spacing[i]
-      ) + 1i32,
-      ceil(
-        Int32,
-        (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) / spacing[i]
-      ) + 1i32
+      )
+      +
+      1i32
     ),
     n_dims
   )
+  indices_h = ntuple(i -> indices_l[i] + 1i32, n_dims)
+  grid_idxs = ntuple(i -> ifelse(mask[end-i+1i32], indices_l[i], indices_h[i]), n_dims)
 
   remainder_product = 1.0f0
   i = 1i32
   @inbounds while i <= n_dims
+    remainder_l = (
+      data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]
+    ) % spacing[i]
+    remainder_h = spacing[i] - remainder_l
+
     remainder_product *= ifelse(
-      bit_dim_mask[end-i+1i32],
-      (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) % spacing[i],
-      spacing[i] - (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) % spacing[i]
+      mask[end-i+1i32],
+      remainder_l,
+      remainder_h,
     )
 
     i += 1i32
   end
 
-  spacing_squared = prod(spacing)^2i32
   dirac_series_term = remainder_product / (n_samples * spacing_squared)
-
-  dirac_idx = (idx_bootstrap, tuple_dim_mask...)
+  dirac_idx = (grid_idxs..., idx_bootstrap)
   @inbounds CUDA.@atomic dirac_series[dirac_idx...] += dirac_series_term
-  @inbounds CUDA.@atomic dirac_series_squared[dirac_idx...] += dirac_series_term^2i32
+  @inbounds CUDA.@atomic dirac_series_squared[dirac_idx...] += dirac_series_term^2
 
   return
 end
@@ -563,6 +594,15 @@ function assign_converged_density!(
   )
 
   return nothing
+end
+
+function silverman_rule(data::AbstractMatrix{T}) where {T<:Real}
+  n_dims, n_samples = size(data)
+
+  iqrs = ntuple(i -> iqr(selectdim(data, 1, i)), n_dims)
+  stds = ntuple(i -> std(selectdim(data, 1, i)), n_dims)
+
+  return min.(stds, iqrs ./ 1.34) .* (n_samples * (n_dims + 2) / 4)^(-1 / (n_dims + 4))
 end
 
 end

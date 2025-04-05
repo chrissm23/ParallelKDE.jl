@@ -1,5 +1,7 @@
 module Grids
 
+import ..Devices: Device, IsCPU, IsCUDA
+
 using FFTW
 using StaticArrays
 using CUDA
@@ -128,11 +130,8 @@ function Base.broadcastable(grid::CuGrid{N,T}) where {N,T<:Real}
   return get_coordinates(grid)
 end
 
-abstract type DeviceGrid end
-struct IsCPUGrid <: DeviceGrid end
-struct IsGPUGrid <: DeviceGrid end
-DeviceGrid(grid::Grid) = IsCPUGrid()
-DeviceGrid(grid::CuGrid) = IsGPUGrid()
+Device(::Grid) = IsCPU()
+Device(::CuGrid) = IsCUDA()
 
 function spacings(grid::AbstractGrid)::AbstractVector
   return grid.spacings
@@ -155,12 +154,12 @@ function initial_bandwidth(grid::AbstractGrid)::AbstractVector
 end
 
 function fftgrid(grid::AbstractGrid)::AbstractGrid
-  return fftgrid(DeviceGrid(grid), grid)
+  return fftgrid(Device(grid), grid)
 end
-function fftgrid(::IsCPUGrid, grid::AbstractGrid)::Grid
+function fftgrid(::IsCPU, grid::AbstractGrid)::Grid
   n_points = size(grid)
   spacing = spacings(grid)
-  fourier_coordinates = @. fftshift(2π * fftfreq(n_points, 1 / spacing))
+  fourier_coordinates = @. 2π * fftfreq(n_points, 1 / spacing)
 
   if fourier_coordinates isa Frequencies
     fourier_coordinates = [fourier_coordinates,]
@@ -168,10 +167,10 @@ function fftgrid(::IsCPUGrid, grid::AbstractGrid)::Grid
 
   return Grid(fourier_coordinates)
 end
-function fftgrid(::IsGPUGrid, grid::AbstractGrid)::CuGrid
+function fftgrid(::IsCUDA, grid::AbstractGrid)::CuGrid
   n_points = size(grid)
   spacing = Array{Float32}(spacings(grid))
-  fourier_coordinates = @. fftshift(Float32(2π) * fftfreq(n_points, 1 / spacing))
+  fourier_coordinates = @. Float32(2π) * fftfreq(n_points, 1 / spacing)
 
   if fourier_coordinates isa Frequencies
     fourier_coordinates = [fourier_coordinates,]

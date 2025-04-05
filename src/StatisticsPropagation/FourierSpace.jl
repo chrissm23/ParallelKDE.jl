@@ -8,68 +8,37 @@ using StaticArrays,
 
 using CUDA: i32
 
-export initialize_fourier_statistics,
-  ifft_statistics!,
+export fourier_statistics!,
   propagate_statistics!
 
-function initialize_fourier_statistics(
-  dirac_series::AbstractArray{T,M},
-  dirac_series_squared::AbstractArray{T,M},
-  tmp::AbstractArray{Complex{T},M}
+function fourier_statistics!(
+  ::Val{:serial},
+  plan::FFTW.FFTWPlan,
+  stat::AbstractArray{Complex{T},M},
 ) where {T<:Real,M}
-  if M < 2
-    throw(ArgumentError("The dimension of the input array must be at least 1."))
+  n_bootstraps = size(stat)[end]
+
+  for i in 1:n_bootstraps
+    plan * selectdim(stat, ndims(stat), i)
   end
-
-  tmp .= fft(dirac_series, 2:M)
-  sk_0 = fftshift(tmp, 2:M)
-
-  tmp .= fft(dirac_series_squared, 2:M)
-  s2k_0 = fftshift(tmp, 2:M)
-
-  return sk_0, s2k_0
 end
-function initialize_fourier_statistics(
-  dirac_series::AbstractArray{T,M},
-  tmp::AbstractArray{Complex{T},M}
+function fourier_statistics!(
+  ::Val{:threaded},
+  plan::FFTW.FFTWPlan,
+  stat::AbstractArray{Complex{T},M},
 ) where {T<:Real,M}
-  if M < 2
-    throw(ArgumentError("The dimension of the input array must be at least 1."))
+  n_bootstraps = size(stat)[end]
+
+  Threads.@threads for i in 1:n_bootstraps
+    plan * selectdim(stat, ndims(stat), i)
   end
-
-  tmp .= fft(dirac_series, 2:M)
-  sk_0 = fftshift(tmp, 2:M)
-
-  return sk_0
 end
-function initialize_fourier_statistics(
-  dirac_series::AnyCuArray{T,M},
-  dirac_series_squared::AnyCuArray{T,M},
-  tmp::AnyCuArray{Complex{T},M}
+function fourier_statistics!(
+  ::Val{:cuda},
+  plan::AbstractFFTs.ScaledPlan{Complex{T}},
+  stat::AnyCuArray{Complex{T},M},
 ) where {T<:Real,M}
-  if M < 2
-    throw(ArgumentError("The dimension of the input array must be at least 1."))
-  end
-
-  tmp .= fft(dirac_series, 2:M)
-  sk_0 = fftshift(tmp, 2:M)
-
-  tmp .= fft(dirac_series_squared, 2:M)
-  s2k_0 = fftshift(tmp, 2:M)
-
-  return sk_0, s2k_0
-end
-function initialize_fourier_statistics(
-  dirac_series::AnyCuArray{T,M},
-) where {T<:Real,M}
-  if M < 2
-    throw(ArgumentError("The dimension of the input array must be at least 1."))
-  end
-
-  tmp = fft(dirac_series, 2:M)
-  sk_0 = fftshift(tmp, 2:M)
-
-  return sk_0
+  plan * stat
 end
 
 function propagate_statistics!(
@@ -78,25 +47,25 @@ function propagate_statistics!(
   variances_t::AbstractArray{Complex{T},M},
   means_0::AbstractArray{Complex{T},M},
   variances_0::AbstractArray{Complex{T},M},
-  grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
   time_intial::SVector{N,Float64},
+  grid_array::AbstractArray{S,M},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  n_bootstraps = size(means_0, 1)
+  n_bootstraps = size(means_0)[end]
 
   for i in 1:n_bootstraps
     propagate_time_cpu!(
-      selectdim(means_t, 1, i),
-      selectdim(variances_t, 1, i),
-      selectdim(means_0, 1, i),
-      selectdim(variances_0, 1, i),
-      grid_array,
+      selectdim(means_t, M, i),
+      selectdim(variances_t, M, i),
+      selectdim(means_0, M, i),
+      selectdim(variances_0, M, i),
       time,
-      time_intial
+      time_intial,
+      grid_array,
     )
   end
 
@@ -106,21 +75,21 @@ function propagate_statistics!(
   ::Val{:serial},
   means_t::AbstractArray{Complex{T},M},
   means_0::AbstractArray{Complex{T},M},
-  grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
+  grid_array::AbstractArray{S,M},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  n_bootstraps = size(means_0, 1)
+  n_bootstraps = size(means_0)[end]
 
   for i in 1:n_bootstraps
     propagate_time_cpu!(
-      selectdim(means_t, 1, i),
-      selectdim(means_0, 1, i),
+      selectdim(means_t, M, i),
+      selectdim(means_0, M, i),
+      time,
       grid_array,
-      time
     )
   end
 
@@ -132,25 +101,25 @@ function propagate_statistics!(
   variances_t::AbstractArray{Complex{T},M},
   means_0::AbstractArray{Complex{T},M},
   variances_0::AbstractArray{Complex{T},M},
-  grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
   time_initial::SVector{N,Float64},
+  grid_array::AbstractArray{S,M},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  n_bootstraps = size(means_0, 1)
+  n_bootstraps = size(means_0)[end]
 
   Threads.@threads for i in 1:n_bootstraps
     propagate_time_cpu!(
-      selectdim(means_t, 1, i),
-      selectdim(variances_t, 1, i),
-      selectdim(means_0, 1, i),
-      selectdim(variances_0, 1, i),
-      grid_array,
+      selectdim(means_t, M, i),
+      selectdim(variances_t, M, i),
+      selectdim(means_0, M, i),
+      selectdim(variances_0, M, i),
       time,
-      time_initial
+      time_initial,
+      grid_array,
     )
   end
 
@@ -160,21 +129,21 @@ function propagate_statistics!(
   ::Val{:threaded},
   means_t::AbstractArray{Complex{T},M},
   means_0::AbstractArray{Complex{T},M},
-  grid_array::AbstractArray{S,M},
   time::SVector{N,Float64},
+  grid_array::AbstractArray{S,M},
 ) where {N,T<:Real,S<:Real,M}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
 
-  n_bootstraps = size(means_0, 1)
+  n_bootstraps = size(means_0)[end]
 
   Threads.@threads for i in 1:n_bootstraps
     propagate_time_cpu!(
-      selectdim(means_t, 1, i),
-      selectdim(means_0, 1, i),
+      selectdim(means_t, M, i),
+      selectdim(means_0, M, i),
+      time,
       grid_array,
-      time
     )
   end
 
@@ -186,9 +155,9 @@ function propagate_time_cpu!(
   variances_t::AbstractArray{Complex{T},N},
   means_0::AbstractArray{Complex{T},N},
   variances_0::AbstractArray{Complex{T},N},
-  grid_array::AbstractArray{S,M},
   time::SVector{N,<:Real},
   time_initial::SVector{N,<:Real},
+  grid_array::AbstractArray{S,M},
 ) where {T<:Real,N,S<:Real,M}
   det_t = prod(time .^ 2)
   det_t0 = prod(time_initial .^ 2)
@@ -209,8 +178,8 @@ end
 function propagate_time_cpu!(
   means_t::AbstractArray{Complex{T},N},
   means_0::AbstractArray{Complex{T},N},
-  grid_array::AbstractArray{S,M},
   time::SVector{N,<:Real},
+  grid_array::AbstractArray{S,M},
 ) where {T<:Real,N,S<:Real,M}
   time_squared = reshape(time .^ 2, :, ones(Int, N)...)
   propagator_exponent = Array{T,N}(undef, size(means_t))
@@ -227,15 +196,15 @@ function propagate_statistics!(
   variances_t::AnyCuArray{Complex{T},M},
   means_0::AnyCuArray{Complex{T},M},
   variances_0::AnyCuArray{Complex{T},M},
-  grid_array::AnyCuArray{S,M},
   time::CuVector{<:Real},
   time_initial::CuVector{<:Real},
+  grid_array::AnyCuArray{S,M},
 ) where {T<:Real,S<:Real,M}
   n_points = prod(size(means_t))
   time_squared = time .^ 2
   time_initial_squared = time_initial .^ 2
 
-  kernel = @cuda launch = false propagate_time_gpu!(
+  kernel = @cuda launch = false propagate_time_cuda!(
     means_t,
     variances_t,
     means_0,
@@ -269,13 +238,13 @@ function propagate_statistics!(
   ::Val{:cuda},
   means_t::AnyCuArray{Complex{T},M},
   means_0::AnyCuArray{Complex{T},M},
-  grid_array::AnyCuArray{S,M},
   time::CuVector{<:Real},
+  grid_array::AnyCuArray{S,M},
 ) where {T<:Real,S<:Real,M}
   n_points = prod(size(means_t))
   time_squared = time .^ 2
 
-  kernel = @cuda launch = false propagate_time_gpu!(
+  kernel = @cuda launch = false propagate_time_cuda!(
     means_t,
     means_0,
     grid_array,
@@ -300,14 +269,14 @@ function propagate_statistics!(
   return nothing
 end
 
-function propagate_time_gpu!(
+function propagate_time_cuda!(
   means_t::CuDeviceArray{Complex{T},M},
   variances_t::CuDeviceArray{Complex{T},M},
   means_0::CuDeviceArray{Complex{T},M},
   variances_0::CuDeviceArray{Complex{T},M},
-  grid_array::CuDeviceArray{S,M},
   time_squared::CuDeviceVector{<:Real},
   time_initial_squared::CuDeviceVector{<:Real},
+  grid_array::CuDeviceArray{S,M},
 ) where {T<:Real,S<:Real,M}
   N = M - 1i32
   idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
@@ -351,11 +320,11 @@ function propagate_time_gpu!(
 
   return
 end
-function propagate_time_gpu!(
+function propagate_time_cuda!(
   means_t::CuDeviceArray{Complex{T},M},
   means_0::CuDeviceArray{Complex{T},M},
-  grid_array::CuDeviceArray{S,M},
   time_squared::CuDeviceVector{<:Real},
+  grid_array::CuDeviceArray{S,M},
 ) where {T<:Real,S<:Real,M}
   N = M - 1i32
   idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
