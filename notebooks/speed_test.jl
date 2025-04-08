@@ -111,42 +111,6 @@ function dirac_op!(
 	end
 end
 
-# ╔═╡ cddf6a5f-220a-4117-b9e6-6c3d74a8c949
-function dirac_cuda!(
-	dirac_series::CuArray{T,M},
-	dirac_series_squared::CuArray{T,M},
-	data::CuMatrix{S},
-	spacing::CuVector{<:Real},
-	low_bound::CuVector{S},
-	bootstrap_idxs::CuMatrix{Int32},
-) where {T<:Real,M,S<:Real}
-	dirac_series .= 0.0f0
-	dirac_series_squared .= 0.0f0
-	
-	n_samples, n_bootstraps = size(bootstrap_idxs)
-	n_modified_gridpoints = n_samples * 2^(M-1) * n_bootstraps
-
-	kernel = @cuda maxregs=32 fastmath=true launch=false dirac_kernel!(
-		dirac_series, dirac_series_squared, data, bootstrap_idxs, spacing, low_bound
-	)
-	config = launch_configuration(kernel.fun)
-	threads = min(n_modified_gridpoints, config.threads)
-	blocks = cld(n_modified_gridpoints, threads)
-
-	CUDA.@sync blocking=true begin
-		kernel(
-			dirac_series,
-			dirac_series_squared,
-			data,
-			bootstrap_idxs,
-			spacing,
-			low_bound;
-			threads,
-			blocks
-		)
-	end
-end
-
 # ╔═╡ 4071c078-0b91-4eb3-811c-bceec8fa44e5
 function dirac_kernel!(
   dirac_series::CuDeviceArray{T,M},
@@ -210,6 +174,42 @@ function dirac_kernel!(
 	return
 end
 
+# ╔═╡ cddf6a5f-220a-4117-b9e6-6c3d74a8c949
+function dirac_cuda!(
+	dirac_series::CuArray{T,M},
+	dirac_series_squared::CuArray{T,M},
+	data::CuMatrix{S},
+	spacing::CuVector{<:Real},
+	low_bound::CuVector{S},
+	bootstrap_idxs::CuMatrix{Int32},
+) where {T<:Real,M,S<:Real}
+	dirac_series .= 0.0f0
+	dirac_series_squared .= 0.0f0
+	
+	n_samples, n_bootstraps = size(bootstrap_idxs)
+	n_modified_gridpoints = n_samples * 2^(M-1) * n_bootstraps
+
+	kernel = @cuda maxregs=32 fastmath=true launch=false dirac_kernel!(
+		dirac_series, dirac_series_squared, data, bootstrap_idxs, spacing, low_bound
+	)
+	config = launch_configuration(kernel.fun)
+	threads = min(n_modified_gridpoints, config.threads)
+	blocks = cld(n_modified_gridpoints, threads)
+
+	CUDA.@sync blocking=true begin
+		kernel(
+			dirac_series,
+			dirac_series_squared,
+			data,
+			bootstrap_idxs,
+			spacing,
+			low_bound;
+			threads,
+			blocks
+		)
+	end
+end
+
 # ╔═╡ d63b785d-af95-4fcb-8958-f46ea076dd97
 md"""
 ### Initializing data
@@ -219,7 +219,7 @@ md"""
 # ╠═╡ disabled = true
 #=╠═╡
 begin
-	n_dims_dirac = 1
+	n_dims_dirac = 2
 	n_samples_dirac = 10000
 	n_points_dirac = 1002
 	n_bootstraps_dirac = 1
@@ -239,7 +239,7 @@ begin
 	)
 	dirac_series_squared_d = CUDA.zeros(Float32, size(dirac_series_d))
 	
-	data_d = CuArray{Float32,2}(reshape(reinterpret(reshape, Float64, data), 1, :))
+	data_d = CuArray{Float32,2}(reinterpret(reshape, Float64, data))
 
 	spacing_d = CuArray{Float32}(spacing)
 	low_bound_d = CuArray{Float32}(low_bound)
@@ -251,19 +251,28 @@ end;
 
 # ╔═╡ 32a0a543-de61-4d3b-a61e-6d755a878ae2
 md"""
-### Benchmarking speeds
+### Benchmarking times
 """
 
 # ╔═╡ e9337b33-b37b-4f87-8f89-b2d520c7d667
+# ╠═╡ disabled = true
+#=╠═╡
 @btime dirac_og!(dirac_series, dirac_series_squared, data, spacing, low_bound)
+  ╠═╡ =#
 
 # ╔═╡ e5bb3183-b9c7-4dc3-83b3-2d75bb8ad3c4
+# ╠═╡ disabled = true
+#=╠═╡
 @btime dirac_op!(dirac_series, dirac_series_squared, data, spacing, low_bound)
+  ╠═╡ =#
 
 # ╔═╡ d32a3b0a-39de-4e26-8044-21ea5f355158
+# ╠═╡ disabled = true
+#=╠═╡
 @btime dirac_cuda!(
 	dirac_series_d, dirac_series_squared_d, data_d, spacing_d, low_bound_d, bootstrap_idxs
 )
+  ╠═╡ =#
 
 # ╔═╡ 6e1080cd-f4c1-49bb-a641-76a1ab5aacc7
 md"""
@@ -325,9 +334,93 @@ function propagate_op!(
 	return nothing
 end
 
+# ╔═╡ 829e0a9d-63c4-443b-bda4-104994e25a7b
+function propagate_kernel!(
+	mt::CuDeviceArray{Complex{T},M},
+	vt::CuDeviceArray{Complex{T},M},
+	m0::CuDeviceArray{Complex{T},M},
+	v0::CuDeviceArray{Complex{T},M},
+	t_squared::CuDeviceVector{P},
+	t0_squared::CuDeviceVector{P},
+	grid_array::CuDeviceArray{S,M},
+) where {T<:Real,S<:Real,M,P<:Real}
+	N = M - 1i32
+	idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+	n_bootstraps = size(mt, 1i32)
+	grid_size = size(grid_array)[2i32:end]
+	n_gridpoints = prod(grid_size)
+	n_points = n_bootstraps * n_gridpoints
+
+	bootstrap_idx_tmp, point_idx_tmp = divrem(idx - 1i32, n_gridpoints)
+	bootstrap_idx = bootstrap_idx_tmp + 1i32
+	point_idx = point_idx_tmp + 1i32
+
+	if idx > n_points
+		return
+	end
+
+	cartesian_indices = CartesianIndices(grid_size)
+	cartesian_idx = Tuple(cartesian_indices[point_idx])
+
+	propagator_mean = 1.0f0
+	i = 1i32
+	while i <= N
+		@inbounds propagator_mean *= exp(
+			-0.5f0 * grid_array[i, cartesian_idx...]^2i32 * t_squared[i]
+		)
+
+		i += 1i32
+	end
+
+	det_t = prod(t_squared)
+	det_t0 = prod(t0_squared)
+	propagator_variance = sqrt(det_t0) * sqrt(propagator_mean) / sqrt(det_t * det_t0)
+
+	@inbounds mt[cartesian_idx..., bootstrap_idx] = (
+		propagator_mean * m0[cartesian_idx..., bootstrap_idx]
+	)
+	@inbounds vt[cartesian_idx..., bootstrap_idx] = (
+		propagator_variance * v0[cartesian_idx..., bootstrap_idx]
+	)
+
+	return
+end
+
+# ╔═╡ 0f54f4a2-f98c-4e47-8b39-2403731b5af4
+function propagate_cuda!(
+	mt::AnyCuArray{Complex{T},M},
+	vt::AnyCuArray{Complex{T},M},
+	m0::AnyCuArray{Complex{T},M},
+	v0::AnyCuArray{Complex{T},M},
+	t::CuVector{P},
+	t0::CuVector{P},
+	grid_array::AnyCuArray{S,M},
+) where {T<:Real, S<:Real, M, P<:Real}
+	n_points = prod(size(mt))
+	t_squared = t .^ 2
+	t0_squared = t0 .^ 2
+
+	kernel = @cuda launch=false propagate_kernel!(
+		mt, vt, m0, v0, t_squared, t0_squared, grid_array
+	)
+
+	config = launch_configuration(kernel.fun)
+	threads = min(n_points, config.threads)
+	blocks = cld(n_points, threads)
+
+	CUDA.@sync blocking=true begin
+		kernel(
+			mt, vt, m0, v0, t_squared, t0_squared, grid_array; threads, blocks
+		)
+	end
+
+	return nothing
+end
+
 # ╔═╡ 20330f00-ba27-4f76-9bb7-2ac72290566c
 md"""
-## Initialize data
+### Initialize data
 """
 
 # ╔═╡ 61f9b860-e749-4b02-ad38-708fd5a5a212
@@ -347,7 +440,7 @@ begin
 	time = @SVector fill(0.01, n_dims_prop)
 	time_initial = @SVector fill(0.001, n_dims_prop)
 
-	grid = rand(Float64, n_dims_prop, size(means_t)...)
+	grid_ar = rand(Float64, n_dims_prop, size(means_t)...)
 
 	means_t_d = CUDA.zeros(ComplexF32, size(means_t)..., 1)
 	vars_t_d = CUDA.zeros(ComplexF32, size(means_t)..., 1)
@@ -358,29 +451,119 @@ begin
 	time_d = CuVector{Float32}(time)
 	time_initial_d = CuVector{Float32}(time_initial)
 
-	grid_d = CuArray{Float32}(grid)
+	grid_ar_d = CuArray{Float32}(grid_ar)
 end;
   ╠═╡ =#
 
+# ╔═╡ f94ab2e5-879e-44ed-9b36-9f8f07c829f2
+md"""
+### Benchmarking times
+"""
+
 # ╔═╡ 9d6283dd-d74f-472a-b4be-7186b891400c
-@btime propagate_og!(means_t, vars_t, means_0, vars_0, time, time_initial, grid)
+# ╠═╡ disabled = true
+#=╠═╡
+@btime propagate_og!(means_t, vars_t, means_0, vars_0, time, time_initial, grid_ar)
+  ╠═╡ =#
 
 # ╔═╡ 019c6803-d81d-4233-b783-e64d022fc2d2
-@btime propagate_op!(means_t, vars_t, means_0, vars_0, time, time_initial, grid)
+# ╠═╡ disabled = true
+#=╠═╡
+@btime propagate_op!(means_t, vars_t, means_0, vars_0, time, time_initial, grid_ar)
+  ╠═╡ =#
 
-# ╔═╡ 862e418f-08f6-4a02-ae1c-3cfe646c7dff
+# ╔═╡ ba854eba-795b-4ff2-9132-32c373417c64
+# ╠═╡ disabled = true
+#=╠═╡
+@btime propagate_cuda!(means_t_d, vars_t_d, means_0_d, vars_0_d, time_d, time_initial_d, grid_ar_d)
+  ╠═╡ =#
+
+# ╔═╡ 49c7efd9-d0d2-432f-930a-4443b69deb5d
+md"""
+## VMR calculation
+"""
+
+# ╔═╡ 30ca5d32-750f-4d91-ab82-f8af9c1e3bb6
+function vmr_og!(
+	sk::AbstractArray{Complex{T},M},
+	s2k::AbstractArray{Complex{T},M},
+	n_samples::P,
+) where {T<:Real,M,P<:Integer}
+	n_bootstraps = size(sk)[end]
+
+	@. sk = abs(sk) / n_samples
+	@. s2k = abs(s2k) / n_samples - sk ^ 2
+
+	return nothing
+end
+
+# ╔═╡ 1b42b935-bd73-4896-92fa-971abdbc909c
+function vmr_op!(
+	sk::AbstractArray{Complex{T},M},
+	s2k::AbstractArray{Complex{T},M},
+	n_samples::P,
+) where {T<:Real,M,P<:Integer}
+	n_bootstraps = size(sk)[end]
+
+	@inbounds @simd for idx in eachindex(sk)
+		sk_i = abs(sk[idx]) / n_samples
+		sk[idx] = sk_i
+		s2k[idx] = abs(s2k[idx]) / n_samples - sk_i^2
+	end
+
+	return nothing
+end
+
+# ╔═╡ e8884fbc-7411-4b7d-aac3-3a0e2138bc27
+function vmr_cuda!(
+	sk::AnyCuArray{Complex{T},M},
+	s2k::AnyCuArray{Complex{T},M},
+	n_samples::P,
+) where {T<:Real,M,P<:Integer}
+	@. sk = abs(sk) / n_samples
+
+	return nothing
+end
+
+# ╔═╡ e0d3964f-07aa-41ca-a6e5-86132aeea516
+md"""
+### Initialize data
+"""
+
+# ╔═╡ 278de58e-8f62-4836-8739-9b97f21901c9
+# ╠═╡ disabled = true
 #=╠═╡
 begin
-	means_og = zeros(ComplexF64, fill(n_points_prop, n_dims_prop)...)
-	vars_og = zeros(ComplexF64, size(means_t))
-	means_op = zeros(ComplexF64, fill(n_points_prop, n_dims_prop)...)
-	vars_op = zeros(ComplexF64, size(means_t))
+	n_dims_vmr = 2
+	n_points_vmr = 1002
+	n_bootstraps_vmr = 1
+	
+	sk = rand(ComplexF64, fill(n_points_vmr, n_dims_vmr)...)
+	s2k = rand(ComplexF64, fill(n_points_vmr, n_dims_vmr)...)
 
-	propagate_og!(means_og, vars_og, means_0, vars_0, time, time_initial, grid)
-	propagate_op!(means_op, vars_op, means_0, vars_0, time, time_initial, grid)
+	n_samples_vmr = 1000
 
-	println(means_og ≈ means_op)
+	sk_d = CuArray{ComplexF32}(sk)
+	s2k_d = CuArray{ComplexF32}(s2k)
 end;
+  ╠═╡ =#
+
+# ╔═╡ b59ade79-dc19-43c9-a8ec-a8df468b65b9
+# ╠═╡ disabled = true
+#=╠═╡
+@btime vmr_og!(sk, s2k, n_samples_vmr)
+  ╠═╡ =#
+
+# ╔═╡ dea7d951-cb14-4bba-afa0-713590024e46
+# ╠═╡ disabled = true
+#=╠═╡
+@btime vmr_op!(sk, s2k, n_samples_vmr)
+  ╠═╡ =#
+
+# ╔═╡ baa0cf41-e12e-4f5e-a33b-4ac28ca65028
+# ╠═╡ disabled = true
+#=╠═╡
+@btime vmr_cuda!(sk_d, s2k_d, n_samples_vmr)
   ╠═╡ =#
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -2057,10 +2240,22 @@ version = "1.4.1+2"
 # ╟─6e1080cd-f4c1-49bb-a641-76a1ab5aacc7
 # ╠═641d8147-83b5-4043-9c09-379b36fb04e4
 # ╠═8a817f50-7f86-4b40-9796-a6d31086d278
+# ╠═0f54f4a2-f98c-4e47-8b39-2403731b5af4
+# ╠═829e0a9d-63c4-443b-bda4-104994e25a7b
 # ╟─20330f00-ba27-4f76-9bb7-2ac72290566c
 # ╠═61f9b860-e749-4b02-ad38-708fd5a5a212
+# ╟─f94ab2e5-879e-44ed-9b36-9f8f07c829f2
 # ╠═9d6283dd-d74f-472a-b4be-7186b891400c
 # ╠═019c6803-d81d-4233-b783-e64d022fc2d2
-# ╠═862e418f-08f6-4a02-ae1c-3cfe646c7dff
+# ╠═ba854eba-795b-4ff2-9132-32c373417c64
+# ╟─49c7efd9-d0d2-432f-930a-4443b69deb5d
+# ╠═30ca5d32-750f-4d91-ab82-f8af9c1e3bb6
+# ╠═1b42b935-bd73-4896-92fa-971abdbc909c
+# ╠═e8884fbc-7411-4b7d-aac3-3a0e2138bc27
+# ╟─e0d3964f-07aa-41ca-a6e5-86132aeea516
+# ╠═278de58e-8f62-4836-8739-9b97f21901c9
+# ╠═b59ade79-dc19-43c9-a8ec-a8df468b65b9
+# ╠═dea7d951-cb14-4bba-afa0-713590024e46
+# ╠═baa0cf41-e12e-4f5e-a33b-4ac28ca65028
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

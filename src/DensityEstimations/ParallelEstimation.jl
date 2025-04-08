@@ -272,6 +272,24 @@ function propagate_bootstraps!(
   return nothing
 end
 
+function calculate_vmr!(
+  kernel_propagation::AbstractKernelPropagation{N,T,M},
+  n_samples::Integer;
+  method::Symbol=:serial,
+) where {N,T<:Real,M}
+  ifourier_statistics!(
+    Val(method),
+    kernel_propagation.kernel_means,
+    kernel_propagation.kernel_vars,
+    n_samples,
+    kernel_propagation.ifft_plan,
+  )
+
+  # TODO: Calculate VMR
+
+  kernel_propagation.calculated_vmr = true
+end
+
 abstract type AbstractDensityState end
 
 # TODO: Define DensityState

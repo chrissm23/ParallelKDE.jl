@@ -9,6 +9,7 @@ using StaticArrays,
 using CUDA: i32
 
 export fourier_statistics!,
+  ifourier_statistics!,
   propagate_statistics!
 
 function fourier_statistics!(
@@ -47,10 +48,10 @@ function propagate_statistics!(
   variances_t::AbstractArray{Complex{T},M},
   means_0::AbstractArray{Complex{T},M},
   variances_0::AbstractArray{Complex{T},M},
-  time::SVector{N,Float64},
-  time_intial::SVector{N,Float64},
+  time::SVector{N,P},
+  time_intial::SVector{N,P},
   grid_array::AbstractArray{S,M},
-) where {N,T<:Real,S<:Real,M}
+) where {N,T<:Real,S<:Real,M,P<:Real}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
@@ -75,9 +76,9 @@ function propagate_statistics!(
   ::Val{:serial},
   means_t::AbstractArray{Complex{T},M},
   means_0::AbstractArray{Complex{T},M},
-  time::SVector{N,Float64},
+  time::SVector{N,P},
   grid_array::AbstractArray{S,M},
-) where {N,T<:Real,S<:Real,M}
+) where {N,T<:Real,S<:Real,M,P<:Real}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
@@ -101,10 +102,10 @@ function propagate_statistics!(
   variances_t::AbstractArray{Complex{T},M},
   means_0::AbstractArray{Complex{T},M},
   variances_0::AbstractArray{Complex{T},M},
-  time::SVector{N,Float64},
-  time_initial::SVector{N,Float64},
+  time::SVector{N,P},
+  time_initial::SVector{N,P},
   grid_array::AbstractArray{S,M},
-) where {N,T<:Real,S<:Real,M}
+) where {N,T<:Real,S<:Real,M,P<:Real}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
@@ -129,9 +130,9 @@ function propagate_statistics!(
   ::Val{:threaded},
   means_t::AbstractArray{Complex{T},M},
   means_0::AbstractArray{Complex{T},M},
-  time::SVector{N,Float64},
+  time::SVector{N,P},
   grid_array::AbstractArray{S,M},
-) where {N,T<:Real,S<:Real,M}
+) where {N,T<:Real,S<:Real,M,P<:Real}
   if N < 1
     throw(ArgumentError("The dimension of the input array must be at least 1."))
   end
@@ -155,10 +156,10 @@ function propagate_time_cpu!(
   variances_t::AbstractArray{Complex{T},N},
   means_0::AbstractArray{Complex{T},N},
   variances_0::AbstractArray{Complex{T},N},
-  time::SVector{N,<:Real},
-  time_initial::SVector{N,<:Real},
+  time::SVector{N,P},
+  time_initial::SVector{N,P},
   grid_array::AbstractArray{S,M},
-) where {T<:Real,N,S<:Real,M}
+) where {T<:Real,N,S<:Real,M,P<:Real}
   det_t0 = prod(time_initial .^ 2)
   det_t = prod(time .^ 2)
   sqrt_t0 = sqrt(det_t0)
@@ -180,9 +181,9 @@ end
 function propagate_time_cpu!(
   means_t::AbstractArray{Complex{T},N},
   means_0::AbstractArray{Complex{T},N},
-  time::SVector{N,<:Real},
+  time::SVector{N,P},
   grid_array::AbstractArray{S,M},
-) where {T<:Real,N,S<:Real,M}
+) where {T<:Real,N,S<:Real,M,P<:Real}
   @inbounds @simd for idx in eachindex(means_t)
     propagator = 0.0
     @inbounds @simd for i in 1:N
@@ -203,22 +204,22 @@ function propagate_statistics!(
   variances_t::AnyCuArray{Complex{T},M},
   means_0::AnyCuArray{Complex{T},M},
   variances_0::AnyCuArray{Complex{T},M},
-  time::CuVector{<:Real},
-  time_initial::CuVector{<:Real},
+  time::CuVector{P},
+  time_initial::CuVector{P},
   grid_array::AnyCuArray{S,M},
-) where {T<:Real,S<:Real,M}
+) where {T<:Real,S<:Real,M,P<:Real}
   n_points = prod(size(means_t))
   time_squared = time .^ 2
   time_initial_squared = time_initial .^ 2
 
-  kernel = @cuda launch = false propagate_time_cuda!(
+  kernel = @cuda maxregs = 32 launch = false propagate_time_cuda!(
     means_t,
     variances_t,
     means_0,
     variances_0,
-    grid_array,
     time_squared,
-    time_initial_squared
+    time_initial_squared,
+    grid_array,
   )
 
   config = launch_configuration(kernel.fun)
@@ -231,9 +232,9 @@ function propagate_statistics!(
       variances_t,
       means_0,
       variances_0,
-      grid_array,
       time_squared,
-      time_initial_squared;
+      time_initial_squared,
+      grid_array;
       threads,
       blocks
     )
@@ -245,13 +246,13 @@ function propagate_statistics!(
   ::Val{:cuda},
   means_t::AnyCuArray{Complex{T},M},
   means_0::AnyCuArray{Complex{T},M},
-  time::CuVector{<:Real},
+  time::CuVector{P},
   grid_array::AnyCuArray{S,M},
-) where {T<:Real,S<:Real,M}
+) where {T<:Real,S<:Real,M,P<:Real}
   n_points = prod(size(means_t))
   time_squared = time .^ 2
 
-  kernel = @cuda launch = false propagate_time_cuda!(
+  kernel = @cuda maxregs = 32 launch = false propagate_time_cuda!(
     means_t,
     means_0,
     grid_array,
@@ -281,10 +282,10 @@ function propagate_time_cuda!(
   variances_t::CuDeviceArray{Complex{T},M},
   means_0::CuDeviceArray{Complex{T},M},
   variances_0::CuDeviceArray{Complex{T},M},
-  time_squared::CuDeviceVector{<:Real},
-  time_initial_squared::CuDeviceVector{<:Real},
+  time_squared::CuDeviceVector{P},
+  time_initial_squared::CuDeviceVector{P},
   grid_array::CuDeviceArray{S,M},
-) where {T<:Real,S<:Real,M}
+) where {T<:Real,S<:Real,M,P<:Real}
   N = M - 1i32
   idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
@@ -293,9 +294,9 @@ function propagate_time_cuda!(
   n_gridpoints = prod(grid_size)
   n_points = n_bootstraps * n_gridpoints
 
-  bootstrap_idx_temp, point_idx_temp = divrem(idx - 1i32, n_gridpoints)
-  bootstrap_idx = bootstrap_idx_temp + 1i32
-  point_idx = point_idx_temp + 1i32
+  bootstrap_idx_tmp, point_idx_tmp = divrem(idx - 1i32, n_gridpoints)
+  bootstrap_idx = bootstrap_idx_tmp + 1i32
+  point_idx = point_idx_tmp + 1i32
 
   if idx > n_points
     return
@@ -309,9 +310,8 @@ function propagate_time_cuda!(
   propagator_mean = 1.0f0
   i = 1i32
   while i <= N
-    grid_index = (i, cartesian_idx...)
     @inbounds propagator_mean *= exp(
-      -0.5f0 * grid_array[grid_index...]^2i32 * time_squared[i]
+      -0.5f0 * grid_array[i, cartesian_idx...]^2i32 * time_squared[i]
     )
 
     i += 1i32
@@ -321,18 +321,21 @@ function propagate_time_cuda!(
   det_t0 = prod(time_initial_squared)
   propagator_variance = sqrt(det_t0) * sqrt(propagator_mean) / sqrt(det_t + det_t0)
 
-  array_index = (bootstrap_idx, cartesian_idx...)
-  @inbounds means_t[array_index...] = propagator_mean * means_0[array_index...]
-  @inbounds variances_t[array_index...] = propagator_variance * variances_0[array_index...]
+  @inbounds means_t[cartesian_idx..., bootstrap_idx] = (
+    propagator_mean * means_0[cartesian_idx..., bootstrap_idx]
+  )
+  @inbounds variances_t[cartesian_idx..., bootstrap_idx] = (
+    propagator_variance * variances_0[cartesian_idx..., bootstrap_idx]
+  )
 
   return
 end
 function propagate_time_cuda!(
   means_t::CuDeviceArray{Complex{T},M},
   means_0::CuDeviceArray{Complex{T},M},
-  time_squared::CuDeviceVector{<:Real},
+  time_squared::CuDeviceVector{P},
   grid_array::CuDeviceArray{S,M},
-) where {T<:Real,S<:Real,M}
+) where {T<:Real,S<:Real,M,P<:Real}
   N = M - 1i32
   idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
@@ -355,114 +358,128 @@ function propagate_time_cuda!(
   propagator_exponential = 1.0f0
   i = 1i32
   while i <= N
-    grid_index = (i, cartesian_idx...)
     @inbounds propagator_exponential *= exp(
-      -0.5f0 * grid_array[grid_index...]^2i32 * time_squared[i]
+      -0.5f0 * grid_array[i, cartesian_idx...]^2i32 * time_squared[i]
     )
 
     i += 1i32
   end
 
-  array_index = (bootstrap_idx, cartesian_idx...)
-  @inbounds means_t[array_index...] = propagator_exponential * means_0[array_index...]
+  @inbounds means_t[cartesian_idx..., bootstrap_idx] = (
+    propagator_exponential * means_0[cartesian_idx..., bootstrap_idx]
+  )
 
   return
 end
 
-function ifft_statistics!(
+function ifourier_statistics!(
+  ::Val{:serial},
   sk::AbstractArray{Complex{T},M},
   s2k::AbstractArray{Complex{T},M},
-  n_samples::Integer;
-  tmp::AbstractArray{Complex{T},M}=similar(sk),
-  bootstraps_dim::Bool=false
-) where {T<:Real,M}
-  if ((M < 2) && bootstraps_dim) || ((M < 1) && !bootstraps_dim)
-    throw(ArgumentError("The dimension of the input array must be at least 1."))
+  n_samples::P,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+) where {T<:Real,M,P<:Integer}
+  n_bootstraps = size(sk)[end]
+
+  for i in 1:n_bootstraps
+    ifft_plan * selectdim(sk, ndims(sk), i)
+    ifft_plan * selectdim(s2k, ndims(s2k), i)
   end
 
-  if bootstraps_dim
-    ifftshift!(tmp, sk, 2:M)
-    sk .= ifft(tmp, 2:M)
-    ifftshift!(tmp, s2k, 2:M)
-    s2k .= ifft(tmp, 2:M)
-  else
-    ifftshift!(tmp, sk)
-    sk .= ifft(tmp)
-    ifftshift!(tmp, s2k)
-    s2k .= ifft(tmp)
+  @inbounds @simd for idx in eachindex(sk)
+    sk_i = abs(sk[idx]) / n_samples
+    sk[idx] = sk_i
+    s2k[idx] = (abs(s2k[idx]) / n_samples) - sk_i^2
   end
 
-  @. sk = abs(sk) / n_samples
-  @. s2k = (abs(s2k) / n_samples) - sk^2
-
-  means = selectdim(reinterpret(reshape, T, sk), 1, 1)
-  variances = selectdim(reinterpret(reshape, T, s2k), 1, 1)
-
-  return means, variances
+  return nothing
 end
-function ifft_statistics!(
+function ifourier_statistics!(
+  ::Val(:serial),
+  sk::AbstractArray{Complex{T},M},
+  n_samples::P,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+) where {T<:Real,M,P<:Integer}
+  n_bootstraps = size(sk)[end]
+
+  for i in 1:n_bootstraps
+    ifft_plan * selectdim(sk, ndims(sk), i)
+  end
+
+  @inbounds @simd for idx in eachindex(sk)
+    sk[idx] = abs(sk[idx]) / n_samples
+  end
+
+  return nothing
+end
+function ifourier_statistics!(
+  ::Val{:threaded},
   sk::AbstractArray{Complex{T},M},
   s2k::AbstractArray{Complex{T},M},
-  n_samples::Integer,
-  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}};
-  tmp::AbstractArray{Complex{T},M}=similar(sk),
-  bootstraps_dim::Bool=false
-) where {T<:Real,M}
-  if ((M < 2) && bootstraps_dim) || ((M < 1) && !bootstraps_dim)
-    throw(ArgumentError("The dimension of the input array must be at least 1."))
+  n_samples::P,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+) where {T<:Real,M,P<:Integer}
+  n_bootstraps = size(sk)[end]
+
+  Threads.@threads for i in 1:n_bootstraps
+    ifft_plan * selectdim(sk, ndims(sk), i)
+    ifft_plan * selectdim(s2k, ndims(s2k), i)
   end
 
-  if bootstraps_dim
-    ifftshift!(tmp, sk, 2:M)
-    sk .= ifft_plan * tmp
-    ifftshift!(tmp, s2k, 2:M)
-    s2k .= ifft_plan * tmp
-  else
-    ifftshift!(tmp, sk)
-    sk .= ifft_plan * tmp
-    ifftshift!(tmp, s2k)
-    s2k .= ifft_plan * tmp
+  Threads.@threads for idx in eachindex(sk)
+    sk_i = abs(sk[idx]) / n_samples
+    sk[idx] = sk_i
+    s2k[idx] = (abs(s2k[idx]) / n_samples) - sk_i^2
   end
 
-  @. sk = abs(sk) / n_samples
-  @. s2k = (abs(s2k) / n_samples) - sk^2
-
-  means = selectdim(reinterpret(reshape, T, sk), 1, 1)
-  variances = selectdim(reinterpret(reshape, T, s2k), 1, 1)
-
-  return means, variances
+  return nothing
 end
-function ifft_statistics!(
+function ifourier_statistics!(
+  ::Val(:threaded),
+  sk::AbstractArray{Complex{T},M},
+  n_samples::P,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+) where {T<:Real,M,P<:Integer}
+  n_bootstraps = size(sk)[end]
+
+  Threads.@threads for i in 1:n_bootstraps
+    ifft_plan * selectdim(sk, ndims(sk), i)
+  end
+
+  Threads.@threads for idx in eachindex(sk)
+    sk[idx] = abs(sk[idx]) / n_samples
+  end
+
+  return nothing
+end
+function ifourier_statistics!(
+  ::Val{:cuda},
   sk::AnyCuArray{Complex{T},M},
   s2k::AnyCuArray{Complex{T},M},
-  n_samples::Integer;
-  tmp::AnyCuArray{Complex{T},M}=similar(sk),
-  bootstraps_dim::Bool=false
-) where {T<:Real,M}
-  if ((M < 2) && bootstraps_dim) || ((M < 1) && !bootstraps_dim)
-    throw(ArgumentError("The dimension of the input array must be at least 1."))
-  end
-
-  if bootstraps_dim
-    ifftshift!(tmp, sk, 2:M)
-    sk .= ifft(tmp, 2:M)
-    ifftshift!(tmp, s2k, 2:M)
-    s2k .= ifft(tmp, 2:M)
-  else
-    ifftshift!(tmp, sk)
-    sk .= ifft(tmp)
-    ifftshift!(tmp, s2k)
-    s2k .= ifft(tmp)
-  end
+  n_samples::P,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+) where {T<:Real,M,P<:Integer}
+  ifft_plan * sk
+  ifft_plan * s2k
 
   @. sk = abs(sk) / n_samples
   @. s2k = (abs(s2k) / n_samples) - sk^2
 
-  means = selectdim(reinterpret(reshape, T, sk), 1, 1)
-  variances = selectdim(reinterpret(reshape, T, s2k), 1, 1)
-
-  return means, variances
+  return nothing
 end
+function ifourier_statistics!(
+  ::Val{:cuda},
+  sk::AnyCuArray{Complex{T},M},
+  n_samples::P,
+  ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
+) where {T<:Real,M,P<:Integer}
+  ifft_plan * sk
+
+  @. sk = abs(sk) / n_samples
+
+  return nothing
+end
+
 function ifft_statistics!(
   sk::AnyCuArray{Complex{T},M},
   s2k::AnyCuArray{Complex{T},M},
