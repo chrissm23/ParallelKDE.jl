@@ -33,8 +33,8 @@ function initialize_estimation(
   throw(ArgumentError("Estimation not implemented"))
 end
 
-function estimate!(::Type{<:AbstractEstimation}, kde::AbstractKDE; kwargs...)::Nothing
-  estimation = initialize_estimation(AbstractEstimation, kde; kwargs...)
+function estimate!(estimation_type::Type{T}, kde::AbstractKDE; kwargs...)::Nothing where {T<:AbstractEstimation}
+  estimation = initialize_estimation(estimation_type, kde; kwargs...)
   estimate!(kde, estimation)
   return nothing
 end

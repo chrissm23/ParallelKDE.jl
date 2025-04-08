@@ -217,11 +217,11 @@ function initialize_dirac_sequence(
     dirac_sequence_squared_real = selectdim(
       reinterpret(reshape, T, dirac_sequence_squared), 1, 1
     )
-    kernel = @cuda launch = false generate_dirac_cuda!(
+    kernel = @cuda maxregs = 32, launch = false generate_dirac_cuda!(
       dirac_sequence_real, dirac_sequence_squared_real, data, bootstrap_idxs, spacing, low_bound
     )
   else
-    kernel = @cuda launch = false generate_dirac_cuda!(
+    kernel = @cuda maxregs = 32 launch = false generate_dirac_cuda!(
       dirac_sequence_real, data, bootstrap_idxs, spacing, low_bound
     )
   end
@@ -264,70 +264,6 @@ end
 
 function generate_dirac_cuda!(
   dirac_series::CuDeviceArray{T,M},
-  data::CuDeviceArray{S,2},
-  bootstrap_idxs::CuDeviceArray{Int32,2},
-  spacing::CuDeviceArray{T,1},
-  low_bound::CuDeviceArray{T,1}
-) where {M,T<:Real,S<:Real}
-  spacing_squared = prod(spacing)^2i32
-
-  n_dims = Int32(M) - 1i32
-  n_samples = size(data, 2i32)
-  n_bootstraps = size(bootstrap_idxs, 2i32)
-  n_modified_gridpoints = (2i32)^n_dims * n_bootstraps * n_samples
-
-  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
-
-  if idx > n_modified_gridpoints
-    return
-  end
-
-  idx_sample_tmp, remainder = divrem(idx - 1i32, (2i32)^n_dims * n_bootstraps)
-  idx_bootstrap_tmp, idx_dim = divrem(remainder, (2i32)^n_dims)
-  idx_bootstrap = idx_bootstrap_tmp + 1i32
-  idx_sample = idx_sample_tmp + 1i32
-
-  mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
-
-  indices_l = ntuple(
-    i -> (
-      floor(
-        Int32,
-        (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) / spacing[i]
-      )
-      +
-      1i32
-    ),
-    n_dims
-  )
-  indices_h = ntuple(i -> indices_l[i] + 1i32, n_dims)
-  grid_idxs = ntuple(i -> ifelse(mask[end-i+1i32], indices_l[i], indices_h[i]), n_dims)
-
-  remainder_product = 1.0f0
-  i = 1i32
-  @inbounds while i <= n_dims
-    remainder_l = (
-      data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]
-    ) % spacing[i]
-    remainder_h = spacing[i] - remainder_l
-
-    remainder_product *= ifelse(
-      mask[end-i+1i32],
-      remainder_l,
-      remainder_h,
-    )
-
-    i += 1i32
-  end
-
-  dirac_series_term = remainder_product / (n_samples * spacing_squared)
-  dirac_idx = (grid_idxs..., idx_bootstrap)
-  @inbounds CUDA.@atomic dirac_series[dirac_idx...] += dirac_series_term
-
-  return
-end
-function generate_dirac_cuda!(
-  dirac_series::CuDeviceArray{T,M},
   dirac_series_squared::CuDeviceArray{T,M},
   data::CuDeviceArray{S,2},
   bootstrap_idxs::CuDeviceArray{Int32,2},
@@ -354,19 +290,13 @@ function generate_dirac_cuda!(
 
   mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
 
-  indices_l = ntuple(
-    i -> (
-      floor(
-        Int32,
-        (data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) / spacing[i]
-      )
-      +
-      1i32
-    ),
+  boot_idx = bootstrap_idxs[idx_sample, idx_bootstrap]
+  grid_idxs = ntuple(
+    i -> let
+      index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i])
+    end,
     n_dims
   )
-  indices_h = ntuple(i -> indices_l[i] + 1i32, n_dims)
-  grid_idxs = ntuple(i -> ifelse(mask[end-i+1i32], indices_l[i], indices_h[i]), n_dims)
 
   remainder_product = 1.0f0
   i = 1i32
@@ -389,6 +319,65 @@ function generate_dirac_cuda!(
   dirac_idx = (grid_idxs..., idx_bootstrap)
   @inbounds CUDA.@atomic dirac_series[dirac_idx...] += dirac_series_term
   @inbounds CUDA.@atomic dirac_series_squared[dirac_idx...] += dirac_series_term^2
+
+  return
+end
+function generate_dirac_cuda!(
+  dirac_series::CuDeviceArray{T,M},
+  data::CuDeviceArray{S,2},
+  bootstrap_idxs::CuDeviceArray{Int32,2},
+  spacing::CuDeviceArray{T,1},
+  low_bound::CuDeviceArray{T,1}
+) where {M,T<:Real,S<:Real}
+  spacing_squared = prod(spacing)^2i32
+
+  n_dims = Int32(M) - 1i32
+  n_samples = size(data, 2i32)
+  n_bootstraps = size(bootstrap_idxs, 2i32)
+  n_modified_gridpoints = (2i32)^n_dims * n_bootstraps * n_samples
+
+  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+  if idx > n_modified_gridpoints
+    return
+  end
+
+  idx_sample_tmp, remainder = divrem(idx - 1i32, (2i32)^n_dims * n_bootstraps)
+  idx_bootstrap_tmp, idx_dim = divrem(remainder, (2i32)^n_dims)
+  idx_bootstrap = idx_bootstrap_tmp + 1i32
+  idx_sample = idx_sample_tmp + 1i32
+
+  mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
+
+  boot_idx = bootstrap_idxs[idx_sample, idx_bootstrap]
+  grid_idxs = ntuple(
+    i -> let
+      index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i])
+      return mask[i] ? index_l : index_l + 1i32
+    end,
+    n_dims
+  )
+
+  remainder_product = 1.0f0
+  i = 1i32
+  @inbounds while i <= n_dims
+    remainder_l = (
+      data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]
+    ) % spacing[i]
+    remainder_h = spacing[i] - remainder_l
+
+    remainder_product *= ifelse(
+      mask[end-i+1i32],
+      remainder_l,
+      remainder_h,
+    )
+
+    i += 1i32
+  end
+
+  dirac_series_term = remainder_product / (n_samples * spacing_squared)
+  dirac_idx = (grid_idxs..., idx_bootstrap)
+  @inbounds CUDA.@atomic dirac_series[dirac_idx...] += dirac_series_term
 
   return
 end

@@ -159,19 +159,21 @@ function propagate_time_cpu!(
   time_initial::SVector{N,<:Real},
   grid_array::AbstractArray{S,M},
 ) where {T<:Real,N,S<:Real,M}
-  det_t = prod(time .^ 2)
   det_t0 = prod(time_initial .^ 2)
+  det_t = prod(time .^ 2)
+  sqrt_t0 = sqrt(det_t0)
+  sqrt_t0t = sqrt(det_t0 + det_t)
 
-  time_reshaped = reshape(time, :, ones(Int, N)...)
+  @inbounds @simd for idx in eachindex(means_t)
+    propagator = 0.0
+    @inbounds @simd for i in 1:N
+      propagator += (grid_array[i, idx] * time[i])^2
+    end
+    propagator = exp(-0.5 * propagator)
 
-  propagator_exponential = Array{T,M}(undef, size(grid_array))
-  propagator_exponential = dropdims(
-    exp.(-0.5 .* sum((grid_array .* time_reshaped) .^ 2, dims=1)),
-    dims=1
-  )
-
-  @. means_t = means_0 * propagator_exponential
-  @. variances_t = variances_0 * sqrt(det_t0) * sqrt.(propagator_exponential) / sqrt(det_t + det_t0)
+    @inbounds means_t[idx] = means_0[idx] * propagator
+    @inbounds variances_t[idx] = variances_0[idx] * propagator * sqrt_t0 / sqrt_t0t
+  end
 
   return nothing
 end
@@ -181,11 +183,16 @@ function propagate_time_cpu!(
   time::SVector{N,<:Real},
   grid_array::AbstractArray{S,M},
 ) where {T<:Real,N,S<:Real,M}
-  time_squared = reshape(time .^ 2, :, ones(Int, N)...)
-  propagator_exponent = Array{T,N}(undef, size(means_t))
+  @inbounds @simd for idx in eachindex(means_t)
+    propagator = 0.0
+    @inbounds @simd for i in 1:N
+      propagator += (grid_array[i, idx] * time[i])^2
+    end
 
-  propagator_exponent .= dropdims(-0.5 .* sum(grid_array .^ 2 .* time_squared, dims=1), dims=1)
-  @. means_t = exp(propagator_exponent) * means_0
+    propagator = exp(-0.5 * propagator)
+
+    @inbounds means_t[idx] = means_0[idx] * propagator
+  end
 
   return nothing
 end

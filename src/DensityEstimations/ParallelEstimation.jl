@@ -267,7 +267,7 @@ function propagate_bootstraps!(
     method,
   )
 
-  kernel_propagation.calculated_vmr = true
+  kernel_propagation.calculated_vmr = false
 
   return nothing
 end

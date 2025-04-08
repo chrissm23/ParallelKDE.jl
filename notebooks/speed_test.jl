@@ -23,6 +23,11 @@ begin
 
 end;
 
+# ╔═╡ ddcfbe31-206a-4e5c-bea7-06ee88511dd0
+md"""
+## Generation of Dirac sequences
+"""
+
 # ╔═╡ 08af727f-10b5-4aaf-9673-9959babb74da
 function dirac_og!(
 	dirac_series::AbstractArray{T,N},
@@ -75,7 +80,7 @@ function dirac_op!(
 	
 	n_samples = length(data)
 	spacing_squared = prod(spacing)^2
-
+	
 	indices_l = @MVector zeros(Int64, N)
 	indices_h = @MVector zeros(Int64, N)
 	remainder_l = @MVector zeros(T, N)
@@ -97,79 +102,13 @@ function dirac_op!(
 			end
 
 			product = prod(remainder_l[mask]) * prod(remainder_h[.! mask])
-
+			
 			dirac_series_term = product / (n_samples * spacing_squared)
+						
 			dirac_series[grid_indices...] += dirac_series_term
 			dirac_series_squared[grid_indices...] += dirac_series_term^2
 		end
 	end
-end
-
-# ╔═╡ 4071c078-0b91-4eb3-811c-bceec8fa44e5
-function dirac_kernel!(
-	dirac_series::CuDeviceArray{T,M},
-	dirac_series_squared::CuDeviceArray{T,M},
-	data::CuDeviceArray{S,2},
-	bootstrap_idxs::CuDeviceArray{Int32,2},
-	spacing::CuDeviceArray{T,1},
-	low_bound::CuDeviceArray{T,1},
-) where {M,T<:Real,S<:Real}
-	spacing_squared = prod(spacing)^2i32
-
-	n_dims = Int32(M) - 1i32
-	n_samples = size(data, 2i32)
-	n_bootstraps = size(bootstrap_idxs, 2i32)
-	n_modified_gridpoints = (2i32)^n_dims * n_bootstraps * n_samples
-
-	idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
-
-	if idx > n_modified_gridpoints
-		return
-	end
-
-	idx_sample_tmp, remainder = divrem(idx - 1i32, (2i32)^n_dims * n_bootstraps)
-	idx_bootstrap_tmp, idx_dim = divrem(remainder, (2i32)^n_dims)
-	idx_bootstrap = idx_bootstrap_tmp + 1i32
-	idx_sample = idx_sample_tmp + 1i32
-
-	mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
-
-	indices_l = ntuple(
-		i -> (
-			floor(
-				Int32,
-				(data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]) / spacing[i]
-			)
-			+ 1i32
-		),
-		n_dims
-	)
-	indices_h = ntuple(i -> indices_l[i] + 1i32, n_dims)
-	grid_idxs = ntuple(i -> ifelse(mask[end-i+1i32], indices_l[i], indices_h[i]), n_dims)
-	
-	remainder_product = 1.0f0
-	i = 1i32
-	@inbounds while i <= n_dims
-		remainder_l = (
-				data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]
-			) % spacing[i]
-		remainder_h = spacing[i] - remainder_l
-		
-		remainder_product *= ifelse(
-			mask[end-i+1i32],
-			remainder_l,
-			remainder_h,
-		)
-
-		i += 1i32
-	end
-
-	dirac_series_term = remainder_product / (n_samples * spacing_squared)
-	dirac_idx = (grid_idxs..., idx_bootstrap)
-	@inbounds CUDA.@atomic dirac_series[dirac_idx...] += dirac_series_term
-	@inbounds CUDA.@atomic dirac_series_squared[dirac_idx...] += dirac_series_term^2
-
-	return
 end
 
 # ╔═╡ cddf6a5f-220a-4117-b9e6-6c3d74a8c949
@@ -185,10 +124,9 @@ function dirac_cuda!(
 	dirac_series_squared .= 0.0f0
 	
 	n_samples, n_bootstraps = size(bootstrap_idxs)
-
 	n_modified_gridpoints = n_samples * 2^(M-1) * n_bootstraps
 
-	kernel = @cuda launch=false dirac_kernel!(
+	kernel = @cuda maxregs=32 fastmath=true launch=false dirac_kernel!(
 		dirac_series, dirac_series_squared, data, bootstrap_idxs, spacing, low_bound
 	)
 	config = launch_configuration(kernel.fun)
@@ -202,9 +140,74 @@ function dirac_cuda!(
 			data,
 			bootstrap_idxs,
 			spacing,
-			low_bound,
+			low_bound;
+			threads,
+			blocks
 		)
 	end
+end
+
+# ╔═╡ 4071c078-0b91-4eb3-811c-bceec8fa44e5
+function dirac_kernel!(
+  dirac_series::CuDeviceArray{T,M},
+  dirac_series_squared::CuDeviceArray{T,M},
+  data::CuDeviceArray{S,2},
+  bootstrap_idxs::CuDeviceArray{Int32,2},
+  spacing::CuDeviceArray{T,1},
+  low_bound::CuDeviceArray{T,1}
+) where {M,T<:Real,S<:Real}
+	spacing_squared = prod(spacing)^2i32
+	
+	n_dims = Int32(M) - 1i32
+	n_samples = size(data, 2i32)
+	n_bootstraps = size(bootstrap_idxs, 2i32)
+	n_modified_gridpoints = (2i32)^n_dims * n_bootstraps * n_samples
+	
+	idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+	
+	if idx > n_modified_gridpoints
+		return
+	end
+	
+	idx_sample_tmp, remainder = divrem(idx - 1i32, (2i32)^n_dims * n_bootstraps)
+	idx_bootstrap_tmp, idx_dim = divrem(remainder, (2i32)^n_dims)
+	idx_bootstrap = idx_bootstrap_tmp + 1i32
+	idx_sample = idx_sample_tmp + 1i32
+	
+	mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
+
+	boot_idx = bootstrap_idxs[idx_sample, idx_bootstrap]
+	grid_idxs = ntuple(
+		i -> let
+			index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i])
+			return mask[i] ? index_l : index_l + 1i32
+		end,
+		n_dims
+	)
+	
+	remainder_product = 1.0f0
+	i = 1i32
+	@inbounds while i <= n_dims
+		remainder_l = (
+			data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]
+		) % spacing[i]
+		remainder_h = spacing[i] - remainder_l
+		
+		remainder_product *= ifelse(
+			mask[end-i+1i32],
+			remainder_l,
+			remainder_h,
+		)
+		
+		i += 1i32
+	end
+	
+	dirac_series_term = remainder_product / (n_samples * spacing_squared)
+	dirac_idx = (grid_idxs..., idx_bootstrap)
+	@inbounds CUDA.@atomic dirac_series[dirac_idx...] += dirac_series_term
+	@inbounds CUDA.@atomic dirac_series_squared[dirac_idx...] += dirac_series_term^2
+	
+	return
 end
 
 # ╔═╡ d63b785d-af95-4fcb-8958-f46ea076dd97
@@ -213,70 +216,172 @@ md"""
 """
 
 # ╔═╡ a52df860-5dab-40e6-a63f-72f3c80387a0
+# ╠═╡ disabled = true
+#=╠═╡
 begin
-	n_dims = 2
-	n_samples = 10000
-	n_points = 1002
-	n_bootstraps = 100
+	n_dims_dirac = 1
+	n_samples_dirac = 10000
+	n_points_dirac = 1002
+	n_bootstraps_dirac = 1
 	
-	dirac_series = zeros(Float64, fill(n_points, n_dims)...)
+	dirac_series = zeros(Float64, fill(n_points_dirac, n_dims_dirac)...)
 	dirac_series_squared = zeros(Float64, size(dirac_series))
 	
-	data = Vector{SVector{n_dims,Float64}}(eachcol(rand(Float64, n_dims, n_samples)))
+	data = Vector{SVector{n_dims_dirac,Float64}}(
+		eachcol(rand(Float64, n_dims_dirac, n_samples_dirac))
+	)
 	
-	spacing = @SVector fill(0.001, n_dims)
-	low_bound = @SVector fill(-0.001, n_dims)
+	spacing = @SVector fill(0.001, n_dims_dirac)
+	low_bound = @SVector fill(-0.001, n_dims_dirac)
 
-	dirac_series_d = CUDA.zeros(Float32, fill(n_points, n_dims)..., n_bootstraps)
+	dirac_series_d = CUDA.zeros(
+		Float32, fill(n_points_dirac, n_dims_dirac)..., n_bootstraps_dirac
+	)
 	dirac_series_squared_d = CUDA.zeros(Float32, size(dirac_series_d))
-
-	data_d = CuArray{Float32,2}(reinterpret(reshape, Float64, data))
+	
+	data_d = CuArray{Float32,2}(reshape(reinterpret(reshape, Float64, data), 1, :))
 
 	spacing_d = CuArray{Float32}(spacing)
 	low_bound_d = CuArray{Float32}(low_bound)
-	bootstrap_idxs = CuArray{Int32}(rand(1:n_samples, n_samples, n_bootstraps))
+	bootstrap_idxs = CuArray{Int32}(
+		rand(1:n_samples_dirac, n_samples_dirac, n_bootstraps_dirac)
+	)
 end;
+  ╠═╡ =#
 
 # ╔═╡ 32a0a543-de61-4d3b-a61e-6d755a878ae2
 md"""
-## Benchmarking speeds
+### Benchmarking speeds
 """
 
 # ╔═╡ e9337b33-b37b-4f87-8f89-b2d520c7d667
-# ╠═╡ disabled = true
-#=╠═╡
 @btime dirac_og!(dirac_series, dirac_series_squared, data, spacing, low_bound)
-  ╠═╡ =#
 
 # ╔═╡ e5bb3183-b9c7-4dc3-83b3-2d75bb8ad3c4
-# ╠═╡ disabled = true
-#=╠═╡
 @btime dirac_op!(dirac_series, dirac_series_squared, data, spacing, low_bound)
-  ╠═╡ =#
 
 # ╔═╡ d32a3b0a-39de-4e26-8044-21ea5f355158
-# ╠═╡ disabled = true
-#=╠═╡
-CUDA.@profile dirac_cuda!(
+@btime dirac_cuda!(
 	dirac_series_d, dirac_series_squared_d, data_d, spacing_d, low_bound_d, bootstrap_idxs
 )
+
+# ╔═╡ 6e1080cd-f4c1-49bb-a641-76a1ab5aacc7
+md"""
+## Time propagation
+"""
+
+# ╔═╡ 641d8147-83b5-4043-9c09-379b36fb04e4
+function propagate_og!(
+	mt::AbstractArray{Complex{T},N},
+	vt::AbstractArray{Complex{T},N},
+	m0::AbstractArray{Complex{T},N},
+	v0::AbstractArray{Complex{T},N},
+	t::SVector{N,P},
+	t0::SVector{N,P},
+	grid_array::AbstractArray{S,M},
+) where {T<:Real,N,S<:Real,M,P<:Real}
+	det_t = prod(t .^ 2)
+	det_t0 = prod(t0 .^ 2)
+
+	time_reshaped = reshape(t, :, ones(Int, N)...)
+	
+	propagator_exponential = dropdims(
+		exp.(-0.5 .* sum((grid_array .* time_reshaped) .^ 2, dims=1)),
+		dims=1
+	)
+
+	@. mt = m0 * propagator_exponential
+	@. vt = v0 * sqrt(det_t0) * sqrt.(propagator_exponential) / sqrt(det_t + det_t0)
+
+	return nothing
+end
+
+# ╔═╡ 8a817f50-7f86-4b40-9796-a6d31086d278
+function propagate_op!(
+	mt::AbstractArray{Complex{T},N},
+	vt::AbstractArray{Complex{T},N},
+	m0::AbstractArray{Complex{T},N},
+	v0::AbstractArray{Complex{T},N},
+	t::SVector{N,P},
+	t0::SVector{N,P},
+	grid_array::AbstractArray{S,M},
+) where {T<:Real,N,S<:Real,M,P<:Real}
+	det_t0 = prod(t0 .^ 2)
+	det_t = prod(t .^ 2)
+	sqrt_t0 = sqrt(det_t0)
+	sqrt_t0t = sqrt(det_t0 + det_t)
+
+	@inbounds @simd for idx in eachindex(mt)
+		propagator = 0.0
+		@inbounds @simd for i in 1:N
+			propagator += (grid_array[i, idx] * t[i])^2
+		end
+		propagator = exp(-0.5 * propagator)
+
+		vt[idx] = v0[idx] * sqrt_t0 * sqrt(propagator) / sqrt_t0t
+		mt[idx] = m0[idx] * propagator
+	end
+
+	return nothing
+end
+
+# ╔═╡ 20330f00-ba27-4f76-9bb7-2ac72290566c
+md"""
+## Initialize data
+"""
+
+# ╔═╡ 61f9b860-e749-4b02-ad38-708fd5a5a212
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	n_dims_prop = 2
+	n_points_prop = 1002
+	n_bootstraps_prop = 1
+	
+	means_t = zeros(ComplexF64, fill(n_points_prop, n_dims_prop)...)
+	vars_t = zeros(ComplexF64, size(means_t))
+
+	means_0 = rand(ComplexF64, size(means_t))
+	vars_0 = rand(ComplexF64, size(means_t))
+		
+	time = @SVector fill(0.01, n_dims_prop)
+	time_initial = @SVector fill(0.001, n_dims_prop)
+
+	grid = rand(Float64, n_dims_prop, size(means_t)...)
+
+	means_t_d = CUDA.zeros(ComplexF32, size(means_t)..., 1)
+	vars_t_d = CUDA.zeros(ComplexF32, size(means_t)..., 1)
+
+	means_0_d = reshape(CuArray{ComplexF32}(means_0), size(means_0)..., 1)
+	vars_0_d = reshape(CuArray{ComplexF32}(vars_0), size(vars_0)..., 1)
+
+	time_d = CuVector{Float32}(time)
+	time_initial_d = CuVector{Float32}(time_initial)
+
+	grid_d = CuArray{Float32}(grid)
+end;
   ╠═╡ =#
 
-# ╔═╡ 04420e0e-6f9d-4fe5-b725-357ff483f761
+# ╔═╡ 9d6283dd-d74f-472a-b4be-7186b891400c
+@btime propagate_og!(means_t, vars_t, means_0, vars_0, time, time_initial, grid)
+
+# ╔═╡ 019c6803-d81d-4233-b783-e64d022fc2d2
+@btime propagate_op!(means_t, vars_t, means_0, vars_0, time, time_initial, grid)
+
+# ╔═╡ 862e418f-08f6-4a02-ae1c-3cfe646c7dff
+#=╠═╡
 begin
-	dirac_op!(dirac_series, dirac_series_squared, data, spacing, low_bound)
-	dirac_cuda!(
-		dirac_series_d, dirac_series_squared_d, data_d, spacing_d, low_bound_d, CuArray{Int32}(repeat(1:n_samples, 1, 100))
-	)
-	
-	dirac_series_cuda = Array{Float32}(dirac_series_d)
+	means_og = zeros(ComplexF64, fill(n_points_prop, n_dims_prop)...)
+	vars_og = zeros(ComplexF64, size(means_t))
+	means_op = zeros(ComplexF64, fill(n_points_prop, n_dims_prop)...)
+	vars_op = zeros(ComplexF64, size(means_t))
+
+	propagate_og!(means_og, vars_og, means_0, vars_0, time, time_initial, grid)
+	propagate_op!(means_op, vars_op, means_0, vars_0, time, time_initial, grid)
+
+	println(means_og ≈ means_op)
 end;
-
-# ╔═╡ 9c383416-bba7-4202-8459-69f934953e90
-plot(dirac_series[:, 500])
-
-# ╔═╡ f6005788-3ed8-43d8-9ec2-f951e4deaf42
-plot(dirac_series_cuda[:, 500, 1])
+  ╠═╡ =#
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1938,6 +2043,7 @@ version = "1.4.1+2"
 
 # ╔═╡ Cell order:
 # ╠═1667295a-1144-11f0-1e58-c5c36a4ff3a9
+# ╟─ddcfbe31-206a-4e5c-bea7-06ee88511dd0
 # ╠═08af727f-10b5-4aaf-9673-9959babb74da
 # ╠═9e25fb47-4ba0-4ff6-bedb-1ea883e20263
 # ╠═cddf6a5f-220a-4117-b9e6-6c3d74a8c949
@@ -1948,8 +2054,13 @@ version = "1.4.1+2"
 # ╠═e9337b33-b37b-4f87-8f89-b2d520c7d667
 # ╠═e5bb3183-b9c7-4dc3-83b3-2d75bb8ad3c4
 # ╠═d32a3b0a-39de-4e26-8044-21ea5f355158
-# ╠═04420e0e-6f9d-4fe5-b725-357ff483f761
-# ╠═9c383416-bba7-4202-8459-69f934953e90
-# ╠═f6005788-3ed8-43d8-9ec2-f951e4deaf42
+# ╟─6e1080cd-f4c1-49bb-a641-76a1ab5aacc7
+# ╠═641d8147-83b5-4043-9c09-379b36fb04e4
+# ╠═8a817f50-7f86-4b40-9796-a6d31086d278
+# ╟─20330f00-ba27-4f76-9bb7-2ac72290566c
+# ╠═61f9b860-e749-4b02-ad38-708fd5a5a212
+# ╠═9d6283dd-d74f-472a-b4be-7186b891400c
+# ╠═019c6803-d81d-4233-b783-e64d022fc2d2
+# ╠═862e418f-08f6-4a02-ae1c-3cfe646c7dff
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
