@@ -23,10 +23,10 @@ function initialize_dirac_sequence(
   ::Val{:serial},
   data::AbstractVector{SVector{N,S}},
   grid::AbstractGrid{N,P,M},
-  bootstrap_idxs::AbstractMatrix{Integer};
+  bootstrap_idxs::AbstractMatrix{F};
   include_var::Bool=false,
   T=Float64,
-) where {N,S<:Real,M,P<:Real}
+) where {N,S<:Real,M,P<:Real,F<:Integer}
   grid_size = size(grid)
   n_bootstraps = size(bootstrap_idxs, 2)
 
@@ -70,10 +70,10 @@ function initialize_dirac_sequence(
   ::Val{:threaded},
   data::AbstractVector{SVector{N,S}},
   grid::AbstractGrid{N,P,M},
-  bootstrap_idxs::AbstractMatrix{Integer};
+  bootstrap_idxs::AbstractMatrix{F};
   include_var::Bool=false,
   T=Float64,
-) where {N,S<:Real,M,P<:Real}
+) where {N,S<:Real,M,P<:Real,F<:Integer}
   grid_size = size(grid)
   n_bootstraps = size(bootstrap_idxs, 2)
 
@@ -382,127 +382,163 @@ function generate_dirac_cuda!(
   return
 end
 
-function mean_var_vmr!(
+function calculate_scaled_vmr!(
   ::Val{:serial},
-  means::AbstractArray{T,M},
-  variances::AbstractArray{T,M},
-  dst_vmr::AbstractArray{T,N},
-)::AbstractArray{T,N} where {N,T<:Real,M}
-  n_bootstraps = size(means, 1)
-  for i in 1:n_bootstraps
-    vmr_cpu!(
-      selectdim(means, 1, i),
-      selectdim(variances, 1, i)
-    )
+  sk::AbstractArray{Complex{T},M},
+  s2k::AbstractArray{Complex{T},M},
+  time::AbstractVector{P},
+  time_initial::AbstractVector{P},
+  n_samples::F,
+) where {M,T<:Real,P<:Real,F<:Integer}
+  array_dims = size(sk)
+  grid_dims = array_dims[begin:end-1]
+
+  n_elements = prod(array_dims)
+  n_bootstraps = array_dims[end]
+  n_points = prod(grid_dims)
+
+  sk_raw = vec(reinterpret(T, sk))
+  s2k_raw = vec(reinterpret(T, s2k))
+
+  @inbounds @simd for i in 1:n_elements
+    sk_real = sk_raw[2i-1]
+    sk_imag = sk_raw[2i]
+    s2k_real = s2k_raw[2i-1]
+    s2k_imag = s2k_raw[2i]
+
+    sk_i = sqrt(sk_real^2 + sk_imag^2) / n_samples
+    s2k_i = sqrt(s2k_real^2 + s2k_imag^2) / n_samples - sk_i^2
+    s2k_raw[i] = s2k_i / sk_i
   end
 
-  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
+  vmrs = reshape(view(s2k_raw, 1:n_elements), array_dims)
+  vmrs_transposed = reshape(
+    view(s2k_raw, n_elements+1:2n_elements),
+    n_bootstraps, grid_dims...
+  )
 
-  # Variance with Inf will give NaN
-  @. dst_vmr = ifelse(isnan(dst_vmr), NaN, dst_vmr)
+  perm = (M, 1:M-1...)
+  permutedims!(vmrs_transposed, vmrs, perm)
 
-  return dst_vmr
+  scaling_factor = prod(time .^ 2 .+ time_initial .^ 2)^(3 / 2) * n_samples^4
+
+  vmr_var = reshape(view(s2k_raw, 1:n_points), grid_dims)
+  @inbounds for j in 1:n_points
+    base_idx = (j - 1) * n_bootstraps
+
+    mean = zero(T)
+    m2 = zero(T)
+    @inbounds @simd for i in 1:n_bootstraps
+      x = vmrs_transposed[base_idx+i]
+      delta = x - mean
+      mean += delta / i
+      m2 += delta * (x - mean)
+    end
+
+    vmr_var[j] = scaling_factor * m2 / (n_bootstraps - 1)
+  end
+
+  return vmr_var
 end
-function mean_var_vmr!(
+function calculate_scaled_vmr!(
   ::Val{:threaded},
-  means::AbstractArray{T,M},
-  variances::AbstractArray{T,M},
-  dst_vmr::AbstractArray{T,N},
-)::AbstractArray{T,N} where {N,T<:Real,M}
-  n_bootstraps = size(means, 1)
-  Threads.@threads for i in 1:n_bootstraps
-    vmr_cpu!(
-      selectdim(means, 1, i),
-      selectdim(variances, 1, i)
-    )
+  sk::AbstractArray{Complex{T},M},
+  s2k::AbstractArray{Complex{T},M},
+  time::AbstractVector{P},
+  time_initial::AbstractVector{P},
+  n_samples::F,
+) where {M,T<:Real,P<:Real,F<:Integer}
+  array_dims = size(sk)
+  grid_dims = array_dims[begin:end-1]
+
+  n_elements = prod(array_dims)
+  n_bootstraps = array_dims[end]
+  n_points = prod(grid_dims)
+
+  sk_raw = vec(reinterpret(T, sk))
+  s2k_raw = vec(reinterpret(T, s2k))
+
+  # Calculate means and variances
+  Threads.@threads @inbounds for i in 1:n_elements
+    sk_real = sk_raw[2i-1]
+    sk_imag = sk_raw[2i]
+    s2k_real = s2k_raw[2i-1]
+    s2k_imag = s2k_raw[2i]
+
+    sk_i = sqrt(sk_real^2 + sk_imag^2) / n_samples
+    s2k_i = sqrt(s2k_real^2 + s2k_imag^2) / n_samples - sk_i^2
+    s2k_raw[2i-1] = s2k_i / sk_i
   end
 
-  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
+  # Re-arrange into contiguous memory
+  Threads.@threads @inbounds for i in 2:2:n_elements
+    sk_raw[i] = sk_raw[2i-1]
+    s2k_raw[i] = s2k_raw[2i-1]
+  end
+  Threads.@threads @inbounds for i in 3:4:n_elements
+    sk_raw[i] = sk_raw[2i-1]
+    s2k_raw[i] = s2k_raw[2i-1]
+  end
+  Threads.@threads @inbounds for i in 1:4:n_elements
+    sk_raw[i] = sk_raw[2i-1]
+    s2k_raw[i] = s2k_raw[2i-1]
+  end
 
-  # Variance with Inf will give NaN
-  @. dst_vmr = ifelse(isnan(dst_vmr), NaN, dst_vmr)
+  # Transpose the array
+  vmrs = reshape(view(s2k_raw, 1:n_elements), array_dims)
+  vmrs_transposed = reshape(
+    view(s2k_raw, n_elements+1:2n_elements),
+    n_bootstraps, grid_dims...
+  )
+  perm = (M, 1:M-1...)
+  idxs = CartesianIndices(vmrs)
+  Threads.@threads for idx in eachindex(idxs)
+    I = idxs[idx]
+    J = ntuple(i -> I[perm[i]], M)
+    vmrs_transposed[J...] = vmrs[I]
+  end
 
-  return dst_vmr
+  # Calculate the variance of the vmrs
+  scaling_factor = prod(time .^ 2 + time_initial .^ 2)(3 / 2) * n_samples^4
+
+  vmr_var = reshape(view(s2k_raw, 1:n_points), grid_dims)
+
+  # scaling_factor = prod(time .^ 2 .+ time_initial .^ 2)^(3 / 2) * n_samples^4
+  #
+  # Threads.@threads for i in 1:size(means, M)
+  #   means_i = selectdim(means, M, i)
+  #   vars_i = selectdim(vars, M, i)
+  #
+  #   @inbounds @simd for idx in eachindex(means_i)
+  #     vars_i[idx] /= means_i[idx]
+  #   end
+  # end
+  # Threads.@threads for idx in CartesianIndices(selectdim(means, M, 1))
+  #   vars[idx] = var(vars[idx, :]) * scaling_factor
+  #
+  #   vars[idx] = ifelse(isnan(vars[idx]), NaN, vars[idx])
+  # end
+  #
+  # return nothing
 end
+function calculate_scaled_vmr!(
+  ::Val{:cuda},
+  means::AnyCuArray{Complex{T},M},
+  vars::AnyCuArray{Complex{T},M},
+  time::AnyCuVector{P},
+  time_initial::AnyCuVector{P},
+  n_samples::F,
+) where {M,T<:Real,P<:Real,F<:Integer}
+  scaling_factor = prod(time .^ 2i32 .+ time_initial .^ 2i32)^(1.5f0) * n_samples^4i32
 
-function vmr_cpu!(
-  means::AbstractArray{T,N},
-  variances::AbstractArray{T,N},
-)::Nothing where {N,T<:Real}
-  @. variances /= means
+  @. vars /= means
+  vmr = selectdim(vars, M, 1)
+  vmr .= dropdims(var(vars, dims=M), dims=M)
+  vmr .*= scaling_factor
+
+  @. vmr = ifelse(isnan(vmr), NaN32, vmr)
 
   return nothing
-end
-
-function mean_var_vmr!(
-  ::Val{:cuda},
-  means::AnyCuArray{T,M},
-  variances::AnyCuArray{T,M},
-  dst_vmr::AnyCuArray{T,N},
-) where {N,T<:Real,M}
-  vmr_gpu!(means, variances)
-
-  dst_vmr .= dropdims(var(variances, dims=1), dims=1)
-
-  # Variance with Inf will give NaN
-  @. dst_vmr = ifelse(isnan(dst_vmr), NaN32, dst_vmr)
-
-  return dst_vmr
-end
-
-function vmr_gpu!(
-  means::AnyCuArray{T,N},
-  variances::AnyCuArray{T,N},
-) where {N,T<:Real}
-  @. variances /= means
-
-  return
-end
-
-function calculate_variance_products!(
-  ::Val{:serial},
-  vmr_variance::AbstractArray{T,N},
-  time::AbstractVector{<:Real},
-  time_initial::AbstractVector{<:Real},
-  n_samples::Integer;
-  dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(vmr_variance)),
-) where {N,T<:Real}
-  det_t = prod(time .^ 2 .+ time_initial .^ 2)
-
-  dst_var_products .= vmr_variance .* (det_t^(3 / 2) * n_samples^4)
-
-  return dst_var_products
-end
-function calculate_variance_products!(
-  ::Val{:threaded},
-  vmr_variance::AbstractArray{T,N},
-  time::AbstractVector{<:Real},
-  n_samples::Integer;
-  dst_var_products::AbstractArray{T,N}=Array{T,N}(undef, size(vmr_variance)),
-) where {N,T<:Real}
-  @warn "Threaded calculation of variance products not implemented. Using serial implementation."
-
-  return calculate_variance_products!(
-    Val{:serial},
-    vmr_variance,
-    time,
-    n_samples,
-    dst_var_products=dst_var_products
-  )
-end
-function calculate_variance_products!(
-  ::Val{:cuda},
-  vmr_variance::AnyCuArray{T,N},
-  time::CuVector{<:Real},
-  time_initial::CuVector{<:Real},
-  n_samples::Integer;
-  dst_var_products::AnyCuArray{T,N}=CuArray{T,N}(undef, size(vmr_variance)),
-) where {N,T<:Real}
-  det_t = prod(time .^ 2 .+ time_initial .^ 2)
-
-  dst_var_products .= vmr_variance .* (det_t^(3 / 2) * n_samples^4)
-
-  return dst_var_products
 end
 
 function assign_converged_density!(

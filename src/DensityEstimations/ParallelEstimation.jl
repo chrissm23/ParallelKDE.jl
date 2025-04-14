@@ -285,7 +285,7 @@ function calculate_vmr!(
     kernel_propagation.ifft_plan,
   )
 
-  # TODO: Calculate VMR
+  # TODO: Calculate VMR from only real part (how to do this fast without new allocation?)
 
   kernel_propagation.calculated_vmr = true
 end
