@@ -6,7 +6,8 @@ using ..Grids
 using ..FourierSpace
 using ..DirectSpace
 
-using StaticArrays,
+using LinearAlgebra,
+  StaticArrays,
   FFTW,
   CUDA
 

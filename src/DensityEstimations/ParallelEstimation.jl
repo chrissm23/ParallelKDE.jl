@@ -253,10 +253,10 @@ function propagate_bootstraps!(
   kernel_propagation::AbstractKernelPropagation{N,T,M},
   kernel_means::AbstractKernelMeans{N,T,M},
   kernel_vars::AbstractKernelVars{N,T,M},
-  time::AbstractVector{<:Real},
+  time::AbstractVector{S},
   grid::AbstractGrid{N,P,M};
   method::Symbol=:serial,
-) where {N,T<:Real,M,P<:Real}
+) where {N,T<:Real,M,P<:Real,S<:Real}
   propagate!(
     kernel_propagation.kernel_means,
     kernel_propagation.kernel_vars,
@@ -274,9 +274,11 @@ end
 
 function calculate_vmr!(
   kernel_propagation::AbstractKernelPropagation{N,T,M},
-  n_samples::Integer;
+  time::AbstractVector{S},
+  grid::AbstractGrid{N,P,M},
+  n_samples::F;
   method::Symbol=:serial,
-) where {N,T<:Real,M}
+) where {N,T<:Real,M,P<:Real,S<:Real,F<:Integer}
   ifourier_statistics!(
     Val(method),
     kernel_propagation.kernel_means,
@@ -285,18 +287,129 @@ function calculate_vmr!(
     kernel_propagation.ifft_plan,
   )
 
-  # TODO: Calculate VMR from only real part (how to do this fast without new allocation?)
+  t0 = initial_bandwidth(grid)
+  vmr_var = calculate_scaled_vmr!(
+    Val(method),
+    kernel_propagation.kernel_means,
+    kernel_propagation.kernel_vars,
+    time,
+    t0,
+    n_samples,
+  )
 
   kernel_propagation.calculated_vmr = true
+
+  return vmr_var
 end
 
-abstract type AbstractDensityState end
+abstract type AbstractDensityState{T,N} end
 
 # TODO: Define DensityState
-struct DensityState <: AbstractDensityState
+@kwdef mutable struct DensityState{T,N} <: AbstractDensityState{T,N}
+  # Parameters
+  dt::Float64
+  eps1::Float64 = 1.0
+  eps2::Float64 = 10.0
+  smoothness_duration::Int8 = Int8(3)
+  stable_duration::Int8 = Int8(3)
+
+  # State
+  smooth_counters::Array{Int8,N}
+  stable_counters::Array{Int8,N}
+  is_smooth::Array{Bool,N}
+  has_decreased::Array{Bool,N}
+
+  # Buffers
+  f_prev1::Array{T,N}
+  f_prev2::Array{T,N}
+end
+function DensityState(
+  dims::NTuple{N,Int},
+  T::Type{<:Real};
+  dt::Float64
+) where {N}
+  DensityState{T,N}(;
+    dt=dt,
+    f_prev=fill(T(NaN), dims),
+    f_prev2=fill(T(NaN), dims),
+    smooth_counters=fill(Int8(0), dims),
+    stable_counters=fill(Int8(0), dims),
+    is_smooth=fill(false, dims),
+    has_decreased=fill(false, dims),
+  )
+end
+function DensityState(
+  dims::NTuple{N,Int},
+  T::Type{<:Real};
+  kwargs...
+) where {N}
+  DensityState{T,N}(;
+    f_prev=fill(T(NaN), dims),
+    f_prev2=fill(T(NaN), dims),
+    smooth_counters=fill(Int8(0), dims),
+    stable_counters=fill(Int8(0), dims),
+    is_smooth=fill(false, dims),
+    has_decreased=fill(false, dims),
+    kwargs...
+  )
 end
 
-struct CuDensityState <: AbstractDensityState
+@kwdef mutable struct CuDensityState{T,N} <: AbstractDensityState{T,N}
+  # Parameters
+  dt::Float32
+  eps1::Float32 = 1.0f0
+  eps2::Float32 = 10.0f0
+  smoothness_duration::Int8 = Int8(3)
+  stable_duration::Int8 = Int8(3)
+
+  # State
+  smooth_counters::CuArray{Int8,N}
+  stable_counters::CuArray{Int8,N}
+  is_smooth::CuArray{Bool,N}
+  has_decrease::CuArray{Bool,N}
+
+  # Buffers
+  f_prev1::CuArray{T,N}
+  f_prev2::CuArray{T,N}
+end
+function CuDensityState(
+  dims::NTuple{N,Int},
+  T::Type{<:Real};
+  dt::Float32
+) where {N}
+  CuDensityState{T,N}(;
+    dt=dt,
+    f_prev1=CUDA.fill(T(NaN), dims),
+    f_prev2=CUDA.fill(T(NaN), dims),
+    smooth_counters=CUDA.fill(Int8(0), dims),
+    stable_counters=CUDA.fill(Int8(0), dims),
+    is_smooth=CUDA.fill(false, dims),
+    has_decreased=CUDA.fill(false, dims),
+  )
+end
+function CuDensityState(
+  dims::NTuple{N,Int},
+  T::Type{<:Real};
+  kwargs...
+) where {N}
+  CuDensityState{T,N}(;
+    f_prev1=CUDA.fill(T(NaN), dims),
+    f_prev2=CUDA.fill(T(NaN), dims),
+    smooth_counters=CUDA.fill(Int8(0), dims),
+    stable_counters=CUDA.fill(Int8(0), dims),
+    is_smooth=CUDA.fill(false, dims),
+    has_decreased=CUDA.fill(false, dims),
+    kwargs...
+  )
+end
+
+function update_state!(
+  density_state::AbstractDensityState{T,N},
+  kde::AbstractKDE{N,T,S,M},
+  vmr_var::AbstractArray{T,N},
+  denisty::AbstractArray{T,N},
+) where {N,T<:Real,S<:Real,M}
+
 end
 
 abstract type AbstractParallelEstimation{N,T,M} <: AbstractEstimation end
@@ -356,12 +469,16 @@ function initialize_estimation(
     device, kde, grid; n_bootstraps=0, include_var=false, method=method
   )
 
-  # TODO: Initialize density state
-
   if device == IsCPU()
     kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
     time_final = silverman_rule(get_data(kde))
     times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
+
+    density_state = DensityState(
+      size(grid),
+      typeof(kde).parameters[2];
+      dt=norm(dt),
+    )
 
     return ParallelEstimation(
       means_bootstraps,
@@ -378,6 +495,8 @@ function initialize_estimation(
     time_final = silverman_rule(Array(get_data(kde)))
     kernel_propagation = CuKernelPropagation(means_bootstraps, vars_bootstraps)
     times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
+
+    density_state = CuDensityState(size(grid), typeof(kde).parameters[2]; dt=norm(dt))
 
     return CuParallelEstimation(
       means_bootstraps,

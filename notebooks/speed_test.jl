@@ -114,42 +114,6 @@ function dirac_op!(
 	end
 end
 
-# ╔═╡ cddf6a5f-220a-4117-b9e6-6c3d74a8c949
-function dirac_cuda!(
-	dirac_series::CuArray{T,M},
-	dirac_series_squared::CuArray{T,M},
-	data::CuMatrix{S},
-	spacing::CuVector{<:Real},
-	low_bound::CuVector{S},
-	bootstrap_idxs::CuMatrix{Int32},
-) where {T<:Real,M,S<:Real}
-	dirac_series .= 0.0f0
-	dirac_series_squared .= 0.0f0
-	
-	n_samples, n_bootstraps = size(bootstrap_idxs)
-	n_modified_gridpoints = n_samples * 2^(M-1) * n_bootstraps
-
-	kernel = @cuda maxregs=32 fastmath=true launch=false dirac_kernel!(
-		dirac_series, dirac_series_squared, data, bootstrap_idxs, spacing, low_bound
-	)
-	config = launch_configuration(kernel.fun)
-	threads = min(n_modified_gridpoints, config.threads)
-	blocks = cld(n_modified_gridpoints, threads)
-
-	CUDA.@sync blocking=true begin
-		kernel(
-			dirac_series,
-			dirac_series_squared,
-			data,
-			bootstrap_idxs,
-			spacing,
-			low_bound;
-			threads,
-			blocks
-		)
-	end
-end
-
 # ╔═╡ 4071c078-0b91-4eb3-811c-bceec8fa44e5
 function dirac_kernel!(
   dirac_series::CuDeviceArray{T,M},
@@ -211,6 +175,42 @@ function dirac_kernel!(
 	@inbounds CUDA.@atomic dirac_series_squared[dirac_idx...] += dirac_series_term^2
 	
 	return
+end
+
+# ╔═╡ cddf6a5f-220a-4117-b9e6-6c3d74a8c949
+function dirac_cuda!(
+	dirac_series::CuArray{T,M},
+	dirac_series_squared::CuArray{T,M},
+	data::CuMatrix{S},
+	spacing::CuVector{<:Real},
+	low_bound::CuVector{S},
+	bootstrap_idxs::CuMatrix{Int32},
+) where {T<:Real,M,S<:Real}
+	dirac_series .= 0.0f0
+	dirac_series_squared .= 0.0f0
+	
+	n_samples, n_bootstraps = size(bootstrap_idxs)
+	n_modified_gridpoints = n_samples * 2^(M-1) * n_bootstraps
+
+	kernel = @cuda maxregs=32 fastmath=true launch=false dirac_kernel!(
+		dirac_series, dirac_series_squared, data, bootstrap_idxs, spacing, low_bound
+	)
+	config = launch_configuration(kernel.fun)
+	threads = min(n_modified_gridpoints, config.threads)
+	blocks = cld(n_modified_gridpoints, threads)
+
+	CUDA.@sync blocking=true begin
+		kernel(
+			dirac_series,
+			dirac_series_squared,
+			data,
+			bootstrap_idxs,
+			spacing,
+			low_bound;
+			threads,
+			blocks
+		)
+	end
 end
 
 # ╔═╡ d63b785d-af95-4fcb-8958-f46ea076dd97
@@ -337,37 +337,6 @@ function propagate_op!(
 	return nothing
 end
 
-# ╔═╡ 0f54f4a2-f98c-4e47-8b39-2403731b5af4
-function propagate_cuda!(
-	mt::AnyCuArray{Complex{T},M},
-	vt::AnyCuArray{Complex{T},M},
-	m0::AnyCuArray{Complex{T},M},
-	v0::AnyCuArray{Complex{T},M},
-	t::CuVector{P},
-	t0::CuVector{P},
-	grid_array::AnyCuArray{S,M},
-) where {T<:Real, S<:Real, M, P<:Real}
-	n_points = prod(size(mt))
-	t_squared = t .^ 2
-	t0_squared = t0 .^ 2
-
-	kernel = @cuda launch=false propagate_kernel!(
-		mt, vt, m0, v0, t_squared, t0_squared, grid_array
-	)
-
-	config = launch_configuration(kernel.fun)
-	threads = min(n_points, config.threads)
-	blocks = cld(n_points, threads)
-
-	CUDA.@sync blocking=true begin
-		kernel(
-			mt, vt, m0, v0, t_squared, t0_squared, grid_array; threads, blocks
-		)
-	end
-
-	return nothing
-end
-
 # ╔═╡ 829e0a9d-63c4-443b-bda4-104994e25a7b
 function propagate_kernel!(
 	mt::CuDeviceArray{Complex{T},M},
@@ -421,10 +390,73 @@ function propagate_kernel!(
 	return
 end
 
+# ╔═╡ 0f54f4a2-f98c-4e47-8b39-2403731b5af4
+function propagate_cuda!(
+	mt::AnyCuArray{Complex{T},M},
+	vt::AnyCuArray{Complex{T},M},
+	m0::AnyCuArray{Complex{T},M},
+	v0::AnyCuArray{Complex{T},M},
+	t::CuVector{P},
+	t0::CuVector{P},
+	grid_array::AnyCuArray{S,M},
+) where {T<:Real, S<:Real, M, P<:Real}
+	n_points = prod(size(mt))
+	t_squared = t .^ 2
+	t0_squared = t0 .^ 2
+
+	kernel = @cuda launch=false propagate_kernel!(
+		mt, vt, m0, v0, t_squared, t0_squared, grid_array
+	)
+
+	config = launch_configuration(kernel.fun)
+	threads = min(n_points, config.threads)
+	blocks = cld(n_points, threads)
+
+	CUDA.@sync blocking=true begin
+		kernel(
+			mt, vt, m0, v0, t_squared, t0_squared, grid_array; threads, blocks
+		)
+	end
+
+	return nothing
+end
+
 # ╔═╡ 20330f00-ba27-4f76-9bb7-2ac72290566c
 md"""
 ### Initialize data
 """
+
+# ╔═╡ 61f9b860-e749-4b02-ad38-708fd5a5a212
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	n_dims_prop = 2
+	n_points_prop = 1002
+	n_bootstraps_prop = 1
+	
+	means_t = zeros(ComplexF64, fill(n_points_prop, n_dims_prop)...)
+	vars_t = zeros(ComplexF64, size(means_t))
+
+	means_0 = rand(ComplexF64, size(means_t))
+	vars_0 = rand(ComplexF64, size(means_t))
+		
+	time = @SVector fill(0.01, n_dims_prop)
+	time_initial = @SVector fill(0.001, n_dims_prop)
+
+	grid_ar = rand(Float64, n_dims_prop, size(means_t)...)
+
+	means_t_d = CUDA.zeros(ComplexF32, size(means_t)..., 1)
+	vars_t_d = CUDA.zeros(ComplexF32, size(means_t)..., 1)
+
+	means_0_d = reshape(CuArray{ComplexF32}(means_0), size(means_0)..., 1)
+	vars_0_d = reshape(CuArray{ComplexF32}(vars_0), size(vars_0)..., 1)
+
+	time_d = CuVector{Float32}(time)
+	time_initial_d = CuVector{Float32}(time_initial)
+
+	grid_ar_d = CuArray{Float32}(grid_ar)
+end;
+  ╠═╡ =#
 
 # ╔═╡ f94ab2e5-879e-44ed-9b36-9f8f07c829f2
 md"""
@@ -654,60 +686,8 @@ md"""
 ### Initialize data
 """
 
-# ╔═╡ 0d6dc8f5-25aa-4d7e-a718-00047ca4354e
-# ╠═╡ disabled = true
-#=╠═╡
-@btime vmr_og!(means_vmr1, vars_vmr1, time, time_initial, n_samples_vmr);
-  ╠═╡ =#
-
-# ╔═╡ 4677de1f-6892-4fc2-84b6-e9ef35df7990
-# ╠═╡ disabled = true
-#=╠═╡
-@btime vmr_op!(means_vmr2, vars_vmr2, time, time_initial, n_samples_vmr);
-  ╠═╡ =#
-
-# ╔═╡ aa1f42f6-65ae-4f7f-9751-a513b9f4e853
-# ╠═╡ disabled = true
-#=╠═╡
-@btime vmr_cuda!(means_vmr_d, vars_vmr_d, time_d, time_initial_d, n_samples_vmr);
-  ╠═╡ =#
-
-# ╔═╡ 126aa8cf-528e-45f3-ad25-cdc47b4d1d1f
-abs(2 + 2im)
-
-# ╔═╡ 61f9b860-e749-4b02-ad38-708fd5a5a212
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	n_dims_prop = 2
-	n_points_prop = 1002
-	n_bootstraps_prop = 1
-	
-	means_t = zeros(ComplexF64, fill(n_points_prop, n_dims_prop)...)
-	vars_t = zeros(ComplexF64, size(means_t))
-
-	means_0 = rand(ComplexF64, size(means_t))
-	vars_0 = rand(ComplexF64, size(means_t))
-		
-	time = @SVector fill(0.01, n_dims_prop)
-	time_initial = @SVector fill(0.001, n_dims_prop)
-
-	grid_ar = rand(Float64, n_dims_prop, size(means_t)...)
-
-	means_t_d = CUDA.zeros(ComplexF32, size(means_t)..., 1)
-	vars_t_d = CUDA.zeros(ComplexF32, size(means_t)..., 1)
-
-	means_0_d = reshape(CuArray{ComplexF32}(means_0), size(means_0)..., 1)
-	vars_0_d = reshape(CuArray{ComplexF32}(vars_0), size(vars_0)..., 1)
-
-	time_d = CuVector{Float32}(time)
-	time_initial_d = CuVector{Float32}(time_initial)
-
-	grid_ar_d = CuArray{Float32}(grid_ar)
-end;
-  ╠═╡ =#
-
 # ╔═╡ 13cf60be-4118-482f-831f-5bffd8a89c54
+# ╠═╡ disabled = true
 #=╠═╡
 begin
 	n_dims_vmr = 2
@@ -734,6 +714,221 @@ begin
 	time_initial_d = CuVector{Float32}(time_initial)
 end;
   ╠═╡ =#
+
+# ╔═╡ 0d6dc8f5-25aa-4d7e-a718-00047ca4354e
+# ╠═╡ disabled = true
+#=╠═╡
+@btime vmr_og!(means_vmr1, vars_vmr1, time, time_initial, n_samples_vmr);
+  ╠═╡ =#
+
+# ╔═╡ 4677de1f-6892-4fc2-84b6-e9ef35df7990
+# ╠═╡ disabled = true
+#=╠═╡
+@btime vmr_op!(means_vmr2, vars_vmr2, time, time_initial, n_samples_vmr);
+  ╠═╡ =#
+
+# ╔═╡ aa1f42f6-65ae-4f7f-9751-a513b9f4e853
+# ╠═╡ disabled = true
+#=╠═╡
+@btime vmr_cuda!(means_vmr_d, vars_vmr_d, time_d, time_initial_d, n_samples_vmr);
+  ╠═╡ =#
+
+# ╔═╡ e8a66f73-5c06-44da-9585-6aeb49d4e499
+md"""
+## Identify convergence
+"""
+
+# ╔═╡ d38593e4-f98a-42ed-9a5d-e86039480ebd
+@inline function smoothness_check(
+	second_derivative::T1,
+	tol::T2,
+) where {T1<:Real,T2<:Real}
+	factor = 2
+	return abs(second_derivative) < factor * tol
+end
+
+# ╔═╡ 90a7a15d-d69a-4d98-9e85-98c2d84bbf00
+@inline function find_decrease(
+	vmr_current::T,
+	vmr_prev1::T,
+) where {T<:Real}
+	vmr_diff = vmr_current - vmr_prev1
+	if vmr_diff < 0
+		has_decreased = true
+	else
+		has_decreased = false
+	end
+
+	return has_decreased
+end
+
+# ╔═╡ 23705d75-8c1b-42ef-b184-8d1e7c94b82c
+@inline function first_difference(
+	f::T1, f_prev::T2, dt::P
+) where {T1<:Real,T2<:Real,P<:Real}
+	return (f - f_prev) / (2dt)
+end
+
+# ╔═╡ beb6f788-b75a-42c6-ae1a-af575953cfa0
+@inline function second_difference(
+	f::T1, f_prev1::T2, f_prev2::T3, dt::P
+) where {T1<:Real,T2<:Real,T3<:Real,P<:Real}
+	return (f - 2f_prev1 + f_prev2) / dt^2
+end
+
+# ╔═╡ 4b0e9fc2-586d-41ad-8b20-e32b6118399b
+@inline function find_smoothness(
+	vmr_current::T,
+	vmr_prev1::T,
+	vmr_prev2::T,
+	tol2::Ttol,
+	dt::P,
+	smoothness_counter::Int8,
+	smoothness_duration::Int8,
+) where {T<:Real,Ttol<:Real,P<:Real}
+	second_derivative = second_difference(
+		vmr_current, vmr_prev1, vmr_prev2, dt
+	)
+	if smoothness_check(second_derivative, tol2)
+		smoothness_counter += Int8(1)
+	else
+		smoothness_counter = 0
+	end
+	if smoothness_counter >= smoothness_duration
+		is_smooth = true
+	else
+		is_smooth = false
+	end
+
+	return is_smooth, smoothness_counter
+end
+
+# ╔═╡ 3a1e9f29-4b8f-444f-9b32-17f7514ddf1e
+@inline function find_stability(
+	vmr_current::T,
+	vmr_prev1::T,
+	vmr_prev2::T,
+	tol1::Ttol,
+	tol2::Ttol,
+	dt::P,
+	stability_counter::Int8,
+	stability_duration::Int8,
+) where {T<:Real,Ttol<:Real,P<:Real}
+	first_derivative = abs(first_difference(vmr_current, vmr_prev1, dt))
+	second_derivative = abs(second_difference(vmr_current, vmr_prev1, vmr_prev2, dt))
+
+	if (first_derivative < tol1) && (second_derivative < tol2)
+		stability_counter += Int8(1)
+	else
+		stability_counter = 0
+	end
+
+	if stability_counter >= stability_duration
+		is_stable = true
+	else
+		is_stable = false
+	end
+
+	return is_stable, stability_counter
+end
+
+# ╔═╡ 215a79e4-6cbf-4c25-903a-72e34a63b7ef
+function identify_convergence!(
+	vmr_current::AbstractArray{T,N},
+	vmr_prev1::AbstractArray{T,N},
+	vmr_prev2::AbstractArray{T,N},
+	density::AbstractArray{T,N},
+	means::AbstractArray{T,N},
+	smooth_counters::Array{Int8,N},
+	stable_counters::Array{Int8,N},
+	is_smooth::Array{Bool,N},
+	has_decreased::Array{Bool,N};
+	time_step::Real=0.1,
+	tol1::Real=1,
+	tol2::Real=7,
+	smoothness_duration::Int8=Int8(3),
+	stable_duration::Int8=Int8(3),
+) where {N,T<:Real}
+	@inbounds @simd for i in eachindex(vmr_current)
+		if !is_smooth[i]
+			is_smooth[i], smooth_counters[i] = find_smoothness(
+				vmr_current[i],
+				vmr_prev1[i],
+				vmr_prev2[i],
+				tol2,
+				time_step,
+				smooth_counters[i],
+				smoothness_duration,
+			)
+
+			if (vmr_current[i] > vmr_prev1[i]) && (vmr_prev2[i] > vmr_prev1[i])
+				density[i] = means[i]
+			end
+
+		elseif !has_decreased[i]
+			has_decreased[i] = find_decrease(
+				vmr_current[i],
+				vmr_prev1[i],
+			)
+
+		else
+			is_stable, stable_counters[i] = find_stability(
+				vmr_current[i],
+				vmr_prev1[i],
+				vmr_prev2[i],
+				tol1,
+				tol2,
+				time_step,
+				stable_counters[i],
+				stable_duration
+			)
+
+			if is_stable
+				density[i] = means[i]
+			end
+		end
+	end
+end
+
+# ╔═╡ 070120a4-8c82-4b5c-8c79-0c64aacb4119
+md"""
+### Initialize data
+"""
+
+# ╔═╡ 9a941a31-db1c-4f4b-b600-60395cbd87ff
+begin
+	n_dims_convergence = 2
+	n_points_convergence = 1002
+
+	vmr_c = rand(Float64, fill(n_points_convergence, n_dims_convergence)...)
+	vmr_p1 = rand(Float64, fill(n_points_convergence, n_dims_convergence)...)
+	vmr_p2 = rand(Float64, fill(n_points_convergence, n_dims_convergence)...)
+
+	average = rand(Float64, fill(n_points_convergence, n_dims_convergence)...)
+	dens = zeros(Float64, fill(n_points_convergence, n_dims_convergence)...)
+
+	smooth_count = rand(
+		UnitRange{Int8}(1:3), fill(n_points_convergence, n_dims_convergence)...
+	)
+	stable_count = rand(
+		UnitRange{Int8}(1:3), fill(n_points_convergence, n_dims_convergence)...
+	)
+	is_smooths = rand(Bool, fill(n_points_convergence, n_dims_convergence)...)
+	has_decreaseds = rand(Bool, fill(n_points_convergence, n_dims_convergence)...)
+end;
+
+# ╔═╡ ad54fc88-17f4-4013-9e7f-326c896d8388
+md"""
+### Benchmarking times
+"""
+
+# ╔═╡ 40bc5a2c-9783-4a15-8862-2278a1c92555
+@btime identify_convergence!(
+	vmr_c, vmr_p1, vmr_p2,
+	dens, average,
+	smooth_count, stable_count,
+	is_smooths, has_decreaseds
+)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2436,6 +2631,17 @@ version = "1.4.1+2"
 # ╠═0d6dc8f5-25aa-4d7e-a718-00047ca4354e
 # ╠═4677de1f-6892-4fc2-84b6-e9ef35df7990
 # ╠═aa1f42f6-65ae-4f7f-9751-a513b9f4e853
-# ╠═126aa8cf-528e-45f3-ad25-cdc47b4d1d1f
+# ╟─e8a66f73-5c06-44da-9585-6aeb49d4e499
+# ╠═215a79e4-6cbf-4c25-903a-72e34a63b7ef
+# ╟─4b0e9fc2-586d-41ad-8b20-e32b6118399b
+# ╟─d38593e4-f98a-42ed-9a5d-e86039480ebd
+# ╟─90a7a15d-d69a-4d98-9e85-98c2d84bbf00
+# ╟─3a1e9f29-4b8f-444f-9b32-17f7514ddf1e
+# ╟─23705d75-8c1b-42ef-b184-8d1e7c94b82c
+# ╟─beb6f788-b75a-42c6-ae1a-af575953cfa0
+# ╟─070120a4-8c82-4b5c-8c79-0c64aacb4119
+# ╠═9a941a31-db1c-4f4b-b600-60395cbd87ff
+# ╟─ad54fc88-17f4-4013-9e7f-326c896d8388
+# ╠═40bc5a2c-9783-4a15-8862-2278a1c92555
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

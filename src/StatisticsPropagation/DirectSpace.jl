@@ -15,7 +15,9 @@ using StaticArrays,
 using CUDA: i32
 
 export silverman_rule,
-  initialize_dirac_sequence
+  initialize_dirac_sequence,
+  calculate_scaled_vmr!,
+  identify_convergence!
 
 include("../CuStatistics/CuStatistics.jl")
 
@@ -435,7 +437,8 @@ function calculate_scaled_vmr!(
       m2 += delta * (x - mean)
     end
 
-    vmr_var[j] = scaling_factor * m2 / (n_bootstraps - 1)
+    vmr_v = scaling_factor * m2 / (n_bootstraps - 1)
+    vmr_var[j] = ifelse(isfinite(vmr_v), vmr_v, NaN)
   end
 
   return vmr_var
@@ -503,23 +506,27 @@ function calculate_scaled_vmr!(
 
   vmr_var = reshape(view(s2k_raw, 1:n_points), grid_dims)
 
-  # scaling_factor = prod(time .^ 2 .+ time_initial .^ 2)^(3 / 2) * n_samples^4
-  #
-  # Threads.@threads for i in 1:size(means, M)
-  #   means_i = selectdim(means, M, i)
-  #   vars_i = selectdim(vars, M, i)
-  #
-  #   @inbounds @simd for idx in eachindex(means_i)
-  #     vars_i[idx] /= means_i[idx]
-  #   end
-  # end
-  # Threads.@threads for idx in CartesianIndices(selectdim(means, M, 1))
-  #   vars[idx] = var(vars[idx, :]) * scaling_factor
-  #
-  #   vars[idx] = ifelse(isnan(vars[idx]), NaN, vars[idx])
-  # end
-  #
-  # return nothing
+  Threads.@threads for point in 0:n_points-1
+    start_idx = point * n_bootstraps + 1
+    end_idx = n_bootstraps * (point + 1)
+
+    mean = zero(T)
+    m2 = zero(T)
+    count = 0
+
+    @simd for i in start_idx:end_idx
+      x = vmrs_transposed[i]
+      count += 1
+      delta = x - mean
+      mean += delta / count
+      m2 += delta * (x - mean)
+    end
+
+    vmr_v = scaling_factor * m2 / (count - 1)
+    vmr_var[point+1] = ifelse(isfinite(vmr_v), vmr_v, NaN)
+  end
+
+  return vmr_var
 end
 function calculate_scaled_vmr!(
   ::Val{:cuda},
@@ -536,89 +543,232 @@ function calculate_scaled_vmr!(
   vmr .= dropdims(var(vars, dims=M), dims=M)
   vmr .*= scaling_factor
 
-  @. vmr = ifelse(isnan(vmr), NaN32, vmr)
+  @. vmr = ifelse(isfinite(vmr), vmr, NaN32)
 
-  return nothing
+  return vmr
 end
 
-function assign_converged_density!(
+function identify_convergence!(
   ::Val{:serial},
-  density::AbstractArray{T,N},
-  means::AbstractArray{T,N},
   vmr_current::AbstractArray{T,N},
   vmr_prev1::AbstractArray{T,N},
   vmr_prev2::AbstractArray{T,N},
-  time_step::Real;
-  tol1::Real=1e-10,
-  tol2::Real=1e-10,
-)::Nothing where {N,T<:Real}
-  @. density = ifelse(
-    (
-      ((abs(vmr_current - vmr_prev1) / (2time_step)) < tol1) &
-      ((abs(vmr_current - 2vmr_prev1 + vmr_prev2) / time_step^2) < tol2) &
-      isnan(density)
-    ),
-    means,
-    density,
-  )
+  density::AbstractArray{T,N},
+  means::AbstractArray{T,N},
+  time_step::Real,
+  tol1::Real,
+  tol2::Real,
+  smoothness_duration::Integer,
+  smooth_counters::Array{Int8,N},
+  is_smooth::Array{Bool,N},
+  has_decreased::Array{Bool,N},
+  stable_duration::Integer,
+  stable_counters::Array{Int8,N},
+) where {N,T<:Real}
+  @inbounds @simd for i in eachindex(vmr_current)
+    if !is_smooth[i]
+      is_smooth[i], smooth_counters[i] = find_smoothness(
+        vmr_current[i],
+        vmr_prev1[i],
+        vmr_prev2[i],
+        tol2,
+        time_step,
+        smooth_counters[i],
+        smoothness_duration
+      )
 
-  # @. density = ifelse(
-  #   isnan(density),
-  #   means,
-  #   density,
-  # )
+      if (vmr_current[i] > vmr_prev1[i]) && (vmr_prev2[i] > vmr_prev1[i])
+        density[i] = means[i]
+      end
 
-  return nothing
+    elseif !has_decreased[i]
+      has_decreased[i] = find_decrease(
+        vmr_current[i],
+        vmr_prev1[i],
+      )
+
+    else
+      is_stable, stable_counters[i] = find_stability(
+        vmr_current[i],
+        vmr_prev1[i],
+        vmr_prev2[i],
+        tol1,
+        tol2,
+        time_step,
+        stable_counters[i],
+        stable_duration
+      )
+
+      if is_stable
+        density[i] = means[i]
+      end
+
+    end
+  end
 end
-function assign_converged_density!(
+function identify_convergence!(
   ::Val{:threaded},
-  density::AbstractArray{T,N},
-  means::AbstractArray{T,N},
   vmr_current::AbstractArray{T,N},
   vmr_prev1::AbstractArray{T,N},
   vmr_prev2::AbstractArray{T,N},
-  time_step::Real;
-  tol1::Real=1e-10,
-  tol2::Real=1e-10,
-)::Nothing where {N,T<:Real}
-  @warn "Threaded assignment of converged density not implemented. Using serial implementation."
-  assign_converged_density!(
-    Val{:serial},
-    density,
-    means,
-    vmr_current,
-    vmr_prev1,
-    vmr_prev1,
-    time_step;
-    tol1,
-    tol2,
-  )
+  density::AbstractArray{T,N},
+  means::AbstractArray{T,N},
+  time_step::Real,
+  tol1::Real,
+  tol2::Real,
+  smoothness_duration::Integer,
+  smooth_counters::Array{Int8,N},
+  is_smooth::Array{Bool,N},
+  has_decreased::Array{Bool,N},
+  stable_duration::Integer,
+  stable_counters::Array{Int8,N},
+) where {N,T<:Real}
+  Threads.@threads @inbounds for i in eachindex(vmr_current)
+    if !is_smooth[i]
+      is_smooth[i], smooth_counters[i] = find_smoothness(
+        vmr_current[i],
+        vmr_prev1[i],
+        vmr_prev2[i],
+        tol2,
+        time_step,
+        smooth_counters[i],
+        smoothness_duration
+      )
 
-  return nothing
+      if (vmr_current[i] > vmr_prev1[i]) && (vmr_prev2[i] > vmr_prev1[i])
+        density[i] = means[i]
+      end
+
+    elseif !has_decreased[i]
+      has_decreased[i] = find_decrease(
+        vmr_current[i],
+        vmr_prev1[i],
+      )
+
+    else
+      is_stable, stable_counters[i] = find_stability(
+        vmr_current[i],
+        vmr_prev1[i],
+        vmr_prev2[i],
+        tol1,
+        tol2,
+        time_step,
+        stable_counters[i],
+        stable_duration
+      )
+
+      if is_stable
+        density[i] = means[i]
+      end
+
+    end
+  end
 end
-function assign_converged_density!(
+function identify_convergence!(
   ::Val{:cuda},
-  density::AnyCuArray{T,N},
-  means::AnyCuArray{Complex{T},N},
   vmr_current::AnyCuArray{T,N},
   vmr_prev1::AnyCuArray{T,N},
   vmr_prev2::AnyCuArray{T,N},
-  time_step::Real;
-  tol1::Real=1.0f-10,
-  tol2::Real=1.0f-10,
-)::Nothing where {N,T<:Real}
-  time_step_32 = T(time_step)
+  density::AnyCuArray{T,N},
+  means::AnyCuArray{T,N},
+  time_step::Real,
+  tol1::Real,
+  tol2::Real,
+  smoothness_duration::Integer,
+  smooth_counters::AnyCuArray{Int8,N},
+  is_smooth::AnyCuArray{Bool,N},
+  has_decreased::AnyCuArray{Bool,N},
+  stable_duration::Integer,
+  stable_counters::AnyCuArray{Int8,N},
+) where {N,T<:Real}
+end
 
-  @. density = ifelse(
-    (
-      ((abs(vmr_current - vmr_prev1) / (2i32 * time_step_32)) < tol1) &
-      ((abs(vmr_current - 2i32 * vmr_prev1 + vmr_prev2) / time_step_32^2i32) < tol2)
-    ),
-    means,
-    density,
+@inline function find_smoothness(
+  vmr_current::T,
+  vmr_prev1::T,
+  vmr_prev2::T,
+  tol2::Ttol,
+  dt::P,
+  smooth_counter::Z,
+  smoothness_duration::Z,
+) where {T<:Real,Ttol<:Real,P<:Real,Z<:Integer}
+  second_derivative = second_difference(
+    vmr_current, vmr_prev1, vmr_prev2, dt
   )
+  if smoothness_check(second_derivative, tol2)
+    smooth_counter += 1
+  else
+    smooth_counter = 0
+  end
+  if smooth_counter >= smoothness_duration
+    is_smooth = true
+  else
+    is_smooth = false
+  end
 
-  return nothing
+  return is_smooth, smooth_counter
+end
+
+@inline function smoothness_check(
+  second_derivative::T1,
+  tol::T2,
+) where {T1<:Real,T2<:Real}
+  factor = 2
+  return abs(second_derivative) < factor * tol
+end
+
+@inline function find_decrease(
+  vmr_current::T,
+  vmr_prev1::T,
+) where {T<:Real}
+  vmr_diff = vmr_current - vmr_prev1
+  if vmr_diff < 0
+    has_decreased = true
+  else
+    has_decreased = false
+  end
+
+  return has_decreased
+end
+
+@inline function find_stability(
+  vmr_current::T,
+  vmr_prev1::T,
+  vmr_prev2::T,
+  tol1::Ttol,
+  tol2::Ttol,
+  dt::P,
+  stability_counter::Z,
+  stability_duration::Z,
+) where {T<:Real,Ttol<:Real,P<:Real,Z<:Integer}
+  first_derivative = abs(first_difference(vmr_current, vmr_prev1, dt))
+  second_derivative = abs(second_difference(vmr_current, vmr_prev1, vmr_prev2, dt))
+
+  if (first_derivative < tol1) && (second_derivative < tol2)
+    stability_counter += 1
+  else
+    stability_counter = 0
+  end
+
+  if stability_counter >= stability_duration
+    is_stable = true
+  else
+    is_stable = false
+  end
+
+  return is_stable, stability_counter
+end
+
+@inline function first_difference(
+  f::T1, f_prev::T2, dt::P
+) where {T1<:Real,T2<:Real,P<:Real}
+  return (f - f_prev) / (2dt)
+end
+
+@inline function second_difference(
+  f::T1, f_prev1::T2, f_prev2::T3, dt::P
+) where {T1<:Real,T2<:Real,T3<:Real,P<:Real}
+  return (f - 2f_prev1 + f_prev2) / dt^2
 end
 
 function silverman_rule(data::AbstractMatrix{T}) where {T<:Real}
