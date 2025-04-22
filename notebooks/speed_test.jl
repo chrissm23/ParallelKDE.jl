@@ -738,6 +738,101 @@ md"""
 ## Identify convergence
 """
 
+# ╔═╡ b9426255-e41d-4588-999a-e1bc1f7706f8
+function identify_convergence_cuda!(
+	vmr_current::AnyCuArray{T,N},
+	vmr_prev1::AnyCuArray{T,N},
+	vmr_prev2::AnyCuArray{T,N},
+	density::AnyCuArray{T,N},
+	means::AnyCuArray{T,N},
+	smooth_counters::AnyCuArray{Int8,N},
+	stable_counters::AnyCuArray{Int8,N},
+	is_smooth::AnyCuArray{Bool,N},
+	has_decreased::AnyCuArray{Bool,N};
+	time_step::Real=0.1,
+	tol1::Real=1,
+	tol2::Real=7,
+	smoothness_duration::Int8=Int8(3),
+	stable_duration::Int8=Int8(3),
+) where {T<:Real,N}
+	# n_points = len(vmr_current)
+	
+	# # Smoothness detection
+	# smooth_parms = CuArray{Float32}([tol2, time_step, smoothness_duration])
+	# kernel = @cuda launch=false kernel_smooth!(
+	# 	vmr_current, vmr_prev1, vmr_prev2, is_smooth, smooth_counters, smooth_parms
+	# )
+	# config = launch_configuration(kernel.fun)
+	# threads = min(n_points, config.threads)
+	# blocks = cld(n_points, threads)
+
+	# CUDA.@sync blocking=true begin
+	# 	kernel(
+	# 		vmr_current,
+	# 		vmr_prev1,
+	# 		vmr_prev2,
+	# 		is_smooth,
+	# 		smooth_counters,
+	# 		smooth_parms;
+	# 		threads,
+	# 		blocks
+	# 	)
+	# end
+
+	# # Decrease detection
+	# kernel = @cuda launch=false kernel_decrease!(
+	# 	vmr_current, vmr_prev1, vmr_prev2, is_smooth, smooth_counters, smooth_parms
+	# )
+	# config = launch_configuration(kernel.fun)
+	# threads = min(n_points, config.threads)
+	# blocks = cld(n_points, threads)
+
+	# CUDA.@sync blocking=true begin
+	# 	kernel(
+	# 		vmr_current,
+	# 		vmr_prev1,
+	# 		has_decreased,
+	# 	)
+	# end
+
+	# # Stability detection
+	# stability_parms = CuArray{Float32}([tol1, tol2, time_step, stable_duration])
+	# kernel = @cuda launch=false kernel_stable!(
+	# 	vmr_current,
+	# 	vmr_prev1,
+	# 	vmr_prev2,
+	# 	means,
+	# 	density,
+	# 	is_smooth,
+	# 	has_decreased,
+	# 	is_stable,
+	# 	stable_counters,
+	# 	stability_parms
+	# )
+	# config = launch_configuration(kernel.fun)
+	# threads = min(n_points, config.threads)
+	# blocks = cld(n_points, threads)
+
+	# CUDA.@sync blocking=true begin
+	# 	kernel(
+	# 		vmr_current,
+	# 		vmr_prev1,
+	# 		vmr_prev2,
+	# 		means,
+	# 		density,
+	# 		is_smooth,
+	# 		has_decreased,
+	# 		is_stable,
+	# 		stable_counters,
+	# 		stability_parms;
+	# 		threads,
+	# 		blocks
+	# 	)
+	# end
+
+	return nothing
+end
+
 # ╔═╡ d38593e4-f98a-42ed-9a5d-e86039480ebd
 @inline function smoothness_check(
 	second_derivative::T1,
@@ -745,6 +840,46 @@ md"""
 ) where {T1<:Real,T2<:Real}
 	factor = 2
 	return abs(second_derivative) < factor * tol
+end
+
+# ╔═╡ 41182732-6c97-4fa6-b2fc-5dec10f4d236
+function kernel_smooth!(
+	vmr_current::CuDeviceArray{T,N},
+	vmr_prev1::CuDeviceArray{T,N},
+	vmr_prev2::CuDeviceArray{T,N},
+	is_smooth::CuDeviceArray{Bool,N},
+	smoothness_counter::CuDeviceArray{Int8,N},
+	parms::CuDeviceArray,
+) where {T<:Real,N}
+	# idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+	# if idx > len(vmr_current)
+	# 	return
+	# elseif is_smooth[idx] == true
+	# 	return
+	# end
+
+	# tol = parms[1]
+	# dt = parms[2]
+	# smoothness_duration = parms[3]
+	# factor = 2i32
+
+	# second_derivative = (
+	# 	(vmr_current[idx] - 2i32*vmr_prev1[idx] + vmr_prev2[idx]) / dt^2i32
+	# )
+	# counter = smoothness_counter[idx]
+	
+	# if abs(second_derivative) < factor*tol
+	# 	counter += Int8(1)
+	# else
+	# 	counter = Int8(0)
+	# end
+	# if counter >= smoothness_duration
+	# 	is_smooth[idx] = true
+	# end
+	# smoothness_counter[idx] = counter
+
+	return
 end
 
 # ╔═╡ 90a7a15d-d69a-4d98-9e85-98c2d84bbf00
@@ -760,6 +895,85 @@ end
 	end
 
 	return has_decreased
+end
+
+# ╔═╡ ba345f78-44a1-45c2-bcf0-cd7f854ebf22
+function kernel_decrease!(
+	vmr_current::CuDeviceArray{T,N},
+	vmr_prev1::CuDeviceArray{T,N},
+	is_smooth::CuDeviceArray{Bool,N},
+	has_decreased::CuDeviceArray{Bool,N},
+) where {T<:Real,N}
+	# idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+	# if idx > len(vmr_current)
+	# 	return
+	# elseif is_smooth[idx] == false
+	# 	return
+	# elseif has_decreased[idx] == true
+	# 	return
+	# end
+
+	# vmr_diff = vmr_current[idx] - vmr_prev1[idx]
+	# if vmr_diff < 0
+	# 	has_decreased[idx] = true
+	# end
+
+	return
+end
+
+# ╔═╡ d40ea4ff-6d27-4e55-8b3e-19889e84ffa4
+function kernel_stable!(
+	vmr_current::CuDeviceArray{T,N},
+	vmr_prev1::CuDeviceArray{T,N},
+	vmr_prev2::CuDeviceArray{T,N},
+	means::CuDeviceArray{T,N},
+	density::CuDeviceArray{T,N},
+	is_smooth::CuDeviceArray{Bool,N},
+	has_decreased::CuDeviceArray{Bool,N},
+	is_stable::CuDeviceArray{Bool,N},
+	stability_counter::CuDeviceArray{Int8,N},
+	parms::CuDeviceArray,
+) where {T<:Real,N}
+	# idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+	# if idx > len(vmr_current)
+	# 	return
+	# elseif is_smooth[idx] == false
+	# 	return
+	# elseif has_decreased[idx] == false
+	# 	return
+	# elseif is_smooth[idx] == true
+	# 	return
+	# end
+
+	# tol1 = parms[1]
+	# tol2 = parms[2]
+	# dt = parms[3]
+	# stable_duration[4]
+	
+	# first_derivative = abs(vmr_current[idx] - vmr_prev1[idx] / (2i32 * dt))
+	# second_derivative = abs(
+	# 	(vmr_current[idx] - 2i32*vmr_prev1[idx] + vmr_prev2[idx]) / dt^2i32
+	# )
+	# counter = stability_counter[idx]
+
+	# if (first_derivative < tol1) && (second_derivative < tol2)
+	# 	counter += Int8(1)
+	# else
+	# 	counter = Int8(0)
+	# end
+
+	# if counter >= stable_duration
+	# 	is_stable[idx] = true
+	# end
+	# stability_counter[idx] = counter
+
+	# if is_stable[idx]
+	# 	density[idx] = means[idx]
+	# end
+
+	return
 end
 
 # ╔═╡ 23705d75-8c1b-42ef-b184-8d1e7c94b82c
@@ -792,7 +1006,7 @@ end
 	if smoothness_check(second_derivative, tol2)
 		smoothness_counter += Int8(1)
 	else
-		smoothness_counter = 0
+		smoothness_counter = Int8(0)
 	end
 	if smoothness_counter >= smoothness_duration
 		is_smooth = true
@@ -820,7 +1034,7 @@ end
 	if (first_derivative < tol1) && (second_derivative < tol2)
 		stability_counter += Int8(1)
 	else
-		stability_counter = 0
+		stability_counter = Int8(0)
 	end
 
 	if stability_counter >= stability_duration
@@ -839,10 +1053,10 @@ function identify_convergence!(
 	vmr_prev2::AbstractArray{T,N},
 	density::AbstractArray{T,N},
 	means::AbstractArray{T,N},
-	smooth_counters::Array{Int8,N},
-	stable_counters::Array{Int8,N},
-	is_smooth::Array{Bool,N},
-	has_decreased::Array{Bool,N};
+	smooth_counters::AbstractArray{Int8,N},
+	stable_counters::AbstractArray{Int8,N},
+	is_smooth::AbstractArray{Bool,N},
+	has_decreased::AbstractArray{Bool,N};
 	time_step::Real=0.1,
 	tol1::Real=1,
 	tol2::Real=7,
@@ -917,6 +1131,21 @@ begin
 	has_decreaseds = rand(Bool, fill(n_points_convergence, n_dims_convergence)...)
 end;
 
+# ╔═╡ 1e6a79d5-efc6-4133-bd30-e4999d073873
+begin
+	vmr_c_d = CuArray{Float32}(vmr_c)
+	vmr_p1_d = CuArray{Float32}(vmr_p1)
+	vmr_p2_d = CuArray{Float32}(vmr_p2)
+
+	average_d = CuArray{Float32}(average)
+	dens_d = CuArray{Float32}(dens)
+
+	smooth_count_d = CuArray{Int8}(smooth_count)
+	stable_count_d = CuArray{Int8}(stable_count)
+	is_smooths_d = CuArray{Bool}(is_smooths)
+	has_decreaseds_d = CuArray{Bool}(has_decreaseds)
+end;
+
 # ╔═╡ ad54fc88-17f4-4013-9e7f-326c896d8388
 md"""
 ### Benchmarking times
@@ -928,6 +1157,14 @@ md"""
 	dens, average,
 	smooth_count, stable_count,
 	is_smooths, has_decreaseds
+)
+
+# ╔═╡ fc1458a6-c618-4801-a6df-f9b2a6df5064
+@btime identify_convergence_cuda!(
+	vmr_c_d, vmr_p1_d, vmr_p2_d,
+	dens_d, average_d,
+	smooth_count_d, stable_count_d,
+	is_smooths_d, has_decreaseds_d
 )
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -944,17 +1181,6 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
-
-[compat]
-BenchmarkTools = "~1.6.0"
-CUDA = "~5.7.1"
-Distributions = "~0.25.118"
-FFTW = "~1.8.1"
-Plots = "~1.40.11"
-PlutoUI = "~0.7.23"
-StaticArrays = "~1.9.13"
-Statistics = "~1.11.1"
-StatsBase = "~0.34.4"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -963,7 +1189,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "9213d0378ea0bdf7eb132951ef0ab2ad80aa5c15"
+project_hash = "aa378d43a15efdc91a3bad65bf609dde09a9c688"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -987,9 +1213,9 @@ version = "1.3.2"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
-git-tree-sha1 = "f7817e2e585aa6d924fd714df1e2a84be7896c60"
+git-tree-sha1 = "cd8b948862abee8f3d3e9b73a102a9ca924debb0"
 uuid = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
-version = "4.3.0"
+version = "4.2.0"
 weakdeps = ["SparseArrays", "StaticArrays"]
 
     [deps.Adapt.extensions]
@@ -1029,10 +1255,10 @@ version = "1.1.1"
     oneAPI = "8f75cd03-7ff8-4ecb-9b8f-daf728133b1b"
 
 [[deps.BFloat16s]]
-deps = ["LinearAlgebra", "Printf", "Random"]
-git-tree-sha1 = "3b642331600250f592719140c60cf12372b82d66"
+deps = ["LinearAlgebra", "Printf", "Random", "Test"]
+git-tree-sha1 = "2c7cc21e8678eff479978a0a2ef5ce2f51b63dff"
 uuid = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"
-version = "0.5.1"
+version = "0.5.0"
 
 [[deps.Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
@@ -1061,10 +1287,10 @@ uuid = "fa961155-64e5-5f13-b03f-caf6b980ea82"
 version = "0.5.0"
 
 [[deps.CUDA]]
-deps = ["AbstractFFTs", "Adapt", "BFloat16s", "CEnum", "CUDA_Driver_jll", "CUDA_Runtime_Discovery", "CUDA_Runtime_jll", "Crayons", "DataFrames", "ExprTools", "GPUArrays", "GPUCompiler", "GPUToolbox", "KernelAbstractions", "LLVM", "LLVMLoopInfo", "LazyArtifacts", "Libdl", "LinearAlgebra", "Logging", "NVTX", "Preferences", "PrettyTables", "Printf", "Random", "Random123", "RandomNumbers", "Reexport", "Requires", "SparseArrays", "StaticArrays", "Statistics", "demumble_jll"]
-git-tree-sha1 = "049d804a037ed39300722bcad4b7a538eabe1e47"
+deps = ["AbstractFFTs", "Adapt", "BFloat16s", "CEnum", "CUDA_Driver_jll", "CUDA_Runtime_Discovery", "CUDA_Runtime_jll", "Crayons", "DataFrames", "ExprTools", "GPUArrays", "GPUCompiler", "KernelAbstractions", "LLVM", "LLVMLoopInfo", "LazyArtifacts", "Libdl", "LinearAlgebra", "Logging", "NVTX", "Preferences", "PrettyTables", "Printf", "Random", "Random123", "RandomNumbers", "Reexport", "Requires", "SparseArrays", "StaticArrays", "Statistics", "demumble_jll"]
+git-tree-sha1 = "7be665c420b5d16059b1ba00b1dbb4e85012fa65"
 uuid = "052768ef-5323-5732-b1bb-66c8b64840ba"
-version = "5.7.1"
+version = "5.6.1"
 
     [deps.CUDA.extensions]
     ChainRulesCoreExt = "ChainRulesCore"
@@ -1078,9 +1304,9 @@ version = "5.7.1"
 
 [[deps.CUDA_Driver_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "f69205592dbd3721a156245b6dd837206786a848"
+git-tree-sha1 = "14996d716a2eaaeccfc8d7bc854dd87fde720ac1"
 uuid = "4ee394cb-3365-5eb0-8335-949819d2adfc"
-version = "0.12.1+1"
+version = "0.10.4+0"
 
 [[deps.CUDA_Runtime_Discovery]]
 deps = ["Libdl"]
@@ -1090,15 +1316,15 @@ version = "0.3.5"
 
 [[deps.CUDA_Runtime_jll]]
 deps = ["Artifacts", "CUDA_Driver_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]
-git-tree-sha1 = "99f1c6b659c14bbb3492246791bb4928a40ceb84"
+git-tree-sha1 = "17f1536c600133f7c4113bae0a2d98dbf27c7ebc"
 uuid = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
-version = "0.16.1+0"
+version = "0.15.5+0"
 
 [[deps.Cairo_jll]]
 deps = ["Artifacts", "Bzip2_jll", "CompilerSupportLibraries_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "JLLWrappers", "LZO_jll", "Libdl", "Pixman_jll", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Zlib_jll", "libpng_jll"]
-git-tree-sha1 = "2ac646d71d0d24b44f3f8c84da8c9f4d70fb67df"
+git-tree-sha1 = "009060c9a6168704143100f36ab08f06c2af4642"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
-version = "1.18.4+0"
+version = "1.18.2+1"
 
 [[deps.CodecZlib]]
 deps = ["TranscodingStreams", "Zlib_jll"]
@@ -1114,19 +1340,15 @@ version = "3.29.0"
 
 [[deps.ColorTypes]]
 deps = ["FixedPointNumbers", "Random"]
-git-tree-sha1 = "c7acce7a7e1078a20a285211dd73cd3941a871d6"
+git-tree-sha1 = "b10d0b65641d57b8b4d5e234446582de5047050d"
 uuid = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
-version = "0.12.0"
-weakdeps = ["StyledStrings"]
-
-    [deps.ColorTypes.extensions]
-    StyledStringsExt = "StyledStrings"
+version = "0.11.5"
 
 [[deps.ColorVectorSpace]]
 deps = ["ColorTypes", "FixedPointNumbers", "LinearAlgebra", "Requires", "Statistics", "TensorCore"]
-git-tree-sha1 = "8b3b6f87ce8f65a2b4f857528fd8d70086cd72b1"
+git-tree-sha1 = "a1f44953f2382ebb937d60dafbe2deea4bd23249"
 uuid = "c3611d14-8923-5661-9e6a-0046d554d3a4"
-version = "0.11.0"
+version = "0.10.0"
 weakdeps = ["SpecialFunctions"]
 
     [deps.ColorVectorSpace.extensions]
@@ -1182,9 +1404,9 @@ version = "1.7.0"
 
 [[deps.DataStructures]]
 deps = ["Compat", "InteractiveUtils", "OrderedCollections"]
-git-tree-sha1 = "4e1fe97fdaed23e9dc21d4d664bea76b65fc50a0"
+git-tree-sha1 = "1d0a14036acb104d9e89698bd408f63ab58cdc82"
 uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
-version = "0.18.22"
+version = "0.18.20"
 
 [[deps.DataValueInterfaces]]
 git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
@@ -1210,9 +1432,9 @@ version = "1.9.1"
 
 [[deps.Distributions]]
 deps = ["AliasTables", "FillArrays", "LinearAlgebra", "PDMats", "Printf", "QuadGK", "Random", "SpecialFunctions", "Statistics", "StatsAPI", "StatsBase", "StatsFuns"]
-git-tree-sha1 = "0b4190661e8a4e51a842070e7dd4fae440ddb7f4"
+git-tree-sha1 = "03aa5d44647eaec98e1920635cdfed5d5560a8b9"
 uuid = "31c24e10-a181-5473-b8eb-7969acd0382f"
-version = "0.25.118"
+version = "0.25.117"
 
     [deps.Distributions.extensions]
     DistributionsChainRulesCoreExt = "ChainRulesCore"
@@ -1225,9 +1447,10 @@ version = "0.25.118"
     Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [[deps.DocStringExtensions]]
-git-tree-sha1 = "e7b7e6f178525d17c720ab9c081e4ef04429f860"
+deps = ["LibGit2"]
+git-tree-sha1 = "2fb1e02f2b635d0845df5d7c167fec4dd739b00d"
 uuid = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
-version = "0.9.4"
+version = "0.9.3"
 
 [[deps.Downloads]]
 deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
@@ -1351,14 +1574,9 @@ version = "0.2.0"
 
 [[deps.GPUCompiler]]
 deps = ["ExprTools", "InteractiveUtils", "LLVM", "Libdl", "Logging", "PrecompileTools", "Preferences", "Scratch", "Serialization", "TOML", "TimerOutputs", "UUIDs"]
-git-tree-sha1 = "b08c164134dd0dbc76ff54e45e016cf7f30e16a4"
+git-tree-sha1 = "199f213e40a7982e9138bc9edc3299419d510390"
 uuid = "61eb1bfa-7361-4325-ad38-22787b887f55"
-version = "1.3.2"
-
-[[deps.GPUToolbox]]
-git-tree-sha1 = "15d8b0f5a6dca9bf8c02eeaf6687660dafa638d0"
-uuid = "096a3bc2-3ced-46d0-87f4-dd12716f4bfc"
-version = "0.2.0"
+version = "1.2.0"
 
 [[deps.GR]]
 deps = ["Artifacts", "Base64", "DelimitedFiles", "Downloads", "GR_jll", "HTTP", "JSON", "Libdl", "LinearAlgebra", "Preferences", "Printf", "Qt6Wayland_jll", "Random", "Serialization", "Sockets", "TOML", "Tar", "Test", "p7zip_jll"]
@@ -1414,15 +1632,15 @@ version = "0.2.0"
 
 [[deps.HypergeometricFunctions]]
 deps = ["LinearAlgebra", "OpenLibm_jll", "SpecialFunctions"]
-git-tree-sha1 = "68c173f4f449de5b438ee67ed0c9c748dc31a2ec"
+git-tree-sha1 = "2bd56245074fab4015b9174f24ceba8293209053"
 uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
-version = "0.3.28"
+version = "0.3.27"
 
 [[deps.Hyperscript]]
 deps = ["Test"]
-git-tree-sha1 = "8d511d5b81240fc8e6802386302675bdf47737b9"
+git-tree-sha1 = "179267cfa5e712760cd43dcae385d7ea90cc25a4"
 uuid = "47d2ed2b-36de-50cf-bf87-49c2cf4b8b91"
-version = "0.0.4"
+version = "0.0.5"
 
 [[deps.HypertextLiteral]]
 deps = ["Tricks"]
@@ -1476,10 +1694,10 @@ uuid = "82899510-4779-5014-852e-03e436cf321d"
 version = "1.0.0"
 
 [[deps.JLFzf]]
-deps = ["REPL", "Random", "fzf_jll"]
-git-tree-sha1 = "1d4015b1eb6dc3be7e6c400fbd8042fe825a6bac"
+deps = ["Pipe", "REPL", "Random", "fzf_jll"]
+git-tree-sha1 = "71b48d857e86bf7a1838c4736545699974ce79a2"
 uuid = "1019f520-868f-41f5-a6de-eb00f4b6a39c"
-version = "0.1.10"
+version = "0.1.9"
 
 [[deps.JLLWrappers]]
 deps = ["Artifacts", "Preferences"]
@@ -1700,6 +1918,11 @@ git-tree-sha1 = "f02b56007b064fbfddb4c9cd60161b6dd0f40df3"
 uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.1.0"
 
+[[deps.MIMEs]]
+git-tree-sha1 = "1833212fd6f580c20d4291da9c1b4e8a655b128e"
+uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
+version = "1.0.0"
+
 [[deps.MKL_jll]]
 deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "oneTBB_jll"]
 git-tree-sha1 = "5de60bc6cb3899cd318d80d627560fae2e2d99ae"
@@ -1748,9 +1971,9 @@ version = "2023.12.12"
 
 [[deps.NVTX]]
 deps = ["Colors", "JuliaNVTXCallbacks_jll", "Libdl", "NVTX_jll"]
-git-tree-sha1 = "1a24c3430fa2ef3317c4c97fa7e431ef45793bd2"
+git-tree-sha1 = "6a6f8bfaa91bb2e40ff562ab9f30dc827741daef"
 uuid = "5da4648a-3479-48b8-97b9-01cb529c0a1f"
-version = "1.0.0"
+version = "0.3.5"
 
 [[deps.NVTX_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1836,11 +2059,16 @@ git-tree-sha1 = "8489905bcdbcfac64d1daa51ca07c0d8f0283821"
 uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
 version = "2.8.1"
 
+[[deps.Pipe]]
+git-tree-sha1 = "6842804e7867b115ca9de748a0cf6b364523c16d"
+uuid = "b98c9c47-44ae-5843-9183-064241ee97a0"
+version = "1.3.0"
+
 [[deps.Pixman_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LLVMOpenMP_jll", "Libdl"]
-git-tree-sha1 = "db76b1ecd5e9715f3d043cec13b2ec93ce015d53"
+git-tree-sha1 = "35621f10a7531bc8fa58f74610b1bfb70a3cfc6b"
 uuid = "30392449-352a-5448-841d-b1acce4e97dc"
-version = "0.44.2+0"
+version = "0.43.4+0"
 
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "Random", "SHA", "TOML", "Tar", "UUIDs", "p7zip_jll"]
@@ -1865,9 +2093,9 @@ version = "1.4.3"
 
 [[deps.Plots]]
 deps = ["Base64", "Contour", "Dates", "Downloads", "FFMPEG", "FixedPointNumbers", "GR", "JLFzf", "JSON", "LaTeXStrings", "Latexify", "LinearAlgebra", "Measures", "NaNMath", "Pkg", "PlotThemes", "PlotUtils", "PrecompileTools", "Printf", "REPL", "Random", "RecipesBase", "RecipesPipeline", "Reexport", "RelocatableFolders", "Requires", "Scratch", "Showoff", "SparseArrays", "Statistics", "StatsBase", "TOML", "UUIDs", "UnicodeFun", "UnitfulLatexify", "Unzip"]
-git-tree-sha1 = "24be21541580495368c35a6ccef1454e7b5015be"
+git-tree-sha1 = "dae01f8c2e069a683d3a6e17bbae5070ab94786f"
 uuid = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-version = "1.40.11"
+version = "1.40.9"
 
     [deps.Plots.extensions]
     FileIOExt = "FileIO"
@@ -1884,10 +2112,10 @@ version = "1.40.11"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
 [[deps.PlutoUI]]
-deps = ["AbstractPlutoDingetjes", "Base64", "Dates", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "Markdown", "Random", "Reexport", "UUIDs"]
-git-tree-sha1 = "5152abbdab6488d5eec6a01029ca6697dff4ec8f"
+deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
+git-tree-sha1 = "7e71a55b87222942f0f9337be62e26b1f103d3e4"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.23"
+version = "0.7.61"
 
 [[deps.PooledArrays]]
 deps = ["DataAPI", "Future"]
@@ -2221,9 +2449,9 @@ uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 version = "0.11.3"
 
 [[deps.Tricks]]
-git-tree-sha1 = "7822b97e99a1672bfb1b49b668a6d46d58d8cbcb"
+git-tree-sha1 = "6cae795a5a9313bbb4f60683f7263318fc7d1505"
 uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
-version = "0.1.9"
+version = "0.1.10"
 
 [[deps.URIs]]
 git-tree-sha1 = "67db6cc7b3821e19ebe75791a9dd19c9b1188f2b"
@@ -2633,15 +2861,21 @@ version = "1.4.1+2"
 # ╠═aa1f42f6-65ae-4f7f-9751-a513b9f4e853
 # ╟─e8a66f73-5c06-44da-9585-6aeb49d4e499
 # ╠═215a79e4-6cbf-4c25-903a-72e34a63b7ef
+# ╠═b9426255-e41d-4588-999a-e1bc1f7706f8
 # ╟─4b0e9fc2-586d-41ad-8b20-e32b6118399b
 # ╟─d38593e4-f98a-42ed-9a5d-e86039480ebd
+# ╠═41182732-6c97-4fa6-b2fc-5dec10f4d236
 # ╟─90a7a15d-d69a-4d98-9e85-98c2d84bbf00
+# ╠═ba345f78-44a1-45c2-bcf0-cd7f854ebf22
 # ╟─3a1e9f29-4b8f-444f-9b32-17f7514ddf1e
+# ╠═d40ea4ff-6d27-4e55-8b3e-19889e84ffa4
 # ╟─23705d75-8c1b-42ef-b184-8d1e7c94b82c
 # ╟─beb6f788-b75a-42c6-ae1a-af575953cfa0
 # ╟─070120a4-8c82-4b5c-8c79-0c64aacb4119
 # ╠═9a941a31-db1c-4f4b-b600-60395cbd87ff
+# ╠═1e6a79d5-efc6-4133-bd30-e4999d073873
 # ╟─ad54fc88-17f4-4013-9e7f-326c896d8388
 # ╠═40bc5a2c-9783-4a15-8862-2278a1c92555
+# ╠═fc1458a6-c618-4801-a6df-f9b2a6df5064
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
