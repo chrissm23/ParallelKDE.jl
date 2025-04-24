@@ -738,101 +738,6 @@ md"""
 ## Identify convergence
 """
 
-# ╔═╡ b9426255-e41d-4588-999a-e1bc1f7706f8
-function identify_convergence_cuda!(
-	vmr_current::AnyCuArray{T,N},
-	vmr_prev1::AnyCuArray{T,N},
-	vmr_prev2::AnyCuArray{T,N},
-	density::AnyCuArray{T,N},
-	means::AnyCuArray{T,N},
-	smooth_counters::AnyCuArray{Int8,N},
-	stable_counters::AnyCuArray{Int8,N},
-	is_smooth::AnyCuArray{Bool,N},
-	has_decreased::AnyCuArray{Bool,N};
-	time_step::Real=0.1,
-	tol1::Real=1,
-	tol2::Real=7,
-	smoothness_duration::Int8=Int8(3),
-	stable_duration::Int8=Int8(3),
-) where {T<:Real,N}
-	# n_points = len(vmr_current)
-	
-	# # Smoothness detection
-	# smooth_parms = CuArray{Float32}([tol2, time_step, smoothness_duration])
-	# kernel = @cuda launch=false kernel_smooth!(
-	# 	vmr_current, vmr_prev1, vmr_prev2, is_smooth, smooth_counters, smooth_parms
-	# )
-	# config = launch_configuration(kernel.fun)
-	# threads = min(n_points, config.threads)
-	# blocks = cld(n_points, threads)
-
-	# CUDA.@sync blocking=true begin
-	# 	kernel(
-	# 		vmr_current,
-	# 		vmr_prev1,
-	# 		vmr_prev2,
-	# 		is_smooth,
-	# 		smooth_counters,
-	# 		smooth_parms;
-	# 		threads,
-	# 		blocks
-	# 	)
-	# end
-
-	# # Decrease detection
-	# kernel = @cuda launch=false kernel_decrease!(
-	# 	vmr_current, vmr_prev1, vmr_prev2, is_smooth, smooth_counters, smooth_parms
-	# )
-	# config = launch_configuration(kernel.fun)
-	# threads = min(n_points, config.threads)
-	# blocks = cld(n_points, threads)
-
-	# CUDA.@sync blocking=true begin
-	# 	kernel(
-	# 		vmr_current,
-	# 		vmr_prev1,
-	# 		has_decreased,
-	# 	)
-	# end
-
-	# # Stability detection
-	# stability_parms = CuArray{Float32}([tol1, tol2, time_step, stable_duration])
-	# kernel = @cuda launch=false kernel_stable!(
-	# 	vmr_current,
-	# 	vmr_prev1,
-	# 	vmr_prev2,
-	# 	means,
-	# 	density,
-	# 	is_smooth,
-	# 	has_decreased,
-	# 	is_stable,
-	# 	stable_counters,
-	# 	stability_parms
-	# )
-	# config = launch_configuration(kernel.fun)
-	# threads = min(n_points, config.threads)
-	# blocks = cld(n_points, threads)
-
-	# CUDA.@sync blocking=true begin
-	# 	kernel(
-	# 		vmr_current,
-	# 		vmr_prev1,
-	# 		vmr_prev2,
-	# 		means,
-	# 		density,
-	# 		is_smooth,
-	# 		has_decreased,
-	# 		is_stable,
-	# 		stable_counters,
-	# 		stability_parms;
-	# 		threads,
-	# 		blocks
-	# 	)
-	# end
-
-	return nothing
-end
-
 # ╔═╡ d38593e4-f98a-42ed-9a5d-e86039480ebd
 @inline function smoothness_check(
 	second_derivative::T1,
@@ -847,37 +752,45 @@ function kernel_smooth!(
 	vmr_current::CuDeviceArray{T,N},
 	vmr_prev1::CuDeviceArray{T,N},
 	vmr_prev2::CuDeviceArray{T,N},
+	means::CuDeviceArray{T,N},
+	density::CuDeviceArray{T,N},
 	is_smooth::CuDeviceArray{Bool,N},
 	smoothness_counter::CuDeviceArray{Int8,N},
 	parms::CuDeviceArray,
 ) where {T<:Real,N}
-	# idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+	idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
-	# if idx > len(vmr_current)
-	# 	return
-	# elseif is_smooth[idx] == true
-	# 	return
-	# end
+	if idx > length(vmr_current)
+		return
+	elseif is_smooth[idx] == true
+		return
+	end
 
-	# tol = parms[1]
-	# dt = parms[2]
-	# smoothness_duration = parms[3]
-	# factor = 2i32
+	tol = parms[1]
+	dt = parms[2]
+	smoothness_duration = parms[3]
+	factor = 2i32
 
-	# second_derivative = (
-	# 	(vmr_current[idx] - 2i32*vmr_prev1[idx] + vmr_prev2[idx]) / dt^2i32
-	# )
-	# counter = smoothness_counter[idx]
+	second_derivative = (
+		(vmr_current[idx] - 2i32*vmr_prev1[idx] + vmr_prev2[idx]) / dt^2i32
+	)
+	counter = smoothness_counter[idx]
 	
-	# if abs(second_derivative) < factor*tol
-	# 	counter += Int8(1)
-	# else
-	# 	counter = Int8(0)
-	# end
-	# if counter >= smoothness_duration
-	# 	is_smooth[idx] = true
-	# end
-	# smoothness_counter[idx] = counter
+	if abs(second_derivative) < factor*tol
+		if counter >= smoothness_duration
+			is_smooth[idx] = true
+		else
+			counter += Int8(1)
+		end
+	else
+		counter = Int8(0)
+	end
+	
+	smoothness_counter[idx] = counter
+
+	if (vmr_current[idx] > vmr_prev1[idx]) && (vmr_prev2[idx] > vmr_prev1[idx])
+		density[idx] = means[idx]
+	end
 
 	return
 end
@@ -904,20 +817,20 @@ function kernel_decrease!(
 	is_smooth::CuDeviceArray{Bool,N},
 	has_decreased::CuDeviceArray{Bool,N},
 ) where {T<:Real,N}
-	# idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+	idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
-	# if idx > len(vmr_current)
-	# 	return
-	# elseif is_smooth[idx] == false
-	# 	return
-	# elseif has_decreased[idx] == true
-	# 	return
-	# end
+	if idx > length(vmr_current)
+		return
+	elseif is_smooth[idx] == false
+		return
+	elseif has_decreased[idx] == true
+		return
+	end
 
-	# vmr_diff = vmr_current[idx] - vmr_prev1[idx]
-	# if vmr_diff < 0
-	# 	has_decreased[idx] = true
-	# end
+	vmr_diff = vmr_current[idx] - vmr_prev1[idx]
+	if vmr_diff < 0
+		has_decreased[idx] = true
+	end
 
 	return
 end
@@ -935,45 +848,143 @@ function kernel_stable!(
 	stability_counter::CuDeviceArray{Int8,N},
 	parms::CuDeviceArray,
 ) where {T<:Real,N}
-	# idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+	idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
-	# if idx > len(vmr_current)
-	# 	return
-	# elseif is_smooth[idx] == false
-	# 	return
-	# elseif has_decreased[idx] == false
-	# 	return
-	# elseif is_smooth[idx] == true
-	# 	return
-	# end
+	if idx > length(vmr_current)
+		return
+	elseif is_smooth[idx] == false
+		return
+	elseif has_decreased[idx] == false
+		return
+	elseif is_stable[idx] == true
+		return
+	end
 
-	# tol1 = parms[1]
-	# tol2 = parms[2]
-	# dt = parms[3]
-	# stable_duration[4]
+	tol1 = parms[1]
+	tol2 = parms[2]
+	dt = parms[3]
+	stable_duration = parms[4]
 	
-	# first_derivative = abs(vmr_current[idx] - vmr_prev1[idx] / (2i32 * dt))
-	# second_derivative = abs(
-	# 	(vmr_current[idx] - 2i32*vmr_prev1[idx] + vmr_prev2[idx]) / dt^2i32
-	# )
-	# counter = stability_counter[idx]
+	first_derivative = abs(vmr_current[idx] - vmr_prev1[idx]) / (2i32 * dt)
+	second_derivative = abs(
+		vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]
+	) / dt^2i32
+	counter = stability_counter[idx]
 
-	# if (first_derivative < tol1) && (second_derivative < tol2)
-	# 	counter += Int8(1)
-	# else
-	# 	counter = Int8(0)
-	# end
-
-	# if counter >= stable_duration
-	# 	is_stable[idx] = true
-	# end
-	# stability_counter[idx] = counter
-
-	# if is_stable[idx]
-	# 	density[idx] = means[idx]
-	# end
+	if (first_derivative < tol1) && (second_derivative < tol2)
+		if counter >= stable_duration
+			is_stable[idx] = true
+			density[idx] = means[idx]
+		else
+			counter += Int8(1)
+		end
+	else
+		counter = Int8(0)
+	end
+	stability_counter[idx] = counter
 
 	return
+end
+
+# ╔═╡ b9426255-e41d-4588-999a-e1bc1f7706f8
+function identify_convergence_cuda!(
+	vmr_current::AnyCuArray{T,N},
+	vmr_prev1::AnyCuArray{T,N},
+	vmr_prev2::AnyCuArray{T,N},
+	density::AnyCuArray{T,N},
+	means::AnyCuArray{T,N},
+	smooth_counters::AnyCuArray{S,N},
+	stable_counters::AnyCuArray{S,N},
+	is_smooth::AnyCuArray{Bool,N},
+	has_decreased::AnyCuArray{Bool,N},
+	is_stable::AnyCuArray{Bool,N};
+	time_step::Real=0.1,
+	tol1::Real=1,
+	tol2::Real=7,
+	smoothness_duration::Int8=Int8(3),
+	stable_duration::Int8=Int8(3),
+) where {T<:Real,S<:Integer,N}
+	n_points = length(vmr_current)
+
+	# Stability detection
+	stability_parms = CuArray{Float32}([tol1, tol2, time_step, stable_duration])
+	kernel = @cuda launch=false kernel_stable!(
+		vmr_current,
+		vmr_prev1,
+		vmr_prev2,
+		means,
+		density,
+		is_smooth,
+		has_decreased,
+		is_stable,
+		stable_counters,
+		stability_parms
+	)
+	config = launch_configuration(kernel.fun)
+	threads = min(n_points, config.threads)
+	blocks = cld(n_points, threads)
+
+	CUDA.@sync blocking=true begin
+		kernel(
+			vmr_current,
+			vmr_prev1,
+			vmr_prev2,
+			means,
+			density,
+			is_smooth,
+			has_decreased,
+			is_stable,
+			stable_counters,
+			stability_parms;
+			threads,
+			blocks
+		)
+	end
+
+	# Decrease detection
+	kernel = @cuda launch=false kernel_decrease!(
+		vmr_current, vmr_prev1, is_smooth, has_decreased
+	)
+	config = launch_configuration(kernel.fun)
+	threads = min(n_points, config.threads)
+	blocks = cld(n_points, threads)
+
+	CUDA.@sync blocking=true begin
+		kernel(
+			vmr_current,
+			vmr_prev1,
+			is_smooth,
+			has_decreased;
+			threads,
+			blocks
+		)
+	end
+	
+	# Smoothness detection
+	smooth_parms = CuArray{Float32}([tol2, time_step, smoothness_duration])
+	kernel = @cuda launch=false kernel_smooth!(
+		vmr_current, vmr_prev1, vmr_prev2, means, density, is_smooth, smooth_counters, smooth_parms
+	)
+	config = launch_configuration(kernel.fun)
+	threads = min(n_points, config.threads)
+	blocks = cld(n_points, threads)
+
+	CUDA.@sync blocking=true begin
+		kernel(
+			vmr_current,
+			vmr_prev1,
+			vmr_prev2,
+			means,
+			density,
+			is_smooth,
+			smooth_counters,
+			smooth_parms;
+			threads,
+			blocks
+		)
+	end
+
+	return nothing
 end
 
 # ╔═╡ 23705d75-8c1b-42ef-b184-8d1e7c94b82c
@@ -1003,15 +1014,16 @@ end
 	second_derivative = second_difference(
 		vmr_current, vmr_prev1, vmr_prev2, dt
 	)
+
+	is_smooth = false
 	if smoothness_check(second_derivative, tol2)
-		smoothness_counter += Int8(1)
+		if smoothness_counter >= smoothness_duration
+			is_smooth = true
+		else
+			smoothness_counter += Int8(1)
+		end
 	else
 		smoothness_counter = Int8(0)
-	end
-	if smoothness_counter >= smoothness_duration
-		is_smooth = true
-	else
-		is_smooth = false
 	end
 
 	return is_smooth, smoothness_counter
@@ -1031,18 +1043,17 @@ end
 	first_derivative = abs(first_difference(vmr_current, vmr_prev1, dt))
 	second_derivative = abs(second_difference(vmr_current, vmr_prev1, vmr_prev2, dt))
 
+	is_stable = false
 	if (first_derivative < tol1) && (second_derivative < tol2)
-		stability_counter += Int8(1)
+		if stability_counter >= stability_duration
+			is_stable = true
+		else
+			stability_counter += Int8(1)
+		end
 	else
 		stability_counter = Int8(0)
 	end
-
-	if stability_counter >= stability_duration
-		is_stable = true
-	else
-		is_stable = false
-	end
-
+	
 	return is_stable, stability_counter
 end
 
@@ -1056,7 +1067,8 @@ function identify_convergence!(
 	smooth_counters::AbstractArray{Int8,N},
 	stable_counters::AbstractArray{Int8,N},
 	is_smooth::AbstractArray{Bool,N},
-	has_decreased::AbstractArray{Bool,N};
+	has_decreased::AbstractArray{Bool,N},
+	is_stable::AbstractArray{Bool,N};
 	time_step::Real=0.1,
 	tol1::Real=1,
 	tol2::Real=7,
@@ -1085,8 +1097,8 @@ function identify_convergence!(
 				vmr_prev1[i],
 			)
 
-		else
-			is_stable, stable_counters[i] = find_stability(
+		elseif !is_stable[i]
+			is_stable[i], stable_counters[i] = find_stability(
 				vmr_current[i],
 				vmr_prev1[i],
 				vmr_prev2[i],
@@ -1097,7 +1109,7 @@ function identify_convergence!(
 				stable_duration
 			)
 
-			if is_stable
+			if is_stable[i]
 				density[i] = means[i]
 			end
 		end
@@ -1119,16 +1131,17 @@ begin
 	vmr_p2 = rand(Float64, fill(n_points_convergence, n_dims_convergence)...)
 
 	average = rand(Float64, fill(n_points_convergence, n_dims_convergence)...)
-	dens = zeros(Float64, fill(n_points_convergence, n_dims_convergence)...)
+	dens = fill(NaN, fill(n_points_convergence, n_dims_convergence)...)
 
 	smooth_count = rand(
-		UnitRange{Int8}(1:3), fill(n_points_convergence, n_dims_convergence)...
+		UnitRange{Int8}(0:3), fill(n_points_convergence, n_dims_convergence)...
 	)
 	stable_count = rand(
-		UnitRange{Int8}(1:3), fill(n_points_convergence, n_dims_convergence)...
+		UnitRange{Int8}(0:3), fill(n_points_convergence, n_dims_convergence)...
 	)
 	is_smooths = rand(Bool, fill(n_points_convergence, n_dims_convergence)...)
 	has_decreaseds = rand(Bool, fill(n_points_convergence, n_dims_convergence)...)
+	is_stables = rand(Bool, fill(n_points_convergence, n_dims_convergence)...)
 end;
 
 # ╔═╡ 1e6a79d5-efc6-4133-bd30-e4999d073873
@@ -1144,6 +1157,7 @@ begin
 	stable_count_d = CuArray{Int8}(stable_count)
 	is_smooths_d = CuArray{Bool}(is_smooths)
 	has_decreaseds_d = CuArray{Bool}(has_decreaseds)
+	is_stables_d = CuArray{Bool}(is_stables)
 end;
 
 # ╔═╡ ad54fc88-17f4-4013-9e7f-326c896d8388
@@ -1156,16 +1170,22 @@ md"""
 	vmr_c, vmr_p1, vmr_p2,
 	dens, average,
 	smooth_count, stable_count,
-	is_smooths, has_decreaseds
+	is_smooths, has_decreaseds, is_stables
 )
 
 # ╔═╡ fc1458a6-c618-4801-a6df-f9b2a6df5064
+# ╠═╡ disabled = true
+#=╠═╡
 @btime identify_convergence_cuda!(
 	vmr_c_d, vmr_p1_d, vmr_p2_d,
 	dens_d, average_d,
-	smooth_count_d, stable_count_d,
-	is_smooths_d, has_decreaseds_d
+	smooth_count_d,
+	stable_count_d,
+	is_smooths_d,
+	has_decreaseds_d,
+	is_stables_d
 )
+  ╠═╡ =#
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2860,15 +2880,15 @@ version = "1.4.1+2"
 # ╠═4677de1f-6892-4fc2-84b6-e9ef35df7990
 # ╠═aa1f42f6-65ae-4f7f-9751-a513b9f4e853
 # ╟─e8a66f73-5c06-44da-9585-6aeb49d4e499
-# ╠═215a79e4-6cbf-4c25-903a-72e34a63b7ef
-# ╠═b9426255-e41d-4588-999a-e1bc1f7706f8
+# ╟─215a79e4-6cbf-4c25-903a-72e34a63b7ef
+# ╟─b9426255-e41d-4588-999a-e1bc1f7706f8
 # ╟─4b0e9fc2-586d-41ad-8b20-e32b6118399b
 # ╟─d38593e4-f98a-42ed-9a5d-e86039480ebd
-# ╠═41182732-6c97-4fa6-b2fc-5dec10f4d236
+# ╟─41182732-6c97-4fa6-b2fc-5dec10f4d236
 # ╟─90a7a15d-d69a-4d98-9e85-98c2d84bbf00
-# ╠═ba345f78-44a1-45c2-bcf0-cd7f854ebf22
+# ╟─ba345f78-44a1-45c2-bcf0-cd7f854ebf22
 # ╟─3a1e9f29-4b8f-444f-9b32-17f7514ddf1e
-# ╠═d40ea4ff-6d27-4e55-8b3e-19889e84ffa4
+# ╟─d40ea4ff-6d27-4e55-8b3e-19889e84ffa4
 # ╟─23705d75-8c1b-42ef-b184-8d1e7c94b82c
 # ╟─beb6f788-b75a-42c6-ae1a-af575953cfa0
 # ╟─070120a4-8c82-4b5c-8c79-0c64aacb4119

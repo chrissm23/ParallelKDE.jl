@@ -564,6 +564,7 @@ function identify_convergence!(
   has_decreased::Array{Bool,N},
   stable_duration::Integer,
   stable_counters::Array{Int8,N},
+  is_stable::Array{Bool,N},
 ) where {N,T<:Real}
   @inbounds @simd for i in eachindex(vmr_current)
     if !is_smooth[i]
@@ -587,8 +588,8 @@ function identify_convergence!(
         vmr_prev1[i],
       )
 
-    else
-      is_stable, stable_counters[i] = find_stability(
+    elseif !is_stable[i]
+      is_stable[i], stable_counters[i] = find_stability(
         vmr_current[i],
         vmr_prev1[i],
         vmr_prev2[i],
@@ -599,7 +600,7 @@ function identify_convergence!(
         stable_duration
       )
 
-      if is_stable
+      if is_stable[i]
         density[i] = means[i]
       end
 
@@ -622,6 +623,7 @@ function identify_convergence!(
   has_decreased::Array{Bool,N},
   stable_duration::Integer,
   stable_counters::Array{Int8,N},
+  is_stable::Array{Bool,N},
 ) where {N,T<:Real}
   Threads.@threads @inbounds for i in eachindex(vmr_current)
     if !is_smooth[i]
@@ -645,8 +647,8 @@ function identify_convergence!(
         vmr_prev1[i],
       )
 
-    else
-      is_stable, stable_counters[i] = find_stability(
+    elseif is_stable[i]
+      is_stable[i], stable_counters[i] = find_stability(
         vmr_current[i],
         vmr_prev1[i],
         vmr_prev2[i],
@@ -657,7 +659,7 @@ function identify_convergence!(
         stable_duration
       )
 
-      if is_stable
+      if is_stable[i]
         density[i] = means[i]
       end
 
@@ -674,13 +676,104 @@ function identify_convergence!(
   time_step::Real,
   tol1::Real,
   tol2::Real,
-  smoothness_duration::Integer,
-  smooth_counters::AnyCuArray{Int8,N},
+  smoothness_duration::Z,
+  smooth_counters::AnyCuArray{Z,N},
   is_smooth::AnyCuArray{Bool,N},
   has_decreased::AnyCuArray{Bool,N},
-  stable_duration::Integer,
-  stable_counters::AnyCuArray{Int8,N},
-) where {N,T<:Real}
+  stable_duration::Z,
+  stable_counters::AnyCuArray{Z,N},
+  is_stable::AnyCuArray{Bool,N},
+) where {N,T<:Real,Z<:Integer}
+  n_points = length(vmr_current)
+
+  # Stability detection
+  stability_parms = CuArray{Float32}(
+    [tol1, tol2, time_step, stable_duration]
+  )
+  kernel = @cuda launch = false kernel_stable!(
+    vmr_current,
+    vmr_prev1,
+    vmr_prev2,
+    means,
+    density,
+    is_smooth,
+    has_decreased,
+    is_stable,
+    stable_counters,
+    stability_parms,
+  )
+  config = launch_configuration(kernel.fun)
+  threads = min(n_points, config.threads)
+  blocks = cld(n_points, threads)
+
+  CUDA.@sync blocking = true begin
+    kernel(
+      vmr_current,
+      vmr_prev1,
+      vmr_prev2,
+      means,
+      density,
+      is_smooth,
+      has_decreased,
+      is_stable,
+      stable_counters,
+      stability_parms;
+      threads,
+      blocks
+    )
+  end
+
+  # Decrease detection
+  kernel = @cuda launch = false kernel_decrease!(
+    vmr_current, vmr_prev1, is_smooth, has_decreased
+  )
+  config = launch_configuration(kernel.fun)
+  threads = min(n_points, config.threads)
+  blocks = cld(n_points, threads)
+
+  CUDA.@sync blocking = true begin
+    kernel(
+      vmr_current,
+      vmr_prev1,
+      is_smooth,
+      has_decreased;
+      threads,
+      blocks
+    )
+  end
+
+  # Smoothness detection
+  smooth_parms = CuArray{Float32}([tol2, time_step, smoothness_duration])
+  kernel = @cuda launch = false kernel_smooth!(
+    vmr_current,
+    vmr_prev1,
+    vmr_prev2,
+    means,
+    density,
+    is_smooth,
+    smooth_counters,
+    smooth_parms
+  )
+  config = launch_configuration(kernel.fun)
+  threads = min(n_points, config.threads)
+  blocks = cld(n_points, threads)
+
+  CUDA.@sync blocking = true begin
+    kernel(
+      vmr_current,
+      vmr_prev1,
+      vmr_prev2,
+      means,
+      density,
+      is_smooth,
+      smooth_counters,
+      smooth_parms;
+      threads,
+      blocks
+    )
+  end
+
+  return nothing
 end
 
 @inline function find_smoothness(
@@ -695,15 +788,16 @@ end
   second_derivative = second_difference(
     vmr_current, vmr_prev1, vmr_prev2, dt
   )
+
+  is_smooth = false
   if smoothness_check(second_derivative, tol2)
-    smooth_counter += 1
+    if smooth_counter >= smoothness_duration
+      is_smooth = true
+    else
+      smooth_counter += Z(1)
+    end
   else
-    smooth_counter = 0
-  end
-  if smooth_counter >= smoothness_duration
-    is_smooth = true
-  else
-    is_smooth = false
+    smooth_counter = Z(0)
   end
 
   return is_smooth, smooth_counter
@@ -715,6 +809,53 @@ end
 ) where {T1<:Real,T2<:Real}
   factor = 2
   return abs(second_derivative) < factor * tol
+end
+
+function kernel_smooth!(
+  vmr_current::CuDeviceArray{T,N},
+  vmr_prev1::CuDeviceArray{T,N},
+  vmr_prev2::CuDeviceArray{T,N},
+  means::CuDeviceArray{T,N},
+  density::CuDeviceArray{T,N},
+  is_smooth::CuDeviceArray{Bool,N},
+  smoothness_counter::CuDeviceArray{Z,N},
+  parms::CuDeviceArray{Float32,1},
+) where {T<:Real,N,Z<:Integer}
+  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+  if idx > length(vmr_current)
+    return
+  elseif is_smooth[idx] == true
+    return
+  end
+
+  tol = parms[1]
+  dt = parms[2]
+  smoothness_duration = Z(parms[3])
+  factor = 2i32
+
+  second_derivative = (
+    (vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]) / dt^2i32
+  )
+  counter = smoothness_counter[idx]
+
+  if abs(second_derivative) < factor * tol
+    if counter >= smoothness_duration
+      is_smooth[idx] = true
+    else
+      counter += Z(1)
+    end
+  else
+    counter = Z(0)
+  end
+
+  smoothness_counter[idx] = counter
+
+  if (vmr_current[idx] > vmr_prev1[idx]) && (vmr_prev2[idx] > vmr_prev1[idx])
+    density[idx] = means[idx]
+  end
+
+  return
 end
 
 @inline function find_decrease(
@@ -731,6 +872,30 @@ end
   return has_decreased
 end
 
+function kernel_decrease!(
+  vmr_current::CuDeviceArray{T,N},
+  vmr_prev1::CuDeviceArray{T,N},
+  is_smooth::CuDeviceArray{Bool,N},
+  has_decreased::CuDeviceArray{Bool,N},
+) where {T<:Real,N}
+  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+  if idx > length(vmr_current)
+    return
+  elseif is_smooth[idx] == false
+    return
+  elseif has_decreased[idx] == true
+    return
+  end
+
+  vmr_diff = vmr_current[idx] - vmr_prev1[idx]
+  if vmr_diff < 0
+    has_decreased[idx] = true
+  end
+
+  return
+end
+
 @inline function find_stability(
   vmr_current::T,
   vmr_prev1::T,
@@ -744,19 +909,68 @@ end
   first_derivative = abs(first_difference(vmr_current, vmr_prev1, dt))
   second_derivative = abs(second_difference(vmr_current, vmr_prev1, vmr_prev2, dt))
 
+  is_stable = false
   if (first_derivative < tol1) && (second_derivative < tol2)
-    stability_counter += 1
+    if stability_counter >= stability_duration
+      is_stable = true
+    else
+      stability_counter += Z(1)
+    end
   else
-    stability_counter = 0
-  end
-
-  if stability_counter >= stability_duration
-    is_stable = true
-  else
-    is_stable = false
+    stability_counter = Z(0)
   end
 
   return is_stable, stability_counter
+end
+
+function kernel_stable!(
+  vmr_current::CuDeviceArray{T,N},
+  vmr_prev1::CuDeviceArray{T,N},
+  vmr_prev2::CuDeviceArray{T,N},
+  means::CuDeviceArray{T,N},
+  density::CuDeviceArray{T,N},
+  is_smooth::CuDeviceArray{Bool,N},
+  has_decreased::CuDeviceArray{Bool,N},
+  is_stable::CuDeviceArray{Bool,N},
+  stability_counter::CuDeviceArray{Z,N},
+  parms::CuDeviceArray{Float32,1},
+) where {T<:Real,N,Z<:Integer}
+  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+  if idx > length(vmr_current)
+    return
+  elseif is_smooth[idx] == false
+    return
+  elseif has_decreased[idx] == false
+    return
+  elseif is_stable[idx] == true
+    return
+  end
+
+  tol1 = parms[1]
+  tol2 = parms[2]
+  dt = parms[3]
+  stable_duration = parms[4]
+
+  first_derivative = abs(vmr_current[idx] - vmr_prev1[idx]) / (2i32 * dt)
+  second_derivative = abs(
+    vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]
+  ) / dt^2i32
+  counter = stability_counter[idx]
+
+  if (first_derivative < tol1) && (second_derivative < tol2)
+    if counter >= stable_duration
+      is_stable[idx] = true
+      density[idx] = means[idx]
+    else
+      counter += Z(1)
+    end
+  else
+    counter = Z(0)
+  end
+  stability_counter[idx] = counter
+
+  return
 end
 
 @inline function first_difference(
