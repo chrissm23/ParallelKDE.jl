@@ -16,13 +16,33 @@ export AbstractEstimation,
 
 abstract type AbstractEstimation end
 
-method_lookup = Dict()
-function add_method!(key::Symbol, value::Type{T})::Nothing where {T<:AbstractEstimation}
-  if haskey(method_lookup, key)
+const CPU_SERIAL = :serial
+const CPU_THREADED = :threaded
+const GPU_CUDA = :cuda
+
+const DEVICE_IMPLEMENTATIONS = Dict{Device,Symbol}(
+  IsCPU() => Set([CPU_SERIAL, CPU_THREADED]),
+  IsCUDA() => Set([GPU_CUDA]),
+)
+
+is_valid_implementation(device::Device, implementation::Symbol)::Bool =
+  implementation in get(DEVICE_IMPLEMENTATIONS, typeof(device), Set())
+
+function ensure_valid_implementation(device::Device, implementation::Symbol)::Nothing
+  if !is_valid_implementation(device, implementation)
+    throw(ArgumentError("Invalid implementation $implementation for device $device"))
+  end
+
+  return nothing
+end
+
+estimation_lookup = Dict()
+function add_estimation!(key::Symbol, value::Type{T})::Nothing where {T<:AbstractEstimation}
+  if haskey(estimation_lookup, key)
     throw(ArgumentError("Key $key already exists"))
   end
 
-  method_lookup[key] = value
+  estimation_lookup[key] = value
 
   return nothing
 end
@@ -34,14 +54,19 @@ function initialize_estimation(
   throw(ArgumentError("Estimation not implemented"))
 end
 
-function estimate!(estimation_type::Type{T}, kde::AbstractKDE; kwargs...)::Nothing where {T<:AbstractEstimation}
-  estimation = initialize_estimation(estimation_type, kde; kwargs...)
-  estimate!(kde, estimation)
-  return nothing
+# NOTE: This is the User API function for KDE estimations
+function estimate!(estimation_name::Symbol, kde::AbstractKDE; kwargs...)::Nothing
+  estimation_type = estimation_lookup[estimation_name]
+  estimate!(estimation_type, kde; kwargs...)
 end
-function estimate!(kde::AbstractKDE, method::Symbol; kwargs...)::Nothing
-  method_type = method_lookup[method]
-  estimate!(method_type, kde; kwargs...)
+function estimate!(estimation_type::Type{T}, kde::AbstractKDE; kwargs...)::Nothing where {T<:AbstractEstimation}
+  device = Device(kde)
+  method = get(kwargs, :method, CPU_SERIAL)
+  ensure_valid_implementation(device, method)
+
+  estimation = initialize_estimation(estimation_type, kde; kwargs...)
+  estimate!(estimation, kde; kwargs...)
+  return nothing
 end
 
 include("ParallelEstimation.jl")

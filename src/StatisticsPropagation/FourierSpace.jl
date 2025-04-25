@@ -389,7 +389,7 @@ function ifourier_statistics!(
   return nothing
 end
 function ifourier_statistics!(
-  ::Val(:serial),
+  ::Val{:serial},
   sk::AbstractArray{Complex{T},M},
   n_samples::P,
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
@@ -416,21 +416,10 @@ function ifourier_statistics!(
     ifft_plan * selectdim(s2k, M, i)
   end
 
-  # Threads.@threads for i in 1:n_bootstraps
-  #   sk_i = selectdim(sk, M, i)
-  #   s2k_i = selectdim(s2k, M, i)
-  #
-  #   @inbounds @simd for idx in eachindex(selectdim(sk, M, i))
-  #     sk_j = abs(sk_i[idx]) / n_samples
-  #     sk_i[idx] = sk_j
-  #     s2k_i[idx] = (abs(s2k_i[idx]) / n_samples) - sk_j^2
-  #   end
-  # end
-
   return nothing
 end
 function ifourier_statistics!(
-  ::Val(:threaded),
+  ::Val{:threaded},
   sk::AbstractArray{Complex{T},M},
   n_samples::P,
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
@@ -440,10 +429,6 @@ function ifourier_statistics!(
   Threads.@threads for i in 1:n_bootstraps
     ifft_plan * selectdim(sk, ndims(sk), i)
   end
-
-  # Threads.@threads for idx in eachindex(sk)
-  #   sk[idx] = abs(sk[idx]) / n_samples
-  # end
 
   return nothing
 end
@@ -457,9 +442,6 @@ function ifourier_statistics!(
   ifft_plan * sk
   ifft_plan * s2k
 
-  # @. sk = abs(sk) / n_samples
-  # @. s2k = (abs(s2k) / n_samples) - sk^2
-
   return nothing
 end
 function ifourier_statistics!(
@@ -469,8 +451,6 @@ function ifourier_statistics!(
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
 ) where {T<:Real,M,P<:Integer}
   ifft_plan * sk
-
-  # @. sk = abs(sk) / n_samples
 
   return nothing
 end

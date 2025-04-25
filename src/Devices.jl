@@ -6,8 +6,8 @@ abstract type Device end
 
 struct IsCPU <: Device end
 struct IsCUDA <: Device end
-struct NotSpecified <: Device end
+struct DeviceNotSpecified <: Device end
 
-Device(::Any) = NotSpecified()
+Device(::Any) = DeviceNotSpecified()
 
 end

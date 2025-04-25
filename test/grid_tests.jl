@@ -1,70 +1,72 @@
-function check_sample_frequencies(grid::Grid)
-  fourier_range = fftshift(2π * fftfreq(21, 1 / 0.1))
-  result_grid = Grid(fill(fourier_range, length(size(grid))))
-
-  fourier_grid = fftgrid(grid)
-
-  @test fourier_grid ≈ result_grid
-
-  return nothing
-end
-function check_sample_frequencies(grid::CuGrid)
-  fourier_range = fftshift(2π * fftfreq(21, 1 / 0.1))
-  result_grid = Grid(fill(fourier_range, length(size(grid))))
-
-  fourier_grid = fftgrid(grid)
-
-  @test fourier_grid ≈ result_grid atol = 1.0f-1
-
-  return nothing
-end
-
 @testset "CPU grid tests" for n_dims in 1:3
-  @testset "dimensions : $n_dims" begin
-    grid_ranges = fill(-1.0:0.1:1.0, n_dims)
-    spacings_vector = @SVector fill(0.1, n_dims)
+  @testset "dimensions: $n_dims" begin
+    grid_min = -1.0
+    grid_max = 1.0
+    grid_step = 0.1
+
+    grid_range = grid_min:grid_step:grid_max
+    n_steps = length(grid_range)
+
+    fourier_range = 2π * fftfreq(n_steps, 1 / grid_step)
+
+    grid_ranges = fill(grid_range, n_dims)
+    fourier_grid_ranges = fill(fourier_range, n_dims)
+
+    spacings_vector = @SVector fill(grid_step, n_dims)
     bounds_matrix = SMatrix{2,n_dims,Float64}(
-      [-1.0; 1.0] .* ones(1, n_dims)
+      [grid_min; grid_max] .* ones(1, n_dims)
     )
 
-    grid = Grid(grid_ranges)
-    @test size(grid) == ntuple(i -> length(grid_ranges[i]), n_dims)
-    @test spacings(grid) == spacings_vector
-    @test bounds(grid) == bounds_matrix
-    @test low_bounds(grid) == bounds_matrix[1, :]
-    @test high_bounds(grid) == bounds_matrix[2, :]
+    grid = ParallelKDE.Grids.Grid(grid_ranges)
 
-    @test isa(Base.broadcastable(grid), AbstractArray{Float64,n_dims + 1})
+    grid_fourier = ParallelKDE.Grids.fftgrid(grid)
+    fourier_grid = ParallelKDE.Grids.Grid(grid_fourier_ranges)
 
-    @testset "Fourier sample frequencies" check_sample_frequencies(grid)
+    @test size(grid) == ntuple(i -> n_steps, n_dims)
+    @test ndims(grid) == n_dims
+    @test ParallelKDE.Grids.spacings(grid) == spacings_vector
+    @test ParallelKDE.Grids.bounds(grid) == bounds_matrix
+    @test ParallelKDE.Grids.low_bounds(grid) == bounds_matrix[1, :]
+    @test ParallelKDE.Grids.high_bounds(grid) == bounds_matrix[2, :]
+    @test Base.broadcastable(grid) isa AbstractArray{Float64,n_dims + 1}
+    @test get_coordinates(grid_foureir) ≈ get_coordinates(fourier_grid)
   end
 end
-
 if CUDA.functional()
   @testset "GPU grid tests" for n_dims in 1:3
-
     @testset "dimensions : $n_dims" begin
-      grid_ranges = fill(-1.0:0.1:1.0, n_dims)
-      spacings_vector = CUDA.fill(1.0f-1, n_dims)
+      grid_min = -1.0
+      grid_max = 1.0
+      grid_step = 0.1
+
+      grid_range = grid_min:grid_step:grid_max
+      n_steps = length(grid_range)
+
+      fourier_range = 2π * fftfreq(n_steps, 1 / grid_step)
+
+      grid_ranges = fill(grid_range, n_dims)
+      fourier_grid_ranges = fill(fourier_range, n_dims)
+
+      spacings_vector = CUDA.fill(Float32(grid_step), n_dims)
       bounds_matrix = CuArray{Float32,2}(
-        [-1.0; 1.0] .* ones(1, n_dims)
+        [grid_min; grid_max] .* ones(1, n_dims)
       )
-      grid_array = reinterpret(
-        reshape,
-        Float32,
-        collect(Iterators.product(grid_ranges...))
-      )
+
+      grid = ParallelKDE.Grids.CuGrid(grid_ranges)
+
+      grid_fourier = ParallelKDE.Grids.fftgrid(grid)
+      fourier_grid = ParallelKDE.Grids.CuGrid(fourier_grid_ranges)
 
       grid = CuGrid(grid_ranges, b32=true)
-      @test size(grid) == size(grid_array)[2:end]
-      @test spacings(grid) == spacings_vector
-      @test bounds(grid) == bounds_matrix
-      @test low_bounds(grid) == bounds_matrix[1, :]
-      @test high_bounds(grid) == bounds_matrix[2, :]
 
-      @test isa(Base.broadcastable(grid), AbstractArray{Float32,n_dims + 1})
-
-      @testset "Fourier sample frequencies" check_sample_frequencies(grid)
+      @test size(grid) == ntuple(i -> n_steps, n_dims)
+      @test ndims(grid) == n_dims
+      @test ParallelKDE.Grids.spacings(grid) == spacings_vector
+      @test ParallelKDE.Grids.bounds(grid) == bounds_matrix
+      @test ParallelKDE.Grids.low_bounds(grid) == bounds_matrix[1, :]
+      @test ParallelKDE.Grids.high_bounds(grid) == bounds_matrix[2, :]
+      @test Base.broadcastable(grid) isa CuArray{Float32,n_dims + 1}
+      @test get_coordinates(grid_fourier) ≈ get_coordinates(fourier_grid)
     end
   end
 end

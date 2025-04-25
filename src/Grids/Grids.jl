@@ -25,34 +25,32 @@ struct Grid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   bounds::SMatrix{2,N,T}
 end
 function Grid(
-  ranges::AbstractVector{<:Union{AbstractRange{T},Frequencies{T}}},
-)::Grid where {T<:Real}
+  ranges::Union{Tuple{Vararg{AbstractVector{T}}},AbstractVector{<:AbstractVector{T}}},
+) where {T<:Real}
   N = length(ranges)
-  ranges = SVector{N}(ranges)
-  spacings = SVector{N}(step.(ranges))
-  bounds = SMatrix{2,N,T}(
-    reinterpret(reshape, T, extrema.(ranges))
-  )
 
-  return Grid{N,T,N + 1}(ranges, spacings, bounds)
-end
-function Grid(
-  ranges::NTuple{N,Union{AbstractRange{T},Frequencies{T}}}
-)::Grid{N,T,N + 1} where {N,T<:Real}
   ranges = SVector{N}(ranges)
   spacings = SVector{N}(step.(ranges))
-  bounds = SMatrix{2,N,T}(
-    reinterpret(reshape, T, collect(extrema.(ranges)))
-  )
+
+  if ranges isa Tuple
+    extreme_points = collect(extrema.(ranges))
+  else
+    extreme_points = extrema.(ranges)
+  end
+  bounds = SMatrix{2,N,T}(extreme_points)
 
   return Grid{N,T,N + 1}(ranges, spacings, bounds)
 end
 
-function Base.size(grid::Grid{N,T}) where {N,T<:Real}
+function Base.size(grid::Grid{N,T,M}) where {N,T<:Real,M}
   return ntuple(i -> length(grid.coordinates[i]), N)
 end
 
-function get_coordinates(grid::Grid{N,T}) where {N,T<:Real}
+function Base.ndims(::Grid{N,T,M}) where {N,T<:Real,M}
+  return N
+end
+
+function get_coordinates(grid::Grid{N,T,M}) where {N,T<:Real,M}
   complete_array = reinterpret(
     reshape,
     T,
@@ -66,7 +64,7 @@ function get_coordinates(grid::Grid{N,T}) where {N,T<:Real}
   return complete_array
 end
 
-function Base.broadcastable(grid::Grid{N,T}) where {N,T<:Real}
+function Base.broadcastable(grid::Grid{N,T,M}) where {N,T<:Real,M}
   return get_coordinates(grid)
 end
 
@@ -75,58 +73,60 @@ struct CuGrid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   spacings::CuArray{T,1}
   bounds::CuArray{T,2}
 end
-
 function CuGrid(
-  ranges::Union{
-    AbstractVector{<:Union{AbstractRange{T},Frequencies{T}}},
-    NTuple{N,Union{AbstractRange{T},Frequencies{T}}}
-  };
+  ranges::Union{Tuple{Vararg{AbstractVector{T}}},AbstractVector{<:AbstractVector{T}}};
   b32::Bool=true
-)::CuGrid where {N,T<:Real}
-  if isa(ranges, NTuple)
-    ranges = collect(ranges)
-    n = N
+) where {T<:Real}
+  N = length(ranges)
+
+  if ranges isa Tuple
+    ranges_vec = collect(ranges)
   else
-    n = length(ranges)
+    ranges_vec = ranges
   end
 
   complete_array = reinterpret(
     reshape,
     T,
-    collect(Iterators.product(ranges...))
+    collect(Iterators.product(ranges_vec...))
   )
-  if n == 1
+  if N == 1
     complete_array = reshape(complete_array, 1, :)
   end
 
   if b32
     coordinates = CuArray{Float32}(complete_array)
-    spacings = CuArray{Float32}(step.(ranges))
+    spacings = CuArray{Float32}(step.(ranges_vec))
     bounds = CuArray{Float32}(
       reinterpret(reshape, T, extrema.(ranges))
     )
 
-    return CuGrid{n,Float32,n + 1}(coordinates, spacings, bounds)
+    return CuGrid{N,Float32,N + 1}(coordinates, spacings, bounds)
   else
     coordinates = CuArray{T}(complete_array)
-    spacings = CuArray{T}(step.(ranges))
+    spacings = CuArray{T}(step.(ranges_vec))
     bounds = CuArray{T}(
       reinterpret(reshape, T, extrema.(ranges))
     )
 
-    return CuGrid{n,T,n + 1}(coordinates, spacings, bounds)
+    return CuGrid{N,T,N + 1}(coordinates, spacings, bounds)
   end
+
 end
 
-function Base.size(grid::CuGrid{N,T}) where {N,T<:Real}
+function Base.size(grid::CuGrid{N,T,M}) where {N,T<:Real,M}
   return size(grid.coordinates)[2:end]
 end
 
-function get_coordinates(grid::CuGrid{N,T}) where {N,T<:Real}
+function Base.ndims(::CuGrid{N,T,M}) where {N,T<:Real,M}
+  return N
+end
+
+function get_coordinates(grid::CuGrid{N,T,M}) where {N,T<:Real,M}
   return grid.coordinates
 end
 
-function Base.broadcastable(grid::CuGrid{N,T}) where {N,T<:Real}
+function Base.broadcastable(grid::CuGrid{N,T,M}) where {N,T<:Real,M}
   return get_coordinates(grid)
 end
 
@@ -179,6 +179,7 @@ function fftgrid(::IsCUDA, grid::AbstractGrid)::CuGrid
   return CuGrid(fourier_coordinates)
 end
 
+# NOTE: This function is not used in the codebase, but it may be useful for testing purposes.
 function Base.isapprox(
   grid1::T,
   grid2::S;

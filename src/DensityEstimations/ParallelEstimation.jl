@@ -249,6 +249,14 @@ function is_vmr_calculated(kernel_propagation::AbstractKernelPropagation{T,M})::
   return kernel_propagation.calculated_vmr
 end
 
+function get_vmr(kernel_propagation::AbstractKernelPropagation{T,M})::AbstractArray{T,M} where {T,M}
+  if !is_vmr_calculated(kernel_propagation)
+    throw(ArgumentError("VMR not calculated"))
+  end
+
+  return kernel_propagation.kernel_vars
+end
+
 function propagate_bootstraps!(
   kernel_propagation::AbstractKernelPropagation{N,T,M},
   kernel_means::AbstractKernelMeans{N,T,M},
@@ -304,7 +312,6 @@ end
 
 abstract type AbstractDensityState{T,N} end
 
-# TODO: Define DensityState
 @kwdef mutable struct DensityState{T,N} <: AbstractDensityState{T,N}
   # Parameters
   dt::Float64
@@ -318,6 +325,7 @@ abstract type AbstractDensityState{T,N} end
   stable_counters::Array{Int8,N}
   is_smooth::Array{Bool,N}
   has_decreased::Array{Bool,N}
+  is_stable::Array{Bool,N}
 
   # Buffers
   f_prev1::Array{T,N}
@@ -336,6 +344,7 @@ function DensityState(
     stable_counters=fill(Int8(0), dims),
     is_smooth=fill(false, dims),
     has_decreased=fill(false, dims),
+    is_stable=fill(false, dims),
   )
 end
 function DensityState(
@@ -367,6 +376,7 @@ end
   stable_counters::CuArray{Int8,N}
   is_smooth::CuArray{Bool,N}
   has_decrease::CuArray{Bool,N}
+  is_stable::CuArray{Bool,N}
 
   # Buffers
   f_prev1::CuArray{T,N}
@@ -385,6 +395,7 @@ function CuDensityState(
     stable_counters=CUDA.fill(Int8(0), dims),
     is_smooth=CUDA.fill(false, dims),
     has_decreased=CUDA.fill(false, dims),
+    is_stable=CUDA.fill(false, dims),
   )
 end
 function CuDensityState(
@@ -406,8 +417,8 @@ end
 function update_state!(
   density_state::AbstractDensityState{T,N},
   kde::AbstractKDE{N,T,S,M},
+  means::AbstractKernelMeans{N,T,N},
   vmr_var::AbstractArray{T,N},
-  denisty::AbstractArray{T,N},
 ) where {N,T<:Real,S<:Real,M}
 
 end
@@ -438,7 +449,7 @@ struct CuParallelEstimation{N,T,M} <: AbstractParallelEstimation
   density_state::CuDensityState
 end
 
-add_method!(:parallelEstimation, ParallelEstimation)
+add_estimation!(:parallelEstimation, ParallelEstimation)
 
 function initialize_estimation(
   ::Type{<:AbstractParallelEstimation},
@@ -453,14 +464,14 @@ function initialize_estimation(
 
   grid = kwargs[:grid]
   if Device(grid) != device
-    throw(ArgumentError("Grid device $device does not match KDE device $(Device(grid))"))
+    throw(ArgumentError("KDE device $device does not match Grid device $(Device(grid))"))
   end
-  grid_fourier = fftgrid(grid)
 
   n_bootstraps = get(kwargs, :n_bootstraps, 100)
-  method = get(kwargs, :method, :serial)
   time_step = get(kwargs, :dt, nothing)
   n_steps = get(kwargs, :n_steps, nothing)
+
+  method = get(kwargs, :method, CPU_SERIAL)
 
   means_bootstraps, vars_bootstraps = initialize_kernels(
     device, kde, grid; n_bootstraps=n_bootstraps, include_var=true, method=method
@@ -469,50 +480,81 @@ function initialize_estimation(
     device, kde, grid; n_bootstraps=0, include_var=false, method=method
   )
 
-  if device == IsCPU()
-    kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
-    time_final = silverman_rule(get_data(kde))
-    times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
+  return initialize_estimation_propagation(
+    device,
+    kde,
+    means_bootstraps,
+    vars_bootstraps,
+    means,
+    grid;
+    time_step,
+    n_steps
+  )
 
-    density_state = DensityState(
-      size(grid),
-      typeof(kde).parameters[2];
-      dt=norm(dt),
-    )
+end
 
-    return ParallelEstimation(
-      means_bootstraps,
-      vars_bootstraps,
-      means,
-      kernel_propagation,
-      grid,
-      grid_fourier,
-      times,
-      dt,
-      density_state,
-    )
-  elseif device == IsCUDA()
-    time_final = silverman_rule(Array(get_data(kde)))
-    kernel_propagation = CuKernelPropagation(means_bootstraps, vars_bootstraps)
-    times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
+function initialize_estimation_propagation(device::Device, args...)::AbstractKernelPropagation
+  throw(ArgumentError("Propagation not implemented for device: $(typeof(device))"))
+end
+function initialize_estimation_propagation(
+  ::IsCPU,
+  kde::KDE{N,T,S,M},
+  means_bootstraps::KernelMeans{N,T,M},
+  vars_bootstraps::KernelVars{N,T,M},
+  means::KernelMeans{N,T,M},
+  grid::Grid{N,P,M};
+  time_step::Union{Nothing,Real}=nothing,
+  n_steps::Union{Nothing,Integer}=nothing,
+) where {N,T<:Real,S<:Real,P<:Real,M}
+  grid_fourier = fftgrid(grid)
 
-    density_state = CuDensityState(size(grid), typeof(kde).parameters[2]; dt=norm(dt))
+  kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
+  time_final = silverman_rule(get_data(kde))
+  times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-    return CuParallelEstimation(
-      means_bootstraps,
-      vars_bootstraps,
-      means,
-      kernel_propagation,
-      grid,
-      grid_fourier,
-      times,
-      dt,
-      density_state,
-    )
-  else
-    throw(ArgumentError("Parallel estimation not implemented for device: $device"))
-  end
+  density_state = DensityState(size(grid), T; dt=norm(dt))
 
+  return ParallelEstimation(
+    means_bootstraps,
+    vars_bootstraps,
+    means,
+    kernel_propagation,
+    grid,
+    grid_fourier,
+    times,
+    dt,
+    density_state,
+  )
+end
+function initialize_estimation_propagation(
+  ::IsCUDA,
+  kde::CuKDE{N,T,S,M},
+  means_bootstraps::CuKernelMeans{N,T,M},
+  vars_bootstraps::CuKernelVars{N,T,M},
+  means::CuKernelMeans{N,T,M},
+  grid::CuGrid{N,P,M};
+  time_step::Union{Nothing,Real}=nothing,
+  n_steps::Union{Nothing,Integer}=nothing,
+) where {N,T<:Real,S<:Real,P<:Real,M}
+  grid_fourier = fftgrid(grid)
+
+  kernel_propagation = CuKernelPropagation(means_bootstraps, vars_bootstraps)
+  time_final = silverman_rule(Array(get_data(kde)))
+  times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
+
+  density_state = CuDensityState(size(grid), typeof(kde).parameters[2]; dt=norm(dt))
+
+  return CuParallelEstimation(
+    means_bootstraps,
+    vars_bootstraps,
+    means,
+    kernel_propagation,
+    grid,
+    grid_fourier,
+    times,
+    dt,
+    density_state,
+  )
 end
 
 function get_time(
@@ -589,13 +631,40 @@ function estimate!(
   estimation::AbstractParallelEstimation;
   kwargs...
 )::Nothing where {N,T,S,M}
-  # TODO: Implement specific function of parallel estimation
+  device = Device(kde)
+  method = get(kwargs, :method, CPU_SERIAL)
 
-  # Calculate in KernelPropagation arrays the kernel means and kernel vars according to time
-  # Inverse Fourier transform in place
-  # Calculate VMR which reduces the memory necessary to only one element in bootstrap dimension
-  # Propagate means of all samples according to time in one element of bootstrap dimension
-  # Use DensityState to identify stopping time
+  for time in estimation.times
+    propagate_bootstraps!(
+      estimation.kernel_propagation,
+      estimation.means_bootstraps,
+      estimation.vars_bootstraps,
+      time,
+      estimation.grid_fourier;
+      method
+    )
+
+    calculate_vmr!(
+      estimation.kernel_propagation,
+      time,
+      estimation.grid_direct,
+      get_nsamples(kde);
+      method
+    )
+    vmr_var = get_vmr(estimation.kernel_propagation)
+    #
+    # TODO: Implement the propagation of the means only
+
+    # Propagate means of all samples according to time in one element of bootstrap dimension
+
+    # Use DensityState to identify stopping time
+    update_state!(
+      estimation.density_state,
+      kde,
+      estimation.means,
+      vmr_var,
+    )
+  end
 
   return nothing
 end
