@@ -28,12 +28,12 @@ const DEVICE_IMPLEMENTATIONS = Dict{Device,Symbol}(
 is_valid_implementation(device::Device, implementation::Symbol)::Bool =
   implementation in get(DEVICE_IMPLEMENTATIONS, typeof(device), Set())
 
-function ensure_valid_implementation(device::Device, implementation::Symbol)::Nothing
+function ensure_valid_implementation(device::Device, implementation::Symbol)::Bool
   if !is_valid_implementation(device, implementation)
     throw(ArgumentError("Invalid implementation $implementation for device $device"))
   end
 
-  return nothing
+  return true
 end
 
 estimation_lookup = Dict()
@@ -45,13 +45,6 @@ function add_estimation!(key::Symbol, value::Type{T})::Nothing where {T<:Abstrac
   estimation_lookup[key] = value
 
   return nothing
-end
-
-function initialize_estimation(
-  ::Type{T},
-  kde::AbstractKDE
-)::AbstractEstimation where {T<:AbstractEstimation}
-  throw(ArgumentError("Estimation not implemented"))
 end
 
 # NOTE: This is the User API function for KDE estimations
@@ -67,6 +60,24 @@ function estimate!(estimation_type::Type{T}, kde::AbstractKDE; kwargs...)::Nothi
   estimation = initialize_estimation(estimation_type, kde; kwargs...)
   estimate!(estimation, kde; kwargs...)
   return nothing
+end
+
+# NOTE: These function have to be implemented in the estimation modules
+function initialize_estimation(
+  ::Type{T},
+  kde::AbstractKDE
+)::AbstractEstimation where {T<:AbstractEstimation}
+  throw(ArgumentError("Estimation not implemented"))
+
+end
+
+function estimate!(
+  estimation::AbstractEstimation,
+  kde::AbstractKDE;
+  kwargs...
+)::Nothing
+  throw(ArgumentError("Estimation not implemented"))
+
 end
 
 include("ParallelEstimation.jl")

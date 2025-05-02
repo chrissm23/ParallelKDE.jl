@@ -376,9 +376,8 @@ function ifourier_statistics!(
   ::Val{:serial},
   sk::AbstractArray{Complex{T},M},
   s2k::AbstractArray{Complex{T},M},
-  n_samples::P,
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
-) where {T<:Real,M,P<:Integer}
+) where {T<:Real,M}
   n_bootstraps = size(sk)[end]
 
   for i in 1:n_bootstraps
@@ -391,9 +390,8 @@ end
 function ifourier_statistics!(
   ::Val{:serial},
   sk::AbstractArray{Complex{T},M},
-  n_samples::P,
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
-) where {T<:Real,M,P<:Integer}
+) where {T<:Real,M}
   n_bootstraps = size(sk)[end]
 
   for i in 1:n_bootstraps
@@ -406,9 +404,8 @@ function ifourier_statistics!(
   ::Val{:threaded},
   sk::AbstractArray{Complex{T},M},
   s2k::AbstractArray{Complex{T},M},
-  n_samples::P,
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
-) where {T<:Real,M,P<:Integer}
+) where {T<:Real,M}
   n_bootstraps = size(sk, M)
 
   Threads.@threads for i in 1:n_bootstraps
@@ -421,9 +418,8 @@ end
 function ifourier_statistics!(
   ::Val{:threaded},
   sk::AbstractArray{Complex{T},M},
-  n_samples::P,
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
-) where {T<:Real,M,P<:Integer}
+) where {T<:Real,M}
   n_bootstraps = size(sk)[end]
 
   Threads.@threads for i in 1:n_bootstraps
@@ -434,11 +430,10 @@ function ifourier_statistics!(
 end
 function ifourier_statistics!(
   ::Val{:cuda},
-  sk::AnyCuArray{Complex{T},M},
-  s2k::AnyCuArray{Complex{T},M},
-  n_samples::P,
+  sk::CuArray{Complex{T},M},
+  s2k::CuArray{Complex{T},M},
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
-) where {T<:Real,M,P<:Integer}
+) where {T<:Real,M}
   ifft_plan * sk
   ifft_plan * s2k
 
@@ -446,10 +441,9 @@ function ifourier_statistics!(
 end
 function ifourier_statistics!(
   ::Val{:cuda},
-  sk::AnyCuArray{Complex{T},M},
-  n_samples::P,
+  sk::CuArray{Complex{T},M},
   ifft_plan::AbstractFFTs.ScaledPlan{Complex{T}},
-) where {T<:Real,M,P<:Integer}
+) where {T<:Real,M,}
   ifft_plan * sk
 
   return nothing

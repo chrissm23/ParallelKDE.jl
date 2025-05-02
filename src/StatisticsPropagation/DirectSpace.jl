@@ -17,6 +17,7 @@ using CUDA: i32
 export silverman_rule,
   initialize_dirac_sequence,
   calculate_scaled_vmr!,
+  calculate_full_means!,
   identify_convergence!
 
 include("../CuStatistics/CuStatistics.jl")
@@ -441,7 +442,7 @@ function calculate_scaled_vmr!(
     vmr_var[j] = ifelse(isfinite(vmr_v), vmr_v, NaN)
   end
 
-  return vmr_var
+  return nothing
 end
 function calculate_scaled_vmr!(
   ::Val{:threaded},
@@ -473,7 +474,7 @@ function calculate_scaled_vmr!(
     s2k_raw[2i-1] = s2k_i / sk_i
   end
 
-  # Re-arrange into contiguous memory
+  # Re-arrange into ucontiguous memory
   Threads.@threads @inbounds for i in 2:2:n_elements
     sk_raw[i] = sk_raw[2i-1]
     s2k_raw[i] = s2k_raw[2i-1]
@@ -526,26 +527,89 @@ function calculate_scaled_vmr!(
     vmr_var[point+1] = ifelse(isfinite(vmr_v), vmr_v, NaN)
   end
 
-  return vmr_var
+  return nothing
 end
 function calculate_scaled_vmr!(
   ::Val{:cuda},
-  means::AnyCuArray{Complex{T},M},
-  vars::AnyCuArray{Complex{T},M},
+  sk::AnyCuArray{Complex{T},M},
+  s2k::AnyCuArray{Complex{T},M},
   time::AnyCuVector{P},
   time_initial::AnyCuVector{P},
   n_samples::F,
 ) where {M,T<:Real,P<:Real,F<:Integer}
   scaling_factor = prod(time .^ 2i32 .+ time_initial .^ 2i32)^(1.5f0) * n_samples^4i32
 
-  @. vars /= means
-  vmr = selectdim(vars, M, 1)
-  vmr .= dropdims(var(vars, dims=M), dims=M)
+  @. sk = abs(sk) / n_samples
+  @. s2k = abs(s2k) / n_samples - sk^2
+
+  @. s2k /= sk
+  vmr = selectdim(s2k, M, 1)
+  vmr .= dropdims(var(s2k, dims=M), dims=M)
   vmr .*= scaling_factor
 
   @. vmr = ifelse(isfinite(vmr), vmr, NaN32)
 
-  return vmr
+  return nothing
+end
+
+function calculate_full_means!(
+  ::Val{:serial},
+  sk::AbstractArray{Complex{T},N},
+  n_samples::F,
+) where {N,T<:Real,F<:Integer}
+  sk_raw = vec(reinterpret(T, sk))
+  n_elements = length(sk_raw)
+
+  @inbounds @simd for i in 1:n_elements
+    sk_real = sk_raw[2i-1]
+    sk_imag = sk_raw[2i]
+
+    sk_i = sqrt(sk_real^2 + sk_imag^2) / n_samples
+    sk_raw[i] = sk_i
+  end
+
+  return nothing
+end
+function calculate_full_means!(
+  ::Val{:threaded},
+  sk::AbstractArray{Complex{T},N},
+  n_samples::F,
+) where {N,T<:Real,F<:Integer}
+  grid_dims = size(sk)
+
+  sk_raw = vec(reinterpret(T, sk))
+  n_elements = length(sk_raw)
+
+  # Calculate means
+  Threads.@threads @inbounds for i in 1:n_elements
+    sk_real = sk_raw[2i-1]
+    sk_imag = sk_raw[2i]
+
+    sk_i = sqrt(sk_real^2 + sk_imag^2) / n_samples
+    sk_raw[2i-1] = sk_i
+  end
+
+  # Re-arrange into contiguous memory
+  Threads.@threads @inbounds for i in 2:2:n_elements
+    sk_raw[i] = sk_raw[2i-1]
+  end
+  Threads.@threads @inbounds for i in 3:4:n_elements
+    sk_raw[i] = sk_raw[2i-1]
+  end
+  Threads.@threads @inbounds for i in 1:4:n_elements
+    sk_raw[i] = sk_raw[2i-1]
+  end
+
+  return nothing
+end
+function calculate_full_means!(
+  ::Val{:cuda},
+  sk::AnyCuArray{Complex{T},N},
+  n_samples::F,
+) where {N,T<:Real,F<:Integer}
+  @. sk = abs(sk) / n_samples
+
+  return nothing
 end
 
 function identify_convergence!(

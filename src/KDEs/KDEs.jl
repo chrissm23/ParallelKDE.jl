@@ -5,7 +5,6 @@ import ..Devices: Device, IsCPU, IsCUDA
 using StaticArrays
 using CUDA
 
-# TODO: Remove t, get_time, and converged_kde
 export AbstractKDE,
   KDE,
   CuKDE,

@@ -22,58 +22,81 @@ using StaticArrays,
 using Statistics,
   LinearAlgebra
 
+# TODO: Check which other functions or types from the other modules may be useful to export
+export AbstractDensityEstimator,
+  DensityEstimator,
+  estimate_density!
 
+abstract type AbstractDensityEstimator{K,G,E} end
 
-function initialize_kde(
-  data::AbstractVector{<:AbstractVector{<:Real}},
-  grid::AbstractVector{<:AbstractRange{<:Real}},
-  device::Symbol
-)
-  if device == :cpu
-    return initialize_kde(data, grid, IsCPUKDE())
-  elseif device == :gpu
-    @assert CUDA.functional() "CUDA.jl is not functional. Use a different method."
-    return initialize_kde(data, grid, IsGPUKDE())
-  else
-    throw(ArgumentError("Invalid device: $device"))
+struct DensityEstimator{K<:AbstractKDE,G<:AbstractGrid,E<:AbstractEstimation} <: AbstractDensityEstimator{K,G,E}
+  kde::K
+  estimation::E
+  grid::Union{G,Nothing}
+
+  # TODO: This function takes the grid parameters (estimation parameters needed?)
+  function DensityEstimator(
+  )::DensityEstimator
   end
 end
 
-function initialize_kde(
-  data::AbstractVector{<:AbstractVector{T}},
-  grid_ranges::AbstractVector{<:AbstractRange{S}},
-  ::IsCPUKDE
-)::KDE where {T<:Real,S<:Real}
-  N = length(data[1])
-
-  grid = Grid(grid_ranges)
-  density = fill(NaN, size(grid))
-
-  t = initial_bandwidth(grid)
-
-  kde = KDE{N,Float64,T,N + 1}(Vector{SVector{N,T}}(data), grid, t, density)
-
-  return kde
+# TODO: This function takes the estimation parameters, creates the estimation object and estimates
+function estimate_density!(
+  density_estimator::DensityEstimator;
+  kwargs...
+)::Nothing
 end
 
-function initialize_kde(
-  data::AbstractVector{<:AbstractVector{T}},
-  grid_ranges::AbstractVector{<:AbstractRange{S}},
-  ::IsGPUKDE
-)::CuKDE where {T<:Real,S<:Real}
-  N = length(data[1])
-
-  grid = CuGrid(grid_ranges, b32=true)
-  density = CUDA.fill(NaN32, size(grid))
-
-  t = initial_bandwidth(grid)
-
-  rearanged_data = reduce(hcat, data)
-
-  kde = CuKDE{N,Float32,Float32,N + 1}(CuArray{Float32}(rearanged_data), grid, t, density)
-
-  return kde
-end
+# function initialize_kde(
+#   data::AbstractVector{<:AbstractVector{<:Real}},
+#   grid::AbstractVector{<:AbstractRange{<:Real}},
+#   device::Symbol
+# )
+#   if device == :cpu
+#     return initialize_kde(data, grid, IsCPUKDE())
+#   elseif device == :gpu
+#     @assert CUDA.functional() "CUDA.jl is not functional. Use a different method."
+#     return initialize_kde(data, grid, IsGPUKDE())
+#   else
+#     throw(ArgumentError("Invalid device: $device"))
+#   end
+# end
+#
+# function initialize_kde(
+#   data::AbstractVector{<:AbstractVector{T}},
+#   grid_ranges::AbstractVector{<:AbstractRange{S}},
+#   ::IsCPUKDE
+# )::KDE where {T<:Real,S<:Real}
+#   N = length(data[1])
+#
+#   grid = Grid(grid_ranges)
+#   density = fill(NaN, size(grid))
+#
+#   t = initial_bandwidth(grid)
+#
+#   kde = KDE{N,Float64,T,N + 1}(Vector{SVector{N,T}}(data), grid, t, density)
+#
+#   return kde
+# end
+#
+# function initialize_kde(
+#   data::AbstractVector{<:AbstractVector{T}},
+#   grid_ranges::AbstractVector{<:AbstractRange{S}},
+#   ::IsGPUKDE
+# )::CuKDE where {T<:Real,S<:Real}
+#   N = length(data[1])
+#
+#   grid = CuGrid(grid_ranges, b32=true)
+#   density = CUDA.fill(NaN32, size(grid))
+#
+#   t = initial_bandwidth(grid)
+#
+#   rearanged_data = reduce(hcat, data)
+#
+#   kde = CuKDE{N,Float32,Float32,N + 1}(CuArray{Float32}(rearanged_data), grid, t, density)
+#
+#   return kde
+# end
 
 # TODO: Find reasonable values for smoothness and threshold
 function fit_kde!(
