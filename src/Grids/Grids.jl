@@ -1,6 +1,6 @@
 module Grids
 
-import ..Devices: Device, IsCPU, IsCUDA
+using ..Devices
 
 using FFTW
 using StaticArrays
@@ -9,15 +9,30 @@ using CUDA
 export AbstractGrid,
   Grid,
   CuGrid,
+  initialize_grid,
   spacings,
   bounds,
   low_bounds,
   high_bounds,
   initial_bandwidth,
   get_coordinates,
-  fftgrid
+  fftgrid,
+  find_grid
 
 abstract type AbstractGrid{N,T<:Real,M} end
+
+function initialize_grid(
+  ::IsCPU,
+  ranges::Union{Tuple{Vararg{AbstractVector{T}}},AbstractVector{<:AbstractVector{T}}};
+)::Grid where {T<:Real}
+  return Grid(ranges)
+end
+function initialize_grid(
+  ::IsCUDA,
+  ranges::Union{Tuple{Vararg{AbstractVector{T}}},AbstractVector{<:AbstractVector{T}}};
+)::CuGrid where {T<:Real}
+  return CuGrid(ranges)
+end
 
 struct Grid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   coordinates::SVector{N,StepRangeLen}
@@ -177,6 +192,59 @@ function fftgrid(::IsCUDA, grid::AbstractGrid)::CuGrid
   end
 
   return CuGrid(fourier_coordinates)
+end
+
+function find_grid(
+  device::AbstractDevice,
+  data;
+  grid_bounds=nothing,
+  grid_dims=nothing,
+  grid_steps=nothing,
+  grid_padding=nothing,
+)
+  # Turn data into array
+  if isa(data, AbstractMatrix)
+    n_dims = size(data, 1)
+  elseif isa(data, AbstractVector)
+    n_dims = length(data[1])
+    data = reduce(hcat, data)
+  else
+    throw(ArgumentError("Data must be a matrix or vector."))
+  end
+
+  # Find grid bounds
+  if grid_bounds === nothing
+    grid_bounds = [extrema(row) for row in eachrow(data)]
+  end
+  if grid_padding === nothing
+    grid_padding = [0.1 * abs(bounds[2] - bounds[1]) for bounds in grid_bounds]
+  end
+  grid_bounds = [
+    bounds .+ (-padding, padding)
+    for (bounds, padding) in zip(grid_bounds, grid_padding)
+  ]
+
+  # Find grid ranges
+  default_size = 300
+  if (grid_steps === nothing) && (grid_dims === nothing)
+    grid_dims = fill(default_size, n_dims)
+  elseif grid_dims !== nothing
+    grid_ranges = [
+      range(bounds[1], stop=bounds[2], length=size)
+      for (bounds, size) in zip(grid_bounds, grid_dims)
+    ]
+  elseif grid_steps !== nothing
+    grid_ranges = [
+      range(bounds[1], stop=bounds[2], step=step)
+      for (bounds, step) in zip(grid_bounds, grid_steps)
+    ]
+  end
+
+  if device isa IsCPU
+    return Grid(grid_ranges)
+  elseif device isa IsCUDA
+    return CuGrid(grid_ranges)
+  end
 end
 
 # NOTE: This function is not used in the codebase, but it may be useful for testing purposes.

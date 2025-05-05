@@ -1,6 +1,6 @@
 module DensityEstimations
 
-import ..Devices: Device, IsCPU, IsCUDA
+using ..Devices
 using ..KDEs
 using ..Grids
 using ..FourierSpace
@@ -20,15 +20,15 @@ const CPU_SERIAL = :serial
 const CPU_THREADED = :threaded
 const GPU_CUDA = :cuda
 
-const DEVICE_IMPLEMENTATIONS = Dict{Device,Symbol}(
+const DEVICE_IMPLEMENTATIONS = Dict{AbstractDevice,Symbol}(
   IsCPU() => Set([CPU_SERIAL, CPU_THREADED]),
   IsCUDA() => Set([GPU_CUDA]),
 )
 
-is_valid_implementation(device::Device, implementation::Symbol)::Bool =
+is_valid_implementation(device::AbstractDevice, implementation::Symbol)::Bool =
   implementation in get(DEVICE_IMPLEMENTATIONS, typeof(device), Set())
 
-function ensure_valid_implementation(device::Device, implementation::Symbol)::Bool
+function ensure_valid_implementation(device::AbstractDevice, implementation::Symbol)::Bool
   if !is_valid_implementation(device, implementation)
     throw(ArgumentError("Invalid implementation $implementation for device $device"))
   end

@@ -1,18 +1,35 @@
 module Devices
 
-export Device, IsCPU, IsCUDA, DeviceNotSpecified, AVAILABLE_DEVICES
+using CUDA
 
-abstract type Device end
+export
+  AbstractDevice,
+  Device,
+  IsCPU,
+  IsCUDA,
+  DeviceNotSpecified,
+  AVAILABLE_DEVICES,
+  get_available_memory
 
-struct IsCPU <: Device end
-struct IsCUDA <: Device end
-struct DeviceNotSpecified <: Device end
+abstract type AbstractDevice end
 
-const AVAILABLE_DEVICES = Dict{Symbol,Device}(
+struct IsCPU <: AbstractDevice end
+struct IsCUDA <: AbstractDevice end
+struct DeviceNotSpecified <: AbstractDevice end
+
+const AVAILABLE_DEVICES = Dict{Symbol,AbstractDevice}(
   :cpu => IsCPU(),
   :cuda => IsCUDA(),
 )
 
 Device(::Any) = DeviceNotSpecified()
+
+function get_available_memory(::IsCPU)
+  return Sys.free_memory() / 1024^2
+end
+function get_available_memory(::IsCUDA)
+  return CUDA.memory_info()[1] / 1024^2
+end
+
 
 end

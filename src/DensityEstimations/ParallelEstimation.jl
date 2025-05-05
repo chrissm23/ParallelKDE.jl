@@ -14,7 +14,7 @@ struct KernelMeans{N,T<:Real,M} <: AbstractKernelMeans{N,T,M}
     end
   end
 end
-struct CuKernelMeans{T<:Real,M} <: AbstractKernelMeans{T,M}
+struct CuKernelMeans{N,T<:Real,M} <: AbstractKernelMeans{N,T,M}
   statistic::CuArray{Complex{T},M}
   bootstrapped::Bool
 
@@ -26,7 +26,7 @@ struct CuKernelMeans{T<:Real,M} <: AbstractKernelMeans{T,M}
     end
   end
 end
-struct KernelVars{T<:Real,M} <: AbstractKernelVars{T,M}
+struct KernelVars{N,T<:Real,M} <: AbstractKernelVars{N,T,M}
   statistic::Array{Complex{T},M}
   bootstrapped::Bool
 
@@ -38,7 +38,7 @@ struct KernelVars{T<:Real,M} <: AbstractKernelVars{T,M}
     end
   end
 end
-struct CuKernelVars{T<:Real,M} <: AbstractKernelVars{T,M}
+struct CuKernelVars{N,T<:Real,M} <: AbstractKernelVars{N,T,M}
   statistic::CuArray{Complex{T},M}
   bootstrapped::Bool
 
@@ -842,6 +842,8 @@ function estimate!(
   kde::AbstractKDE{N,T,S,M};
   kwargs...
 )::Nothing where {N,T,S,M}
+  check_memory(estimation)
+
   device = Device(kde)
   method = get(kwargs, :method, CPU_SERIAL)
   n_samples = get_nsamples(kde)
@@ -891,6 +893,26 @@ function estimate!(
       kde,
       estimation.kernel_propagation;
       method
+    )
+  end
+
+  return nothing
+end
+
+function get_necessary_memory(estimation::AbstractParallelEstimation)::Float64
+  bootstraps_memory = sizeof(estimation.means_boostraps.statistic) * 4
+  means_memory = sizeof(estimation.means.statistic) * 3
+
+  return 1.25(bootstraps_memory + means_memory) / 1024^2
+end
+
+function check_memory(estimation::AbstractParallelEstimation)::Nothing
+  available_memory = get_available_memory(Device(estimation))
+  required_memory = get_necessary_memory(estimation)
+
+  if available_memory < required_memory
+    throw(
+      ArgumentError("Not enough memory available. Required: $required_memory MiB, Available: $available_memory MiB")
     )
   end
 
