@@ -1,5 +1,6 @@
 module Grids
 
+using CUDA: DeviceIterator
 using ..Devices
 
 using FFTW
@@ -22,6 +23,17 @@ export AbstractGrid,
 abstract type AbstractGrid{N,T<:Real,M} end
 
 function initialize_grid(
+  ranges::Union{Tuple{Vararg{AbstractVector{T}}},AbstractVector{<:AbstractVector{T}}};
+  kwargs...
+)::AbstractGrid where {T<:Real}
+  kwargs_dict = Dict(kwargs)
+  device = pop!(kwargs_dict, :device, :cpu)
+  device_type = obtain_device(device)
+
+  return initialize_grid(device_type, ranges; kwargs_dict...)
+end
+
+function initialize_grid(
   ::IsCPU,
   ranges::Union{Tuple{Vararg{AbstractVector{T}}},AbstractVector{<:AbstractVector{T}}};
 )::Grid where {T<:Real}
@@ -30,12 +42,13 @@ end
 function initialize_grid(
   ::IsCUDA,
   ranges::Union{Tuple{Vararg{AbstractVector{T}}},AbstractVector{<:AbstractVector{T}}};
+  b32=true
 )::CuGrid where {T<:Real}
-  return CuGrid(ranges)
+  return CuGrid(ranges; b32)
 end
 
 struct Grid{N,T<:Real,M} <: AbstractGrid{N,T,M}
-  coordinates::SVector{N,StepRangeLen}
+  coordinates::SVector{N,Union{StepRangeLen,Frequencies}}
   spacings::SVector{N,T}
   bounds::SMatrix{2,N,T}
 end
@@ -52,7 +65,9 @@ function Grid(
   else
     extreme_points = extrema.(ranges)
   end
-  bounds = SMatrix{2,N,T}(extreme_points)
+  bounds = SMatrix{2,N,T}(
+    reinterpret(reshape, T, extreme_points)
+  )
 
   return Grid{N,T,N + 1}(ranges, spacings, bounds)
 end

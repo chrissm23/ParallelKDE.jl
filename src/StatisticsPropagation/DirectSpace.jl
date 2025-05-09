@@ -2,7 +2,6 @@ module DirectSpace
 
 using ..Grids
 using ..KDEs
-using ..FourierSpace
 
 using Statistics,
   LinearAlgebra
@@ -121,8 +120,8 @@ function generate_dirac_cpu!(
   dirac_series::AbstractArray{T,N},
   dirac_series_squared::AbstractArray{T,N},
   data::AbstractVector{SVector{N,S}},
-  spacing::SVector{N,T},
-  low_bound::SVector{N,T},
+  spacing::SVector{N,S},
+  low_bound::SVector{N,S},
 ) where {N,T<:Real,S<:Real}
   n_samples = length(data)
   spacing_squared = prod(spacing)^2
@@ -160,8 +159,8 @@ end
 function generate_dirac_cpu!(
   dirac_series::AbstractArray{T,N},
   data::AbstractVector{SVector{N,S}},
-  spacing::SVector{N,T},
-  low_bound::SVector{N,T},
+  spacing::SVector{N,S},
+  low_bound::SVector{N,S},
 ) where {N,T<:Real,S<:Real}
   n_samples = length(data)
   spacing_squared = prod(spacing)^2
@@ -200,10 +199,10 @@ function initialize_dirac_sequence(
   ::Val{:cuda},
   data::CuMatrix{S},
   grid::AbstractGrid{N,P,M},
-  bootstrap_idxs::CuMatrix{Int32};
+  bootstrap_idxs::CuMatrix{F};
   include_var::Bool=false,
   T=Float32,
-) where {N,S<:Real,M,P<:Real}
+) where {N,S<:Real,M,P<:Real,F<:Integer}
   grid_size = size(grid)
   n_samples, n_bootstraps = size(bootstrap_idxs)
 
@@ -220,7 +219,7 @@ function initialize_dirac_sequence(
     dirac_sequence_squared_real = selectdim(
       reinterpret(reshape, T, dirac_sequence_squared), 1, 1
     )
-    kernel = @cuda maxregs = 32, launch = false generate_dirac_cuda!(
+    kernel = @cuda maxregs = 32 launch = false generate_dirac_cuda!(
       dirac_sequence_real, dirac_sequence_squared_real, data, bootstrap_idxs, spacing, low_bound
     )
   else
@@ -270,8 +269,8 @@ function generate_dirac_cuda!(
   dirac_series_squared::CuDeviceArray{T,M},
   data::CuDeviceArray{S,2},
   bootstrap_idxs::CuDeviceArray{Int32,2},
-  spacing::CuDeviceArray{T,1},
-  low_bound::CuDeviceArray{T,1}
+  spacing::CuDeviceArray{S,1},
+  low_bound::CuDeviceArray{S,1}
 ) where {M,T<:Real,S<:Real}
   spacing_squared = prod(spacing)^2i32
 
@@ -463,7 +462,7 @@ function calculate_scaled_vmr!(
   s2k_raw = vec(reinterpret(T, s2k))
 
   # Calculate means and variances
-  Threads.@threads @inbounds for i in 1:n_elements
+  @inbounds Threads.@threads for i in 1:n_elements
     sk_real = sk_raw[2i-1]
     sk_imag = sk_raw[2i]
     s2k_real = s2k_raw[2i-1]
@@ -475,15 +474,15 @@ function calculate_scaled_vmr!(
   end
 
   # Re-arrange into ucontiguous memory
-  Threads.@threads @inbounds for i in 2:2:n_elements
+  @inbounds Threads.@threads for i in 2:2:n_elements
     sk_raw[i] = sk_raw[2i-1]
     s2k_raw[i] = s2k_raw[2i-1]
   end
-  Threads.@threads @inbounds for i in 3:4:n_elements
+  @inbounds Threads.@threads for i in 3:4:n_elements
     sk_raw[i] = sk_raw[2i-1]
     s2k_raw[i] = s2k_raw[2i-1]
   end
-  Threads.@threads @inbounds for i in 1:4:n_elements
+  @inbounds Threads.@threads for i in 1:4:n_elements
     sk_raw[i] = sk_raw[2i-1]
     s2k_raw[i] = s2k_raw[2i-1]
   end
@@ -581,7 +580,7 @@ function calculate_full_means!(
   n_elements = length(sk_raw)
 
   # Calculate means
-  Threads.@threads @inbounds for i in 1:n_elements
+  @inbounds Threads.@threads for i in 1:n_elements
     sk_real = sk_raw[2i-1]
     sk_imag = sk_raw[2i]
 
@@ -590,13 +589,13 @@ function calculate_full_means!(
   end
 
   # Re-arrange into contiguous memory
-  Threads.@threads @inbounds for i in 2:2:n_elements
+  @inbounds Threads.@threads for i in 2:2:n_elements
     sk_raw[i] = sk_raw[2i-1]
   end
-  Threads.@threads @inbounds for i in 3:4:n_elements
+  @inbounds Threads.@threads for i in 3:4:n_elements
     sk_raw[i] = sk_raw[2i-1]
   end
-  Threads.@threads @inbounds for i in 1:4:n_elements
+  @inbounds Threads.@threads for i in 1:4:n_elements
     sk_raw[i] = sk_raw[2i-1]
   end
 
@@ -689,7 +688,7 @@ function identify_convergence!(
   stable_counters::Array{Int8,N},
   is_stable::Array{Bool,N},
 ) where {N,T<:Real}
-  Threads.@threads @inbounds for i in eachindex(vmr_current)
+  @inbounds Threads.@threads for i in eachindex(vmr_current)
     if !is_smooth[i]
       is_smooth[i], smooth_counters[i] = find_smoothness(
         vmr_current[i],

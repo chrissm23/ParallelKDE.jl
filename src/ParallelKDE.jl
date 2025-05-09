@@ -3,16 +3,16 @@ module ParallelKDE
 include("Devices.jl")
 include("Grids/Grids.jl")
 include("KDEs/KDEs.jl")
-include("StatisticsPropagation/FourierSpace.jl")
 include("StatisticsPropagation/DirectSpace.jl")
-include("DensityEstimations/DensityEstimations.jl")
+include("StatisticsPropagation/FourierSpace.jl")
+include("DensityEstimators/DensityEstimators.jl")
 
 using .Devices
 using .Grids
 using .KDEs
-using .FourierSpace
 using .DirectSpace
-using .DensityEstimations
+using .FourierSpace
+using .DensityEstimators
 
 using StaticArrays,
   StatsBase,
@@ -23,19 +23,40 @@ using Statistics,
   LinearAlgebra
 
 # TODO: Check which other functions or types from the other modules may be useful to export
-export AbstractDensityEstimator,
-  initialize_estimator,
-  DensityEstimator,
+
+# General API exports
+export AbstractDensityEstimation,
+  DensityEstimation,
+  initialize_estimation,
   estimate_density!
 
-abstract type AbstractDensityEstimator end
+# Grids exports
+export initialize_grid,
+  spacings,
+  bounds,
+  low_bounds,
+  high_bounds,
+  get_coordinates,
+  fftgrid,
+  initial_bandwidth
 
-struct DensityEstimator{K<:AbstractKDE,G<:Union{Nothing,AbstractGrid}} <: AbstractDensityEstimator
+# KDE exports
+export initialize_kde,
+  get_nsamples,
+  get_data,
+  bootstrap_indices,
+  get_density,
+  set_density!,
+  set_nan_density!
+
+abstract type AbstractDensityEstimation end
+
+struct DensityEstimation{K<:AbstractKDE,G<:Union{Nothing,AbstractGrid}} <: AbstractDensityEstimation
   kde::K
   grid::G
 end
 
-function initialize_estimator(
+function initialize_estimation(
   data;
   device=:cpu,
   grid::Union{Bool,G}=false,
@@ -43,7 +64,7 @@ function initialize_estimator(
   dims=nothing,
   grid_bounds=nothing,
   grid_padding=nothing,
-)::DensityEstimator where {G<:AbstractGrid}
+)::DensityEstimation where {G<:AbstractGrid}
   if isa(data, AbstractMatrix)
     n_dims = size(data, 1)
   elseif isa(data, AbstractVector)
@@ -53,8 +74,14 @@ function initialize_estimator(
     throw(ArgumentError("Data must be a matrix or vector."))
   end
 
+  fallback_option = :cpu
   if !haskey(Devices.AVAILABLE_DEVICES, device)
     throw(ArgumentError("Invalid device: $device"))
+  elseif device == :cuda
+    if !CUDA.functional()
+      @warn "No functional CUDA detected. Falling back to ':cpu'"
+      device = fallback_option
+    end
   end
   device = Devices.AVAILABLE_DEVICES[device]
 
@@ -84,25 +111,25 @@ function initialize_estimator(
 
   kde = initialize_kde(device, data, dims)
 
-  return DensityEstimator(kde, grid)
+  return DensityEstimation(kde, grid)
 
 end
 
-has_grid(density_estimator::DensityEstimator)::Bool =
-  density_estimator.grid !== nothing
+has_grid(density_estimation::DensityEstimation)::Bool =
+  density_estimation.grid !== nothing
 
 function estimate_density!(
-  density_estimator::DensityEstimator,
+  density_estimation::DensityEstimation,
   estimation::Symbol;
   kwargs...
 )::Nothing
-  set_nan_density!(density_estimator.kde)
+  set_nan_density!(density_estimation.kde)
 
-  if density_estimator.grid !== nothing
-    grid = density_estimator.grid
-    estimate!(estimation, density_estimator.kde; grid, kwargs...)
+  if density_estimation.grid !== nothing
+    grid = density_estimation.grid
+    estimate!(estimation, density_estimation.kde; grid, kwargs...)
   else
-    estimate!(estimation, density_estimator.kde; kwargs...)
+    estimate!(estimation, density_estimation.kde; kwargs...)
   end
 
   return nothing

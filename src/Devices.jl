@@ -9,6 +9,7 @@ export
   IsCUDA,
   DeviceNotSpecified,
   AVAILABLE_DEVICES,
+  obtain_device,
   get_available_memory
 
 abstract type AbstractDevice end
@@ -23,6 +24,14 @@ const AVAILABLE_DEVICES = Dict{Symbol,AbstractDevice}(
 )
 
 Device(::Any) = DeviceNotSpecified()
+
+function obtain_device(device::Symbol)
+  if !haskey(AVAILABLE_DEVICES, device)
+    throw(ArgumentError("Invalid device: $device"))
+  end
+
+  return AVAILABLE_DEVICES[device]
+end
 
 function get_available_memory(::IsCPU)
   return Sys.free_memory() / 1024^2

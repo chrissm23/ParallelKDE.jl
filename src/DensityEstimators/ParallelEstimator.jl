@@ -6,7 +6,7 @@ struct KernelMeans{N,T<:Real,M} <: AbstractKernelMeans{N,T,M}
   statistic::Array{Complex{T},M}
   bootstrapped::Bool
 
-  function KernelMeans(statistic::Array{Complex{T},M}, bootstrapped::Bool)
+  function KernelMeans(statistic::Array{Complex{T},M}, bootstrapped::Bool) where {T<:Real,M}
     if bootstrapped
       return new{M - 1,T,M}(statistic, bootstrapped)
     else
@@ -18,7 +18,7 @@ struct CuKernelMeans{N,T<:Real,M} <: AbstractKernelMeans{N,T,M}
   statistic::CuArray{Complex{T},M}
   bootstrapped::Bool
 
-  function CuKernelMeans(statistic::CuArray{Complex{T},M}, bootstrapped::Bool)
+  function CuKernelMeans(statistic::CuArray{Complex{T},M}, bootstrapped::Bool) where {T<:Real,M}
     if bootstrapped
       return new{M - 1,T,M}(statistic, bootstrapped)
     else
@@ -30,7 +30,7 @@ struct KernelVars{N,T<:Real,M} <: AbstractKernelVars{N,T,M}
   statistic::Array{Complex{T},M}
   bootstrapped::Bool
 
-  function KernelVars(statistic::Array{Complex{T},M}, bootstrapped::Bool)
+  function KernelVars(statistic::Array{Complex{T},M}, bootstrapped::Bool) where {T<:Real,M}
     if bootstrapped
       return new{M - 1,T,M}(statistic, bootstrapped)
     else
@@ -42,7 +42,7 @@ struct CuKernelVars{N,T<:Real,M} <: AbstractKernelVars{N,T,M}
   statistic::CuArray{Complex{T},M}
   bootstrapped::Bool
 
-  function CuKernelVars(statistic::CuArray{Complex{T},M}, bootstrapped::Bool)
+  function CuKernelVars(statistic::CuArray{Complex{T},M}, bootstrapped::Bool) where {T<:Real,M}
     if bootstrapped
       return new{M - 1,T,M}(statistic, bootstrapped)
     else
@@ -66,7 +66,7 @@ end
 
 function initialize_kernels(
   ::IsCPU,
-  kde::AbstractKDE{N,T,S,M},
+  kde::AbstractKDE{N,T,S},
   grid::AbstractGrid{N,P,M};
   n_bootstraps::Integer=0,
   include_var::Bool=false,
@@ -117,7 +117,7 @@ function initialize_kernels(
 end
 function initialize_kernels(
   ::IsCUDA,
-  kde::AbstractKDE{N,T,S,M},
+  kde::AbstractKDE{N,T,S},
   grid::AbstractGrid{N,P,M};
   n_bootstraps::Integer=0,
   include_var::Bool=false,
@@ -235,7 +235,7 @@ mutable struct KernelPropagation{N,T<:Real,M} <: AbstractKernelPropagation{N,T,M
   function KernelPropagation(
     kernel_means::KernelMeans{N,T,M},
     kernel_vars::KernelVars{N,T,M},
-  )
+  ) where {N,T<:Real,M}
     if !(is_bootstrapped(kernel_means) && is_bootstrapped(kernel_vars))
       throw(ArgumentError("Both kernel means and kernel vars must be bootstrapped"))
     end
@@ -260,9 +260,9 @@ mutable struct CuKernelPropagation{N,T<:Real,M} <: AbstractKernelPropagation{N,T
   calcualted_means::Bool
 
   function CuKernelPropagation(
-    kernel_means::CuKernelMeans{T,M},
-    kernel_vars::CuKernelVars{T,M},
-  )
+    kernel_means::CuKernelMeans{N,T,M},
+    kernel_vars::CuKernelVars{N,T,M},
+  ) where {N,T<:Real,M}
     if !(is_bootstrapped(kernel_means) && is_bootstrapped(kernel_vars))
       throw(ArgumentError("Both kernel means and kernel vars must be bootstrapped"))
     end
@@ -516,8 +516,8 @@ abstract type AbstractDensityState{T,N} end
 end
 function DensityState(
   dims::NTuple{N,Int},
-  T::Type{<:Real};
-  dt::Float64
+  T::Type{<:Real},
+  dt::Float64,
 ) where {N}
   DensityState{T,N}(;
     dt=dt,
@@ -567,8 +567,8 @@ end
 end
 function CuDensityState(
   dims::NTuple{N,Int},
-  T::Type{<:Real};
-  dt::Float32
+  T::Type{<:Real},
+  dt::Float32,
 ) where {N}
   CuDensityState{T,N}(;
     dt=dt,
@@ -599,7 +599,7 @@ end
 
 function update_state!(
   density_state::AbstractDensityState{T,N},
-  kde::AbstractKDE{N,T,S,M},
+  kde::AbstractKDE{N,T,S},
   kernel_propagation::AbstractKernelPropagation{N,T,M};
   method::Symbol=CPU_SERIAL,
 ) where {N,T<:Real,S<:Real,M}
@@ -631,9 +631,9 @@ function update_state!(
 
 end
 
-abstract type AbstractParallelEstimation{N,T,M} <: AbstractEstimation end
+abstract type AbstractParallelEstimator{N,T,M} <: AbstractEstimator end
 
-struct ParallelEstimation{N,T,M} <: AbstractParallelEstimation
+struct ParallelEstimator{N,T<:Real,M} <: AbstractParallelEstimator{N,T,M}
   means_bootstraps::KernelMeans{N,T,M}
   vars_bootstraps::KernelVars{N,T,M}
   means::KernelMeans{N,T,N}
@@ -645,7 +645,7 @@ struct ParallelEstimation{N,T,M} <: AbstractParallelEstimation
   density_state::DensityState
 end
 
-struct CuParallelEstimation{N,T,M} <: AbstractParallelEstimation
+struct CuParallelEstimator{N,T<:Real,M} <: AbstractParallelEstimator{N,T,M}
   means_bootstraps::CuKernelMeans{N,T,M}
   vars_bootstraps::CuKernelVars{N,T,M}
   means::CuKernelMeans{N,T,N}
@@ -657,16 +657,16 @@ struct CuParallelEstimation{N,T,M} <: AbstractParallelEstimation
   density_state::CuDensityState
 end
 
-add_estimation!(:parallelEstimation, ParallelEstimation)
+add_estimator!(:parallelEstimator, ParallelEstimator)
 
-Device(::ParallelEstimation) = IsCPU()
-Device(::CuParallelEstimation) = IsCUDA()
+Device(::ParallelEstimator) = IsCPU()
+Device(::CuParallelEstimator) = IsCUDA()
 
-function initialize_estimation(
-  ::Type{<:AbstractParallelEstimation},
+function initialize_estimator(
+  ::Type{<:AbstractParallelEstimator},
   kde::AbstractKDE;
   kwargs...
-)::AbstractParallelEstimation
+)::AbstractParallelEstimator
   device = Device(kde)
 
   if !haskey(kwargs, :grid)
@@ -691,7 +691,7 @@ function initialize_estimation(
     device, kde, grid; n_bootstraps=0, include_var=false, method=method
   )
 
-  return initialize_estimation_propagation(
+  return initialize_estimator_propagation(
     device,
     kde,
     means_bootstraps,
@@ -704,12 +704,12 @@ function initialize_estimation(
 
 end
 
-function initialize_estimation_propagation(device::Device, args...)::AbstractKernelPropagation
+function initialize_estimator_propagation(device::AbstractDevice, args...)::AbstractKernelPropagation
   throw(ArgumentError("Propagation not implemented for device: $(typeof(device))"))
 end
-function initialize_estimation_propagation(
+function initialize_estimator_propagation(
   ::IsCPU,
-  kde::KDE{N,T,S,M},
+  kde::KDE{N,T,S},
   means_bootstraps::KernelMeans{N,T,M},
   vars_bootstraps::KernelVars{N,T,M},
   means::KernelMeans{N,T,N},
@@ -725,7 +725,7 @@ function initialize_estimation_propagation(
 
   density_state = DensityState(size(grid), T; dt=norm(dt))
 
-  return ParallelEstimation(
+  return ParallelEstimator(
     means_bootstraps,
     vars_bootstraps,
     means,
@@ -737,9 +737,9 @@ function initialize_estimation_propagation(
     density_state,
   )
 end
-function initialize_estimation_propagation(
+function initialize_estimator_propagation(
   ::IsCUDA,
-  kde::CuKDE{N,T,S,M},
+  kde::CuKDE{N,T,S},
   means_bootstraps::CuKernelMeans{N,T,M},
   vars_bootstraps::CuKernelVars{N,T,M},
   means::CuKernelMeans{N,T,M},
@@ -755,7 +755,7 @@ function initialize_estimation_propagation(
 
   density_state = CuDensityState(size(grid), typeof(kde).parameters[2]; dt=norm(dt))
 
-  return CuParallelEstimation(
+  return CuParallelEstimator(
     means_bootstraps,
     vars_bootstraps,
     means,
@@ -798,7 +798,7 @@ function get_time(
     return times, dt
   else
 
-    return get_time(::IsCPU, time_final, n_steps=50)
+    return get_time(IsCPU(), time_final, n_steps=50)
   end
 
 end
@@ -832,66 +832,66 @@ function get_time(
     return times, dt
   else
 
-    return get_time(::IsCUDA, time_final, n_steps=50)
+    return get_time(IsCUDA(), time_final, n_steps=50)
   end
 
 end
 
 function estimate!(
-  estimation::AbstractParallelEstimation,
-  kde::AbstractKDE{N,T,S,M};
+  estimator::AbstractParallelEstimator,
+  kde::AbstractKDE{N,T,S};
   kwargs...
-)::Nothing where {N,T,S,M}
-  check_memory(estimation)
+)::Nothing where {N,T,S}
+  check_memory(estimator)
 
   device = Device(kde)
   method = get(kwargs, :method, CPU_SERIAL)
   n_samples = get_nsamples(kde)
 
-  time_initial = initial_bandwidth(estimation.grid_direct)
+  time_initial = initial_bandwidth(estimator.grid_direct)
 
-  for time in estimation.times
+  for time in estimator.times
     propagate_bootstraps!(
-      estimation.kernel_propagation,
-      estimation.means_bootstraps,
-      estimation.vars_bootstraps,
-      estimation.grid_fourier;
+      estimator.kernel_propagation,
+      estimator.means_bootstraps,
+      estimator.vars_bootstraps,
+      estimator.grid_fourier;
       time,
       time_initial,
       method
     )
 
-    ifft_bootstraps!(estimation.kernel_propagation; method)
+    ifft_bootstraps!(estimator.kernel_propagation; method)
 
     calculate_vmr!(
-      estimation.kernel_propagation,
+      estimator.kernel_propagation,
       time,
-      estimation.grid_direct,
+      estimator.grid_direct,
       n_samples;
       method
     )
 
     propagate_means!(
-      estimation.kernel_propagation,
-      estimation.means,
+      estimator.kernel_propagation,
+      estimator.means,
       time,
-      estimation.grid_fourier;
+      estimator.grid_fourier;
       method
     )
 
-    ifft_means!(estimation.kernel_propagation; method)
+    ifft_means!(estimator.kernel_propagation; method)
 
     calculate_means!(
-      estimation.kernel_propagation,
+      estimator.kernel_propagation,
       n_samples;
       method
     )
 
     # Use DensityState to identify stopping time
     update_state!(
-      estimation.density_state,
+      estimator.density_state,
       kde,
-      estimation.kernel_propagation;
+      estimator.kernel_propagation;
       method
     )
   end
@@ -899,16 +899,16 @@ function estimate!(
   return nothing
 end
 
-function get_necessary_memory(estimation::AbstractParallelEstimation)::Float64
-  bootstraps_memory = sizeof(estimation.means_boostraps.statistic) * 4
-  means_memory = sizeof(estimation.means.statistic) * 3
+function get_necessary_memory(estimator::AbstractParallelEstimator)::Float64
+  bootstraps_memory = sizeof(estimator.means_boostraps.statistic) * 4
+  means_memory = sizeof(estimator.means.statistic) * 3
 
   return 1.25(bootstraps_memory + means_memory) / 1024^2
 end
 
-function check_memory(estimation::AbstractParallelEstimation)::Nothing
-  available_memory = get_available_memory(Device(estimation))
-  required_memory = get_necessary_memory(estimation)
+function check_memory(estimator::AbstractParallelEstimator)::Nothing
+  available_memory = get_available_memory(Device(estimator))
+  required_memory = get_necessary_memory(estimator)
 
   if available_memory < required_memory
     throw(
