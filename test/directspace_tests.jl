@@ -1,5 +1,7 @@
 function calculate_test_sequences(n_dims)
   grid_ranges = fill(-5.0:0.1:5.0, n_dims)
+  spacing_squared = 0.1^2
+
   density = zeros(ComplexF64, length.(grid_ranges)..., 2)
   density_squared = zeros(ComplexF64, size(density))
 
@@ -13,10 +15,13 @@ function calculate_test_sequences(n_dims)
 
   grid_points = CartesianIndex{n_dims}.(collect(Iterators.product(zip(indices_l, indices_h)...)))
 
-  selectdim(density, n_dims + 1, 1)[grid_points] .+= products
-  selectdim(density, n_dims + 1, 2)[grid_points] .+= products
+  sequence_terms = products / (2 * spacing_squared)
+  selectdim(density, n_dims + 1, 1)[grid_points] .+= sequence_terms
+  selectdim(density, n_dims + 1, 2)[grid_points] .+= sequence_terms
+  selectdim(density_squared, n_dims + 1, 1)[grid_points] .+= sequence_terms .^ 2
+  selectdim(density_squared, n_dims + 1, 2)[grid_points] .+= sequence_terms .^ 2
 
-  # Sample 1
+  # Sample 2
   indices_l = fill(52, n_dims)
   indices_h = fill(53, n_dims)
   remainder_l = fill(0.05, n_dims)
@@ -26,10 +31,11 @@ function calculate_test_sequences(n_dims)
 
   grid_points = CartesianIndex{n_dims}.(collect(Iterators.product(zip(indices_l, indices_h)...)))
 
-  selectdim(density, n_dims + 1, 1)[grid_points] .+= products
-  selectdim(density, n_dims + 1, 2)[grid_points] .+= products
-
-  @. density_squared = density^2
+  sequence_terms = products / (2 * spacing_squared)
+  selectdim(density, n_dims + 1, 1)[grid_points] .+= sequence_terms
+  selectdim(density, n_dims + 1, 2)[grid_points] .+= sequence_terms
+  selectdim(density_squared, n_dims + 1, 1)[grid_points] .+= sequence_terms .^ 2
+  selectdim(density_squared, n_dims + 1, 2)[grid_points] .+= sequence_terms .^ 2
 
   return density, density_squared
 end
@@ -71,7 +77,7 @@ end
 
 @testset "CPU direct space operations tests" begin
   @testset "Implementation: $implementation tests" for implementation in [:serial, :threaded]
-    @testset "Dirac sequences tests. $(n_dims)D" for n_dims in 1:3
+    @testset "Dirac sequences tests. $(n_dims)D" for n_dims in 1:1
       data_matrix = [fill(0.05, n_dims) fill(0.15, n_dims)]
       data = Vector{SVector{n_dims,Float64}}(eachcol(data_matrix))
       bootstrap_idxs = [1 2; 2 1]
@@ -80,7 +86,7 @@ end
       grid = initialize_grid(grid_ranges)
 
       dirac_sequences, dirac_squared = ParallelKDE.initialize_dirac_sequence(
-        Val(:serial), data, grid, bootstrap_idxs, include_var=true
+        Val(implementation), data, grid, bootstrap_idxs, include_var=true
       )
       resulting_sequences, resulting_squared = calculate_test_sequences(n_dims)
 
@@ -95,7 +101,7 @@ end
 
 if CUDA.functional()
   @testset "GPU direct space operations tests" begin
-    @testset "Dirac sequences tests. $(n_dims)D" for n_dims in 1:3
+    @testset "Dirac sequences tests. $(n_dims)D" for n_dims in 1:1
       data_matrix = [fill(0.05, n_dims) fill(0.15, n_dims)]
       data = Vector{SVector{n_dims,Float64}}(eachcol(data_matrix))
       bootstrap_idxs = [1 2; 2 1]

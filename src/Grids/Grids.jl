@@ -100,8 +100,8 @@ end
 
 struct CuGrid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   coordinates::CuArray{T,M}
-  spacings::CuArray{T,1}
-  bounds::CuArray{T,2}
+  spacings::CuVector{T}
+  bounds::CuMatrix{T}
 end
 function CuGrid(
   ranges::Union{Tuple{Vararg{AbstractVector{T}}},AbstractVector{<:AbstractVector{T}}};

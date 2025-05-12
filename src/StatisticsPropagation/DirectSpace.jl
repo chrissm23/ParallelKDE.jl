@@ -38,6 +38,8 @@ function initialize_dirac_sequence(
   spacing = spacings(grid)
   low_bound = low_bounds(grid)
 
+  check_data(data, grid)
+
   if include_var
     dirac_sequence_squared = zeros(Complex{T}, grid_size..., n_bootstraps)
     dirac_sequence_squared_real = selectdim(
@@ -84,6 +86,8 @@ function initialize_dirac_sequence(
 
   spacing = spacings(grid)
   low_bound = low_bounds(grid)
+
+  check_data(data, grid)
 
   if include_var
     dirac_sequence_squared = zeros(Complex{T}, grid_size..., n_bootstraps)
@@ -207,10 +211,12 @@ function initialize_dirac_sequence(
   n_samples, n_bootstraps = size(bootstrap_idxs)
 
   dirac_sequence = CUDA.zeros(Complex{T}, grid_size..., n_bootstraps)
-  dirac_sequence_real = selectdim(reinterpret(reshape, T, dirac_sequence), 1, 1)
+  dirac_sequence_real = view(reinterpret(reshape, T, dirac_sequence), 1, fill(Colon(), M)...)
 
   spacing = spacings(grid)
   low_bound = low_bounds(grid)
+
+  check_data(data, grid)
 
   n_modified_gridpoints = n_samples * 2^N * n_bootstraps
 
@@ -235,8 +241,8 @@ function initialize_dirac_sequence(
   if include_var
     CUDA.@sync blocking = true begin
       kernel(
-        dirac_sequence,
-        dirac_sequence_squared,
+        dirac_sequence_real,
+        dirac_sequence_squared_real,
         data,
         bootstrap_idxs,
         spacing,
@@ -250,7 +256,7 @@ function initialize_dirac_sequence(
   else
     CUDA.@sync blocking = true begin
       kernel(
-        dirac_sequence,
+        dirac_sequence_real,
         data,
         bootstrap_idxs,
         spacing,
@@ -265,12 +271,12 @@ function initialize_dirac_sequence(
 end
 
 function generate_dirac_cuda!(
-  dirac_series::CuDeviceArray{T,M},
-  dirac_series_squared::CuDeviceArray{T,M},
-  data::CuDeviceArray{S,2},
-  bootstrap_idxs::CuDeviceArray{Int32,2},
-  spacing::CuDeviceArray{S,1},
-  low_bound::CuDeviceArray{S,1}
+  dirac_series::Union{CuDeviceArray{T,M},SubArray{T,M,<:CuDeviceArray}},
+  dirac_series_squared::Union{CuDeviceArray{T,M},SubArray{T,M,<:CuDeviceArray}},
+  data::CuDeviceMatrix{S},
+  bootstrap_idxs::CuDeviceMatrix{Int32},
+  spacing::CuDeviceVector{S},
+  low_bound::CuDeviceVector{S}
 ) where {M,T<:Real,S<:Real}
   spacing_squared = prod(spacing)^2i32
 
@@ -295,7 +301,8 @@ function generate_dirac_cuda!(
   boot_idx = bootstrap_idxs[idx_sample, idx_bootstrap]
   grid_idxs = ntuple(
     i -> let
-      index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i])
+      index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i]) + 1i32
+      return mask[i] ? index_l : index_l + 1i32
     end,
     n_dims
   )
@@ -325,11 +332,11 @@ function generate_dirac_cuda!(
   return
 end
 function generate_dirac_cuda!(
-  dirac_series::CuDeviceArray{T,M},
-  data::CuDeviceArray{S,2},
-  bootstrap_idxs::CuDeviceArray{Int32,2},
-  spacing::CuDeviceArray{T,1},
-  low_bound::CuDeviceArray{T,1}
+  dirac_series::Union{CuDeviceArray{T,M},SubArray{T,M,<:CuDeviceArray}},
+  data::CuDeviceMatrix{S},
+  bootstrap_idxs::CuDeviceMatrix{Int32},
+  spacing::CuDeviceVector{T},
+  low_bound::CuDeviceVector{T}
 ) where {M,T<:Real,S<:Real}
   spacing_squared = prod(spacing)^2i32
 
@@ -382,6 +389,41 @@ function generate_dirac_cuda!(
   @inbounds CUDA.@atomic dirac_series[dirac_idx...] += dirac_series_term
 
   return
+end
+
+function check_data(
+  data::AbstractVector{<:AbstractVector{S}}, grid::Grid{N,S,M}
+) where {N,S<:Real,M}
+  @assert length(data[1]) == N "Dimensions of data and grid don't match."
+
+  lows = low_bounds(grid)
+  highs = high_bounds(grid)
+
+  for point in data
+    @inbounds @simd for j in 1:N
+      if (point[j] >= highs[j]) | (point[j] <= lows[j])
+        throw(
+          ArgumentError("Data points lie beyond grid. Remove them or increase grid boundaries.")
+        )
+      end
+    end
+  end
+
+  return nothing
+end
+function check_data(data::CuMatrix{S}, grid::CuGrid{N,S,M}) where {N,S<:Real,M}
+  @assert size(data, 1) == N "Dimensions of data and grid don't match."
+
+  lows = low_bounds(grid)
+  highs = high_bounds(grid)
+
+  if any((lows .>= data) .| (highs .<= data))
+    throw(
+      ArgumentError("Data points lie beyond grid. Remove them or increase grid boundaries.")
+    )
+  end
+
+  return nothing
 end
 
 function calculate_scaled_vmr!(
