@@ -14,32 +14,79 @@ export fourier_statistics!,
 
 function fourier_statistics!(
   ::Val{:serial},
+  sk::AbstractArray{Complex{T},M},
+  s2k::AbstractArray{Complex{T},M},
   plan::FFTW.FFTWPlan,
-  stat::AbstractArray{Complex{T},M},
 ) where {T<:Real,M}
-  n_bootstraps = size(stat)[end]
+  n_bootstraps = size(sk)[end]
 
   for i in 1:n_bootstraps
-    plan * selectdim(stat, ndims(stat), i)
+    plan * selectdim(sk, ndims(sk), i)
+    plan * selectdim(s2k, ndims(sk), i)
   end
+
+  return nothing
+end
+function fourier_statistics!(
+  ::Val{:serial},
+  sk::AbstractArray{Complex{T},M},
+  plan::FFTW.FFTWPlan,
+) where {T<:Real,M}
+  n_bootstraps = size(sk)[end]
+
+  for i in 1:n_bootstraps
+    plan * selectdim(sk, ndims(sk), i)
+  end
+
+  return nothing
 end
 function fourier_statistics!(
   ::Val{:threaded},
+  sk::AbstractArray{Complex{T},M},
+  s2k::AbstractArray{Complex{T},M},
   plan::FFTW.FFTWPlan,
-  stat::AbstractArray{Complex{T},M},
 ) where {T<:Real,M}
-  n_bootstraps = size(stat)[end]
+  n_bootstraps = size(sk)[end]
 
   Threads.@threads for i in 1:n_bootstraps
-    plan * selectdim(stat, ndims(stat), i)
+    plan * selectdim(sk, ndims(sk), i)
+    plan * selectdim(s2k, ndims(s2k), i)
   end
+
+  return nothing
+end
+function fourier_statistics!(
+  ::Val{:threaded},
+  sk::AbstractArray{Complex{T},M},
+  plan::FFTW.FFTWPlan,
+) where {T<:Real,M}
+  n_bootstraps = size(sk)[end]
+
+  Threads.@threads for i in 1:n_bootstraps
+    plan * selectdim(sk, ndims(sk), i)
+  end
+
+  return nothing
 end
 function fourier_statistics!(
   ::Val{:cuda},
-  plan::AbstractFFTs.ScaledPlan{Complex{T}},
-  stat::AnyCuArray{Complex{T},M},
+  sk::AnyCuArray{Complex{T},M},
+  s2k::AnyCuArray{Complex{T},M},
+  plan::CUFFT.CuFFTPlan{Complex{T}},
 ) where {T<:Real,M}
-  plan * stat
+  plan * sk
+  plan * s2k
+
+  return nothing
+end
+function fourier_statistics!(
+  ::Val{:cuda},
+  sk::AnyCuArray{Complex{T},M},
+  plan::CUFFT.CuFFTPlan{Complex{T}},
+) where {T<:Real,M}
+  plan * sk
+
+  return nothing
 end
 
 function propagate_statistics!(
@@ -52,9 +99,7 @@ function propagate_statistics!(
   time_intial::SVector{N,P},
   grid_array::AbstractArray{S,M},
 ) where {N,T<:Real,S<:Real,M,P<:Real}
-  if N < 1
-    throw(ArgumentError("The dimension of the input array must be at least 1."))
-  end
+  @assert M == N + 1
 
   n_bootstraps = size(means_0)[end]
 
@@ -165,15 +210,17 @@ function propagate_time_cpu!(
   sqrt_t0 = sqrt(det_t0)
   sqrt_t0t = sqrt(det_t0 + det_t)
 
+  cartesian_idxs = CartesianIndices(means_t)
   @inbounds @simd for idx in eachindex(means_t)
     propagator = 0.0
+    grid_point = view(grid_array, :, cartesian_idxs[idx])
     @inbounds @simd for i in 1:N
-      propagator += (grid_array[i, idx] * time[i])^2
+      propagator += (grid_point[i] * time[i])^2
     end
     propagator = exp(-0.5 * propagator)
 
     @inbounds means_t[idx] = means_0[idx] * propagator
-    @inbounds variances_t[idx] = variances_0[idx] * propagator * sqrt_t0 / sqrt_t0t
+    @inbounds variances_t[idx] = variances_0[idx] * sqrt(propagator) * sqrt_t0 / sqrt_t0t
   end
 
   return nothing
@@ -184,10 +231,12 @@ function propagate_time_cpu!(
   time::SVector{N,P},
   grid_array::AbstractArray{S,M},
 ) where {T<:Real,N,S<:Real,M,P<:Real}
+  cartesian_idxs = CartesianIndices(means_t)
   @inbounds @simd for idx in eachindex(means_t)
     propagator = 0.0
+    grid_point = view(grid_array, :, cartesian_idxs[idx])
     @inbounds @simd for i in 1:N
-      propagator += (grid_array[i, idx] * time[i])^2
+      propagator += (grid_point[i] * time[i])^2
     end
 
     propagator = exp(-0.5 * propagator)

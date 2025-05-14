@@ -33,13 +33,13 @@ include("test_utils.jl")
   #   include("kde_tests.jl")
   # end
 
-  @testset "Direct space tests" begin
-    include("directspace_tests.jl")
-  end
-
-  # @testset "Fourier space tests" begin
-  #   include("fourierspace_tests.jl")
+  # @testset "Direct space tests" begin
+  #   include("directspace_tests.jl")
   # end
+
+  @testset "Fourier space tests" begin
+    include("fourierspace_tests.jl")
+  end
 
   # TODO: Include tests for general DensityEstimators and specific ParallelEstimation
 

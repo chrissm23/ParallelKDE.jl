@@ -516,17 +516,19 @@ function calculate_scaled_vmr!(
   end
 
   # Re-arrange into ucontiguous memory
-  @inbounds Threads.@threads for i in 2:2:n_elements
-    sk_raw[i] = sk_raw[2i-1]
-    s2k_raw[i] = s2k_raw[2i-1]
-  end
-  @inbounds Threads.@threads for i in 3:4:n_elements
-    sk_raw[i] = sk_raw[2i-1]
-    s2k_raw[i] = s2k_raw[2i-1]
-  end
-  @inbounds Threads.@threads for i in 1:4:n_elements
-    sk_raw[i] = sk_raw[2i-1]
-    s2k_raw[i] = s2k_raw[2i-1]
+  total_written = 0
+  wave = 0
+  while total_written < (n_elements - 1)
+    step = 2^(wave + 1)
+    start = 2^wave + 1
+
+    @inbounds Threads.@threads for i in start:step:n_elements
+      sk_raw[i] = sk_raw[2i-1]
+      s2k_raw[i] = s2k_raw[2i-1]
+    end
+
+    total_written += length(start:step:n_elements)
+    wave += 1
   end
 
   # Transpose the array
@@ -544,7 +546,7 @@ function calculate_scaled_vmr!(
   end
 
   # Calculate the variance of the vmrs
-  scaling_factor = prod(time .^ 2 + time_initial .^ 2)(3 / 2) * n_samples^4
+  scaling_factor = prod(time .^ 2 + time_initial .^ 2)^(3 / 2) * n_samples^4
 
   vmr_var = reshape(view(s2k_raw, 1:n_points), grid_dims)
 
@@ -599,7 +601,7 @@ function calculate_full_means!(
   n_samples::F,
 ) where {N,T<:Real,F<:Integer}
   sk_raw = vec(reinterpret(T, sk))
-  n_elements = length(sk_raw)
+  n_elements = length(sk)
 
   @inbounds @simd for i in 1:n_elements
     sk_real = sk_raw[2i-1]
@@ -619,7 +621,7 @@ function calculate_full_means!(
   grid_dims = size(sk)
 
   sk_raw = vec(reinterpret(T, sk))
-  n_elements = length(sk_raw)
+  n_elements = length(sk)
 
   # Calculate means
   @inbounds Threads.@threads for i in 1:n_elements
@@ -630,15 +632,19 @@ function calculate_full_means!(
     sk_raw[2i-1] = sk_i
   end
 
-  # Re-arrange into contiguous memory
-  @inbounds Threads.@threads for i in 2:2:n_elements
-    sk_raw[i] = sk_raw[2i-1]
-  end
-  @inbounds Threads.@threads for i in 3:4:n_elements
-    sk_raw[i] = sk_raw[2i-1]
-  end
-  @inbounds Threads.@threads for i in 1:4:n_elements
-    sk_raw[i] = sk_raw[2i-1]
+  # Re-arrange into ucontiguous memory
+  total_written = 0
+  wave = 0
+  while total_written < (n_elements - 1)
+    step = 2^(wave + 1)
+    start = 2^wave + 1
+
+    @inbounds Threads.@threads for i in start:step:n_elements
+      sk_raw[i] = sk_raw[2i-1]
+    end
+
+    total_written += length(start:step:n_elements)
+    wave += 1
   end
 
   return nothing

@@ -1,201 +1,182 @@
-function initialize_kernels(
-  data::Vector{SVector{N,S}},
-  grid::Grid{N,S};
-  bandwidth::Union{Nothing,SMatrix{N,N,Float64}}=nothing
-) where {N,S<:Real}
-  grid_coordinates = SVector{N,S}.(eachslice(get_coordinates(grid), dims=ntuple(i -> i + 1, N)))
-  bandwidth_init = SMatrix{N,N,Float64}(
-    diagm(initial_bandwidth(grid))
-  )
-
-  if bandwidth === nothing
-    bandwidth_final = bandwidth_init
-  else
-    bandwidth_final = @. sqrt((bandwidth^2) + (bandwidth_init^2))
-  end
-
-  density = normal_distribution.(
-    data,
-    reshape(grid_coordinates, 1, size(grid_coordinates)...),
-    Ref(bandwidth_final)
-  )
-
-  return density
-end
-
 function initialize_density(
   data::Vector{SVector{N,S}},
-  grid::Grid{N,S};
-  bandwidth::Union{Nothing,SMatrix{N,N,Float64}}=nothing
-) where {N,S<:Real}
+  grid_array::AbstractArray{S,M},
+  bandwidth::AbstractMatrix{P},
+) where {N,S<:Real,M,P<:Real}
   n_samples = length(data)
 
-  density = initialize_kernels(data, grid; bandwidth) ./ n_samples
-  density_squared = density .^ 2
-  density_sum = sum(density, dims=1)
-  density_sum_squared = sum(density_squared, dims=1)
+  dens = zeros(Float64, size(grid_array)[begin+1:end])
+  dens2 = zeros(Float64, size(grid_array)[begin+1:end])
+  kernel = Array{Float64}(undef, size(grid_array)[begin+1:end])
 
-  return density_sum, density_sum_squared
-end
-
-function calculate_means_variances(
-  data::Vector{SVector{N,S}},
-  grid::Grid{N,S};
-  bandwidth::Union{Nothing,SMatrix{N,N,Float64}}=nothing
-) where {N,S<:Real}
-  n_samples = length(data)
-
-  density = initialize_kernels(data, grid; bandwidth) ./ n_samples
-  means = mean(density, dims=1)
-  variances = var(density, dims=1)
-
-  return means, variances
-end
-
-@testset "Fourier initialization (CPU) tests" for n_dims in 1:1
-  n_samples = 100
-  @testset "dimensions : $n_dims" begin
-    data = generate_samples(n_samples, n_dims)
-    grid_ranges = fill(-5.0:0.05:5.0, n_dims)
-    grid = Grid(grid_ranges)
-
-    density_initialization, density_initialization_squared = initialize_density(data, grid)
-
-    tmp = Array{ComplexF64}(undef, 1, size(grid)...)
-    sk0, s2k0 = initialize_fourier_statistics(density_initialization, density_initialization_squared, tmp)
-    ifft_statistics!(sk0, s2k0, n_samples, tmp=tmp)
-    means = dropdims(sk0, dims=1)
-    variances = dropdims(s2k0, dims=1)
-
-    means_test, variances_test = calculate_means_variances(data, grid)
-    means_test = dropdims(means_test, dims=1)
-    variances_test = dropdims(variances_test, dims=1)
-
-    @test means ≈ means_test atol = 1e-8 rtol = 1e-1
-    @test variances ≈ variances_test atol = 1e-8 rtol = 1e-1
-  end
-end
-
-if CUDA.functional()
-  @testset "Fourier initialization (GPU) tests" for n_dims in 1:1
-    n_samples = 100
-    @testset "dimensions : $n_dims" begin
-      data = generate_samples(n_samples, n_dims)
-      grid_ranges = fill(-5.0:0.05:5.0, n_dims)
-      grid = Grid(grid_ranges)
-
-      density_initialization, density_initialization_squared = initialize_density(data, grid)
-      density_initialization_d = CuArray{Float32}(density_initialization)
-      density_initialization_squared_d = CuArray{Float32}(density_initialization_squared)
-
-      tmp = CuArray{ComplexF32}(undef, 1, size(grid)...)
-      sk0_d, s2k0_d = initialize_fourier_statistics(
-        density_initialization_d, density_initialization_squared_d, tmp
-      )
-      ifft_statistics!(sk0_d, s2k0_d, n_samples, tmp=tmp)
-      means = dropdims(Array{Float32}(sk0_d), dims=1)
-      variances = dropdims(Array{Float32}(s2k0_d), dims=1)
-
-      means_test, variances_test = calculate_means_variances(data, grid)
-      means_test = dropdims(Array{Float32}(means_test), dims=1)
-      variances_test = dropdims(Array{Float32}(variances_test), dims=1)
-
-      @test means ≈ means_test atol = 1.0f-8 rtol = 1.0f-1
-      @test variances ≈ variances_test atol = 1.0f-8 rtol = 1.0f-1
-    end
-  end
-end
-
-@testset "Fourier propagation (CPU) tests" for n_dims in 1:1
-  n_samples = 100
-  @testset "dimensions : $n_dims" begin
-    data = generate_samples(n_samples, n_dims)
-    time = @SVector fill(0.1, n_dims)
-
-    grid_ranges = fill(-5.0:0.01:5.0, n_dims)
-    grid = Grid(grid_ranges)
-    time_initial = initial_bandwidth(grid)
-    fourier_grid = fftgrid(grid)
-
-    density_initialization, density_initialization_squared = initialize_density(data, grid)
-
-    tmp = Array{ComplexF64}(undef, 1, size(grid)...)
-    sk0, s2k0 = initialize_fourier_statistics(density_initialization, density_initialization_squared, tmp)
-    means_t = similar(sk0)
-    variances_t = similar(s2k0)
-
-    propagate_statistics!(
-      Val(:serial),
-      means_t,
-      variances_t,
-      sk0,
-      s2k0,
-      get_coordinates(fourier_grid),
-      time,
-      time_initial
+  for sample in data
+    kernel .= normal_distribution.(
+      eachslice(grid_array, dims=Tuple(2:M)),
+      Ref(sample),
+      Ref(bandwidth)
     )
-    ifft_statistics!(means_t, variances_t, n_samples, tmp=tmp)
-    means = dropdims(means_t, dims=1)
-    variances = dropdims(variances_t, dims=1)
+    kernel ./= n_samples
 
-    time_bandwidth = SMatrix{n_dims,n_dims,Float64}(
-      diagm(time)
-    )
-    means_test, variances_test = calculate_means_variances(data, grid, bandwidth=time_bandwidth)
-    means_test = dropdims(means_test, dims=1)
-    variances_test = dropdims(variances_test, dims=1)
-
-    @test means ≈ means_test atol = 1e-10 rtol = 1e-1
-    @test variances ≈ variances_test atol = 1e-10 rtol = 5e-1
+    @. dens += kernel
+    @. dens2 += kernel^2
   end
+
+  return dens, dens2
 end
 
-if CUDA.functional()
-  @testset "Fourier propagation (GPU) tests" for n_dims in 1:1
+function calculate_stats(
+  density::Array{T,N},
+  density_squared::Array{T,N},
+  n_samples::Z
+) where {N,T<:Real,Z<:Integer}
+  means = @. density / n_samples
+  vars = @. density_squared / n_samples - means^2
+
+  return means, vars
+end
+
+@testset "CPU Fourier space operations tests. $(n_dims)D" for n_dims in 1:3
+  @testset "Implementation: $implementation tests" for implementation in [:serial]
     n_samples = 100
-    @testset "dimensions : $n_dims" begin
-      data = generate_samples(n_samples, n_dims)
-      time = CUDA.fill(0.1, n_dims)
+    data = generate_samples(n_samples, n_dims)
 
-      grid_ranges = fill(-5.0:0.01:5.0, n_dims)
-      grid = Grid(grid_ranges)
-      time_initial = CuArray{Float32}(initial_bandwidth(grid))
-      fourier_grid = fftgrid(grid)
+    grid_ranges = fill(-5.0:0.1:5.0, n_dims)
+    grid = initialize_grid(grid_ranges)
+    grid_array = get_coordinates(grid)
+    grid_fourier = fftgrid(grid)
+    fourier_array = get_coordinates(grid_fourier)
 
-      density_initialization, density_initialization_squared = initialize_density(data, grid)
-      density_initialization_d = CuArray{Float32}(density_initialization)
-      density_initialization_squared_d = CuArray{Float32}(density_initialization_squared)
+    bw0 = Diagonal(fill(0.2, n_dims))
+    density, density_squared = initialize_density(data, grid_array, bw0)
 
-      tmp = CuArray{ComplexF32}(undef, 1, size(grid)...)
-      sk0_d, s2k0_d = initialize_fourier_statistics(
-        density_initialization_d, density_initialization_squared_d, tmp
-      )
-      means_t_d = similar(sk0_d)
-      variances_t_d = similar(s2k0_d)
+    density_complex0 = Array{ComplexF64}(density)
+    density_squared_complex0 = Array{ComplexF64}(density_squared)
 
-      propagate_statistics!(
-        Val(:cuda),
-        means_t_d,
-        variances_t_d,
-        sk0_d,
-        s2k0_d,
-        CuArray{Float32,n_dims + 1}(get_coordinates(fourier_grid)),
-        time,
-        time_initial
-      )
-      ifft_statistics!(means_t_d, variances_t_d, n_samples, tmp=tmp)
-      means = dropdims(Array{Float32}(means_t_d), dims=1)
-      variances = dropdims(Array{Float32}(variances_t_d), dims=1)
+    fft_plan = plan_fft!(density_complex0)
 
-      time_bandwidth = SMatrix{n_dims,n_dims,Float64}(
-        diagm(Array{Float32}(time))
-      )
-      means_test, variances_test = calculate_means_variances(data, grid, bandwidth=time_bandwidth)
-      means_test = dropdims(Array{Float32}(means_test), dims=1)
-      variances_test = dropdims(Array{Float32}(variances_test), dims=1)
+    ParallelKDE.fourier_statistics!(
+      Val(implementation),
+      reshape(density_complex0, size(density_complex0)..., 1),
+      reshape(density_squared_complex0, size(density_squared_complex0)..., 1),
+      fft_plan,
+    )
 
-      @test means ≈ means_test atol = 1.0f-10 rtol = 1.0f-1
-      @test variances ≈ variances_test atol = 1.0f-10 rtol = 5.0f-1
-    end
+    density_fourier = fft(density)
+    density_squared_fourier = fft(density_squared)
+
+    @test density_fourier ≈ density_complex0
+    @test density_squared_fourier ≈ density_squared_complex0
+
+    bw1 = Diagonal(fill(√(2 * 0.2^2), n_dims))
+    density, density_squared = initialize_density(data, grid_array, bw1)
+
+    density_fourier = fft(density)
+    density_squared_fourier = fft(density_squared)
+
+    density_complex1 = Array{ComplexF64}(density)
+    density_squared_complex1 = Array{ComplexF64}(density_squared)
+
+    ParallelKDE.propagate_statistics!(
+      Val(implementation),
+      reshape(density_complex1, size(density_complex1)..., 1),
+      reshape(density_squared_complex1, size(density_squared_complex1)..., 1),
+      reshape(density_complex0, size(density_complex0)..., 1),
+      reshape(density_squared_complex0, size(density_squared_complex0)..., 1),
+      SVector{n_dims,Float64}(fill(0.2, n_dims)),
+      SVector{n_dims,Float64}(fill(0.2, n_dims)),
+      fourier_array,
+    )
+
+    @test density_fourier ≈ density_complex1
+    @test density_squared_fourier ≈ density_squared_complex1 rtol = 0.1
+
+    ifft_plan = plan_ifft!(density_complex1)
+
+    ParallelKDE.ifourier_statistics!(
+      Val(implementation),
+      reshape(density_complex1, size(density_complex1)..., 1),
+      reshape(density_squared_complex1, size(density_squared_complex1)..., 1),
+      ifft_plan,
+    )
+    density_propagated = abs.(density_complex1)
+    density_squared_propagated = abs.(density_squared_complex1)
+
+    @test density ≈ density_propagated
+    @test density_squared ≈ density_squared_propagated rtol = 0.1
   end
 end
+
+# if CUDA.functional()
+#   @testset "GPU Fourier space operations tests. $(n_dims)D" for n_dims in 1:3
+#     n_samples = 100
+#     data = generate_samples(n_samples, n_dims)
+#
+#     grid_ranges = fill(-5.0:0.1:5.0, n_dims)
+#     grid = initialize_grid(grid_ranges)
+#     grid_array = get_coordinates(grid)
+#     grid_fourier = fftgrid(grid)
+#     fourier_array = get_coordinates(grid_fourier)
+#
+#     bw0 = Diagonal(fill(0.2, n_dims))
+#     density, density_squared = initialize_density(data, grid_array, bw0)
+#
+#     density_complex0 = CuArray{ComplexF64}(density)
+#     density_complex0 = reshape(density_complex0, size(density_complex0)..., 1)
+#     density_squared_complex0 = CuArray{ComplexF64}(density_squared)
+#     density_squared_complex0 = reshape(density_squared_complex0, size(density_squared_complex0)..., 1)
+#
+#     fft_plan = plan_fft!(density_complex0)
+#
+#     ParallelKDE.fourier_statistics!(
+#       Val(:cuda),
+#       density_complex0,
+#       density_squared_complex0,
+#       fft_plan,
+#     )
+#
+#     density_fourier = fft(density)
+#     density_squared_fourier = fft(density_squared)
+#
+#     @test density_fourier ≈ dropdims(Array(density_complex0), dims=n_dims + 1)
+#     @test density_squared_fourier ≈ dropdims(Array(density_squared_complex0), dims=n_dims + 1)
+#
+#     bw1 = Diagonal(fill(√(2 * 0.2^2), n_dims))
+#     density, density_squared = initialize_density(data, grid_array, bw1)
+#
+#     density_fourier = fft(density)
+#     density_squared_fourier = fft(density_squared)
+#
+#     density_complex1 = CuArray{ComplexF64}(density)
+#     density_complex1 = reshape(density_complex1, size(density_complex1)..., 1)
+#     density_squared_complex1 = CuArray{ComplexF64}(density_squared)
+#     density_squared_complex1 = reshape(density_squared_complex1, size(density_squared_complex1)..., 1)
+#
+#     ParallelKDE.propagate_statistics!(
+#       Val(:cuda),
+#       density_complex1,
+#       density_squared_complex1,
+#       density_complex0,
+#       density_squared_complex0,
+#       CUDA.fill(0.2, n_dims),
+#       CUDA.fill(0.2, n_dims),
+#       CuArray{Float32}(fourier_array),
+#     )
+#
+#     @test density_fourier ≈ dropdims(Array(density_complex1), dims=n_dims + 1)
+#     @test density_squared_fourier ≈ dropdims(Array(density_squared_complex1), dims=n_dims + 1)
+#
+#     ifft_plan = plan_ifft!(density_complex1)
+#
+#     ParallelKDE.ifourier_statistics!(
+#       Val(:cuda),
+#       density_complex1,
+#       density_squared_complex1,
+#       ifft_plan,
+#     )
+#     density_propagated = abs.(density_complex1)
+#     density_squared_propagated = abs.(density_squared_complex1)
+#
+#     @test density ≈ dropdims(Array(density_propagated), dims=n_dims + 1)
+#     @test density_squared ≈ dropdims(Array(density_squared_propagated), dims=n_dims + 1)
+#   end
+# end

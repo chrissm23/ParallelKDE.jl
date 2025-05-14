@@ -1,8 +1,8 @@
 function normal_distribution(
-  x::SVector{N,S},
+  x::AbstractVector{S},
   μ::SVector{N,S},
-  bandwidth::SMatrix{N,N,<:Real}
-) where {N,S<:Real}
+  bandwidth::AbstractMatrix{P}
+) where {N,S<:Real,P<:Real}
   normal_distro = MvNormal(μ, bandwidth .^ 2)
 
   return pdf(normal_distro, x)

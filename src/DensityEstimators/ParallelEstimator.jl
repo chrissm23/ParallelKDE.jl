@@ -85,9 +85,10 @@ function initialize_kernels(
   end
 
   plan = plan_fft!(selectdim(means, ndims(means), 1))
-  fourier_statistics!(Val(method), plan, means)
   if include_var
-    fourier_statistics!(Val(method), plan, vars)
+    fourier_statistics!(Val(method), means, vars, plan)
+  else
+    fourier_statistics!(Val(method), means, plan)
   end
 
   if n_bootstraps == 0
@@ -135,9 +136,10 @@ function initialize_kernels(
   end
 
   plan = plan_fft!(means, ntuple(i -> i, N))
-  fourier_statistics!(Val(:cuda), plan, means)
   if include_var
-    fourier_statistics!(Val(:cuda), plan, vars)
+    fourier_statistics!(Val(:cuda), means, vars, plan)
+  else
+    fourier_statistics!(Val(:cuda), means, plan)
   end
 
   if n_bootstraps == 0

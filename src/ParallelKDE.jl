@@ -49,6 +49,9 @@ export initialize_kde,
   set_density!,
   set_nan_density!
 
+# Dirac sequences
+export initialize_dirac_sequence
+
 abstract type AbstractDensityEstimation end
 
 struct DensityEstimation{K<:AbstractKDE,G<:Union{Nothing,AbstractGrid}} <: AbstractDensityEstimation
