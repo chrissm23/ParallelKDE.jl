@@ -28,8 +28,8 @@ struct CuKDE{N,T<:Real,S<:Real} <: AbstractKDE{N,T,S}
   density::CuArray{T,N}
 end
 
-Device(::KDE) = IsCPU()
-Device(::CuKDE) = IsCUDA()
+Devices.Device(::KDE) = IsCPU()
+Devices.Device(::CuKDE) = IsCUDA()
 
 function initialize_kde(
   data::Union{AbstractVector{<:AbstractVector{<:Real}},AbstractMatrix{<:Real}},

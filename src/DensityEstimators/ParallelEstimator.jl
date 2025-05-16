@@ -51,8 +51,8 @@ struct CuKernelVars{N,T<:Real,M} <: AbstractKernelVars{N,T,M}
   end
 end
 
-Device(::KernelMeans) = IsCPU()
-Device(::CuKernelMeans) = IsCUDA()
+Devices.Device(::KernelMeans) = IsCPU()
+Devices.Device(::CuKernelMeans) = IsCUDA()
 
 function is_bootstrapped(
   ::AbstractKernelStatistics{N,T,M}
@@ -72,6 +72,10 @@ function initialize_kernels(
   include_var::Bool=false,
   method::Symbol=CPU_SERIAL,
 ) where {N,T<:Real,S<:Real,M,P<:Real}
+  if n_bootstraps < 0
+    throw(ArgumentError("Number of boostraps must be positive."))
+
+  end
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
   if include_var == false
@@ -284,8 +288,8 @@ mutable struct CuKernelPropagation{N,T<:Real,M} <: AbstractKernelPropagation{N,T
 
 end
 
-Device(::KernelPropagation) = IsCPU()
-Device(::CuKernelPropagation) = IsCUDA()
+Devices.Device(::KernelPropagation) = IsCPU()
+Devices.Device(::CuKernelPropagation) = IsCUDA()
 
 function is_vmr_calculated(kernel_propagation::AbstractKernelPropagation{N,T,M})::Bool where {N,T,M}
   return kernel_propagation.calculated_vmr
@@ -661,8 +665,8 @@ end
 
 add_estimator!(:parallelEstimator, ParallelEstimator)
 
-Device(::ParallelEstimator) = IsCPU()
-Device(::CuParallelEstimator) = IsCUDA()
+Devices.Device(::ParallelEstimator) = IsCPU()
+Devices.Device(::CuParallelEstimator) = IsCUDA()
 
 function initialize_estimator(
   ::Type{<:AbstractParallelEstimator},

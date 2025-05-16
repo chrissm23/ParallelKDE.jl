@@ -160,8 +160,8 @@ function Base.broadcastable(grid::CuGrid{N,T,M}) where {N,T<:Real,M}
   return get_coordinates(grid)
 end
 
-Device(::Grid) = IsCPU()
-Device(::CuGrid) = IsCUDA()
+Devices.Device(::Grid) = IsCPU()
+Devices.Device(::CuGrid) = IsCUDA()
 
 function spacings(grid::AbstractGrid)::AbstractVector
   return grid.spacings
