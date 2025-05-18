@@ -174,13 +174,13 @@ end
 function propagate!(
   means::AbstractArray{Complex{T},M},
   vars::AbstractArray{Complex{T},M},
-  kernel_means::AbstractKernelMeans{N,T,M},
-  kernel_vars::AbstractKernelVars{N,T,M},
+  kernel_means::AbstractKernelMeans{N,T,L},
+  kernel_vars::AbstractKernelVars{N,T,L},
   grid::AbstractGrid{N,P,M},
   time::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real};
   method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,M,P<:Real}
+) where {N,T<:Real,M,P<:Real,L}
   if is_bootstrapped(kernel_means)
     means_bootstrap = kernel_means.statistic
   else
@@ -207,11 +207,11 @@ function propagate!(
 end
 function propagate!(
   means::AbstractArray{Complex{T},M},
-  kernel_means::AbstractKernelMeans{N,T,M},
+  kernel_means::AbstractKernelMeans{N,T,L},
   grid::AbstractGrid{N,P,M},
   time::AbstractVector{<:Real};
   method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,M,P<:Real}
+) where {N,T<:Real,M,P<:Real,L}
   if is_bootstrapped(kernel_means)
     means_initial = kernel_means.statistic
   else
@@ -299,32 +299,34 @@ function is_means_calculated(kernel_propagation::AbstractKernelPropagation{N,T,M
   return kernel_propagation.calculated_means
 end
 
-function get_vmr(kernel_propagation::KernelPropagation{N,T,M})::AbstractArray{T,M} where {N,T,M}
+function get_vmr(kernel_propagation::KernelPropagation{N,T,M})::AbstractArray{T,N} where {N,T,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated"))
   end
+  grid_size = size(kernel_propagation.kernel_vars)[begin:end-1]
+  grid_length = prod(grid_size)
 
   reinterpreted_results = reinterpret(reshape, T, kernel_propagation.kernel_vars)
   vmr_var = reshape(
-    reinterpreted_results[begin:length(kernel_propagation.kernel_vars)],
-    size(kernel_propagation.kernel_vars)
+    reinterpreted_results[begin:grid_length],
+    grid_size
   )
 
   return vmr_var
 end
-function get_vmr(kernel_propagation::CuKernelPropagation{N,T,M})::AbstractArray{T,M} where {N,T,M}
+function get_vmr(kernel_propagation::CuKernelPropagation{N,T,M})::AbstractArray{T,N} where {N,T,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated"))
   end
 
-  vmr_slice = selectdim(kernel_propagation.kernel_vars, M, 1)
+  vmr_slice = view(kernel_propagation.kernel_vars, fill(Colon(), N)..., 1)
   vmr_reinterpreted = reinterpret(reshape, T, vmr_slice)
   vmr_var = selectdim(vmr_reinterpreted, 1, 1)
 
   return vmr_var
 end
 
-function get_means(kernel_propagation::KernelPropagation{N,T,M})::AbstractArray{T,M} where {N,T,M}
+function get_means(kernel_propagation::KernelPropagation{N,T,M})::AbstractArray{T,N} where {N,T,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated"))
   elseif !is_means_calculated(kernel_propagation)
@@ -340,7 +342,7 @@ function get_means(kernel_propagation::KernelPropagation{N,T,M})::AbstractArray{
 
   return reshape(reinterpreted_means, grid_dims)
 end
-function get_means(kernel_propagation::CuKernelPropagation{N,T,M})::AbstractArray{T,M} where {N,T,M}
+function get_means(kernel_propagation::CuKernelPropagation{N,T,M})::AbstractArray{T,N} where {N,T,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated"))
   elseif !is_means_calculated(kernel_propagation)
@@ -357,9 +359,9 @@ function propagate_bootstraps!(
   kernel_propagation::AbstractKernelPropagation{N,T,M},
   kernel_means::AbstractKernelMeans{N,T,M},
   kernel_vars::AbstractKernelVars{N,T,M},
-  grid::AbstractGrid{N,P,M};
+  grid::AbstractGrid{N,P,M},
   time::AbstractVector{S},
-  time_initial::AbstractVector{S},
+  time_initial::AbstractVector{S};
   method::Symbol=CPU_SERIAL,
 ) where {N,T<:Real,M,P<:Real,S<:Real}
   propagate!(
@@ -392,7 +394,7 @@ function propagate_means!(
 
   means_dst = view(kernel_propagation.kernel_means, fill(Colon(), N)..., 1)
   propagate!(
-    means_dst,
+    reshape(means_dst, size(means_dst)..., 1),
     means,
     grid,
     time;
@@ -488,6 +490,9 @@ function calculate_means!(
   n_samples::F;
   method::Symbol=CPU_SERIAL,
 ) where {N,T<:Real,M,F<:Real}
+  if is_means_calculated(kernel_propagation)
+    throw(ArgumentError("Means already calculated. Propagate bootstraps first."))
+  end
   means = view(kernel_propagation.kernel_means, fill(Colon(), N)..., 1)
 
   calculate_full_means!(
