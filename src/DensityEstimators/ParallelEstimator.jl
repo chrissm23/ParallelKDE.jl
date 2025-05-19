@@ -126,16 +126,17 @@ function initialize_kernels(
   grid::AbstractGrid{N,P,M};
   n_bootstraps::Integer=0,
   include_var::Bool=false,
+  method=GPU_CUDA
 ) where {N,T<:Real,S<:Real,M,P<:Real}
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
   if include_var == false
     means = initialize_dirac_sequence(
-      Val(:cuda), kde.data, grid, bootstrap_idxs; T=T
+      Val(method), kde.data, grid, bootstrap_idxs; T=T
     )
   else
     means, vars = initialize_dirac_sequence(
-      Val(:cuda), kde.data, grid, bootstrap_idxs; include_var=true, T=T
+      Val(method), kde.data, grid, bootstrap_idxs; include_var=true, T=T
     )
   end
 
@@ -263,7 +264,7 @@ mutable struct CuKernelPropagation{N,T<:Real,M} <: AbstractKernelPropagation{N,T
   ifft_plan_bootstraps::AbstractFFTs.ScaledPlan{Complex{T}}
   ifft_plan_means::AbstractFFTs.ScaledPlan{Complex{T}}
   calculated_vmr::Bool
-  calcualted_means::Bool
+  calculated_means::Bool
 
   function CuKernelPropagation(
     kernel_means::CuKernelMeans{N,T,M},
@@ -526,33 +527,20 @@ abstract type AbstractDensityState{T,N} end
   f_prev2::Array{T,N}
 end
 function DensityState(
-  dims::NTuple{N,Int},
-  T::Type{<:Real},
+  dims::NTuple{N,Int};
+  T::Type{<:Real}=Float64,
   dt::Float64,
+  kwargs...
 ) where {N}
   DensityState{T,N}(;
     dt=dt,
-    f_prev=fill(T(NaN), dims),
+    f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
     smooth_counters=fill(Int8(0), dims),
     stable_counters=fill(Int8(0), dims),
     is_smooth=fill(false, dims),
     has_decreased=fill(false, dims),
     is_stable=fill(false, dims),
-  )
-end
-function DensityState(
-  dims::NTuple{N,Int},
-  T::Type{<:Real};
-  kwargs...
-) where {N}
-  DensityState{T,N}(;
-    f_prev=fill(T(NaN), dims),
-    f_prev2=fill(T(NaN), dims),
-    smooth_counters=fill(Int8(0), dims),
-    stable_counters=fill(Int8(0), dims),
-    is_smooth=fill(false, dims),
-    has_decreased=fill(false, dims),
     kwargs...
   )
 end
@@ -569,7 +557,7 @@ end
   smooth_counters::CuArray{Int8,N}
   stable_counters::CuArray{Int8,N}
   is_smooth::CuArray{Bool,N}
-  has_decrease::CuArray{Bool,N}
+  has_decreased::CuArray{Bool,N}
   is_stable::CuArray{Bool,N}
 
   # Buffers
@@ -577,9 +565,10 @@ end
   f_prev2::CuArray{T,N}
 end
 function CuDensityState(
-  dims::NTuple{N,Int},
-  T::Type{<:Real},
+  dims::NTuple{N,Int};
+  T::Type{<:Real}=Float32,
   dt::Float32,
+  kwargs...
 ) where {N}
   CuDensityState{T,N}(;
     dt=dt,
@@ -590,20 +579,6 @@ function CuDensityState(
     is_smooth=CUDA.fill(false, dims),
     has_decreased=CUDA.fill(false, dims),
     is_stable=CUDA.fill(false, dims),
-  )
-end
-function CuDensityState(
-  dims::NTuple{N,Int},
-  T::Type{<:Real};
-  kwargs...
-) where {N}
-  CuDensityState{T,N}(;
-    f_prev1=CUDA.fill(T(NaN), dims),
-    f_prev2=CUDA.fill(T(NaN), dims),
-    smooth_counters=CUDA.fill(Int8(0), dims),
-    stable_counters=CUDA.fill(Int8(0), dims),
-    is_smooth=CUDA.fill(false, dims),
-    has_decreased=CUDA.fill(false, dims),
     kwargs...
   )
 end
@@ -651,7 +626,7 @@ struct ParallelEstimator{N,T<:Real,M} <: AbstractParallelEstimator{N,T,M}
   kernel_propagation::KernelPropagation{N,T,M}
   grid_direct::Grid{N,T,M}
   grid_fourier::Grid{N,T,M}
-  times::Vector{SVector{N,<:Real}}
+  times::Vector{<:SVector{N,<:Real}}
   dt::SVector{N,<:Real}
   density_state::DensityState
 end
@@ -693,7 +668,13 @@ function initialize_estimator(
   time_step = get(kwargs, :dt, nothing)
   n_steps = get(kwargs, :n_steps, nothing)
 
-  method = get(kwargs, :method, CPU_SERIAL)
+  if device == IsCPU()
+    method = get(kwargs, :method, CPU_SERIAL)
+  elseif device == IsCUDA()
+    method = get(kwargs, :method, GPU_CUDA)
+  else
+    throw(ArgumentError("Implementation $method unknwon for device $device"))
+  end
 
   means_bootstraps, vars_bootstraps = initialize_kernels(
     device, kde, grid; n_bootstraps=n_bootstraps, include_var=true, method=method
@@ -731,10 +712,10 @@ function initialize_estimator_propagation(
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
-  time_final = silverman_rule(get_data(kde))
+  time_final = 2 .* silverman_rule(get_data(kde))
   times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-  density_state = DensityState(size(grid), T; dt=norm(dt))
+  density_state = DensityState(size(grid); dt=norm(dt), T=T)
 
   return ParallelEstimator(
     means_bootstraps,
@@ -753,7 +734,7 @@ function initialize_estimator_propagation(
   kde::CuKDE{N,T,S},
   means_bootstraps::CuKernelMeans{N,T,M},
   vars_bootstraps::CuKernelVars{N,T,M},
-  means::CuKernelMeans{N,T,M},
+  means::CuKernelMeans{N,T,N},
   grid::CuGrid{N,P,M};
   time_step::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
@@ -764,7 +745,7 @@ function initialize_estimator_propagation(
   time_final = silverman_rule(Array(get_data(kde)))
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
-  density_state = CuDensityState(size(grid), typeof(kde).parameters[2]; dt=norm(dt))
+  density_state = CuDensityState(size(grid); dt=norm(dt), T=typeof(kde).parameters[2])
 
   return CuParallelEstimator(
     means_bootstraps,
@@ -782,23 +763,35 @@ end
 function get_time(
   ::IsCPU,
   time_final::Union{Real,AbstractVector{<:Real}};
+  n_dims::Union{Nothing,Integer}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
   time_step::Union{Nothing,Real,AbstractVector{<:Real}}=nothing,
 )
   if time_final isa Real
-    time_final = SVector{1,Float64}(time_final)
+    if n_dims !== nothing
+      time_final = SVector{n_dims,Float64}(time_final)
+    elseif time_step isa AbstractVector{<:Real}
+      n_dims = length(time_step)
+      time_final = SVector{n_dims,Float64}(time_final)
+    else
+      throw(
+        ArgumentError("For real time_final, n_dims must be provided or time_step must be a vector")
+      )
+    end
+  else
+    n_dims = length(time_final)
   end
 
   if n_steps !== nothing
-    dt = time_final ./ n_steps
+    dt = SVector{n_dims,Float64}(time_final ./ n_steps)
     times = [dt .* i for i in 0:n_steps]
 
     return times, dt
   elseif time_step !== nothing
     if time_step isa Real
-      time_step = SVector{1,Float64}(time_step)
+      time_step = @SVector fill(time_step, n_dims)
     end
-    if any(time_step .< time_final) || any(time_step .<= 0)
+    if any(time_step .> time_final) || any(time_step .<= 0)
       throw(ArgumentError("Invalid time step"))
     end
 
@@ -816,11 +809,23 @@ end
 function get_time(
   ::IsCUDA,
   time_final::Union{Real,AbstractVector{<:Real}};
+  n_dims::Union{Nothing,Integer}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
   time_step::Union{Nothing,Real,AbstractVector{<:Real}}=nothing,
 )
   if time_final isa Real
-    time_final = SVector{1,Float64}(time_final)
+    if n_dims !== nothing
+      time_final = CUDA.fill(Float32(time_final), n_dims)
+    elseif time_step isa AbstractVector{<:Real}
+      n_dims = length(time_step)
+      time_final = CUDA.fill(Float32(time_final), n_dims)
+    else
+      throw(
+        ArgumentError("For real time_final, n_dims must be provided or time_step must be a vector")
+      )
+    end
+  else
+    n_dims = length(time_final)
   end
 
   if n_steps !== nothing
@@ -830,9 +835,9 @@ function get_time(
     return times, dt
   elseif time_step !== nothing
     if time_step isa Real
-      time_step = SVector{1,Float64}(time_step)
+      time_step = CUDA.fill(Float32(time_step), n_dims)
     end
-    if any(time_step .< time_final) || any(time_step .<= 0)
+    if any(time_step .> time_final) || any(time_step .<= 0)
       throw(ArgumentError("Invalid time step"))
     end
 
@@ -866,10 +871,10 @@ function estimate!(
       estimator.kernel_propagation,
       estimator.means_bootstraps,
       estimator.vars_bootstraps,
-      estimator.grid_fourier;
+      estimator.grid_fourier,
       time,
-      time_initial,
-      method
+      time_initial;
+      method,
     )
 
     ifft_bootstraps!(estimator.kernel_propagation; method)

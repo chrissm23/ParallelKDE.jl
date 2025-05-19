@@ -297,8 +297,8 @@ function propagate_statistics!(
   kernel = @cuda maxregs = 32 launch = false propagate_time_cuda!(
     means_t,
     means_0,
-    grid_array,
     time,
+    grid_array,
   )
 
   config = launch_configuration(kernel.fun)
@@ -309,8 +309,8 @@ function propagate_statistics!(
     kernel(
       means_t,
       means_0,
-      grid_array,
-      time;
+      time,
+      grid_array;
       threads,
       blocks
     )
@@ -382,7 +382,7 @@ function propagate_time_cuda!(
   N = M - 1i32
   idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
 
-  n_bootstraps = size(means_t, 1i32)
+  n_bootstraps = size(means_t, Int32(M))
   grid_size = size(grid_array)[2i32:end]
   n_gridpoints = prod(grid_size)
   n_points = n_bootstraps * n_gridpoints

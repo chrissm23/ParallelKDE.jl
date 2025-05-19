@@ -24,29 +24,29 @@ include("test_utils.jl")
   #     unbound_args=false,
   #   )
   # end
-  #
+
   # @testset "Grid tests" begin
   #   include("grid_tests.jl")
   # end
-  #
+
   # @testset "KDE object tests" begin
   #   include("kde_tests.jl")
   # end
-  #
+
   # @testset "Direct space tests" begin
   #   include("directspace_tests.jl")
   # end
-  #
+
   # @testset "Fourier space tests" begin
   #   include("fourierspace_tests.jl")
   # end
 
-  @testset "Interface tests" begin
-    include("parallelestimation_tests.jl")
+  @testset "Interface tests (Estimations)" begin
+    include("densityestimation_tests.jl")
   end
 
-  # @testset "Interface tests" begin
-  #   include("densityestimation_tests.jl")
+  # @testset "Interface tests (ParallelEstimation)" begin
+  #   include("parallelestimation_tests.jl")
   # end
 
 end

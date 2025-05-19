@@ -1102,7 +1102,9 @@ function silverman_rule(data::AbstractMatrix{T}) where {T<:Real}
   iqrs = ntuple(i -> iqr(selectdim(data, 1, i)), n_dims)
   stds = ntuple(i -> std(selectdim(data, 1, i)), n_dims)
 
-  return min.(stds, iqrs ./ 1.34) .* (n_samples * (n_dims + 2) / 4)^(-1 / (n_dims + 4))
+  return collect(
+    min.(stds, iqrs ./ 1.34) .* (n_samples * (n_dims + 2) / 4)^(-1 / (n_dims + 4))
+  )
 end
 
 end
