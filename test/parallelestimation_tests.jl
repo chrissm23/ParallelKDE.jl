@@ -450,9 +450,9 @@ if CUDA.functional()
       @test parallel_estimator.density_state isa ParallelKDE.DensityEstimators.CuDensityState
     end
 
-    # TODO:
-    # - Test the whole parallel estimation method
-    # @testset "Complete parallel estimation tests" begin
-    # end
+    @testset "Complete parallel estimation tests" begin
+      # TODO:
+      # - Test the whole parallel estimation method
+    end
   end
 end

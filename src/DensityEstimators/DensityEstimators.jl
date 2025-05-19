@@ -23,6 +23,7 @@ const GPU_CUDA = :cuda
 const DEVICE_IMPLEMENTATIONS = Dict{AbstractDevice,Set{Symbol}}(
   IsCPU() => Set([CPU_SERIAL, CPU_THREADED]),
   IsCUDA() => Set([GPU_CUDA]),
+  DeviceNotSpecified() => Set()
 )
 
 is_valid_implementation(device::AbstractDevice, implementation::Symbol)::Bool =

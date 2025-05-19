@@ -94,7 +94,7 @@ function initialize_estimation(
       if grid_ranges !== nothing
         grid = initialize_grid(device, grid_ranges)
       else
-        grid = find_grid(device, data; grid_bounds, dims, nothing, grid_padding)
+        grid = find_grid(device, data; grid_bounds, grid_dims=dims, grid_padding)
       end
 
     else
@@ -128,7 +128,7 @@ function estimate_density!(
 )::Nothing
   set_nan_density!(density_estimation.kde)
 
-  if density_estimation.grid !== nothing
+  if has_grid(density_estimation)
     grid = density_estimation.grid
     estimate!(estimation, density_estimation.kde; grid, kwargs...)
   else

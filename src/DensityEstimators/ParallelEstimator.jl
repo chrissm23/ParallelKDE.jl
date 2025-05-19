@@ -643,7 +643,7 @@ struct CuParallelEstimator{N,T<:Real,M} <: AbstractParallelEstimator{N,T,M}
   density_state::CuDensityState
 end
 
-add_estimator!(:parallelEstimator, ParallelEstimator)
+add_estimator!(:parallelEstimator, AbstractParallelEstimator)
 
 Devices.Device(::ParallelEstimator) = IsCPU()
 Devices.Device(::CuParallelEstimator) = IsCUDA()
