@@ -661,22 +661,22 @@ end
 
 function identify_convergence!(
   ::Val{:serial},
+  density::AbstractArray{T,N},
+  means::AbstractArray{T,N},
   vmr_current::AbstractArray{T,N},
   vmr_prev1::AbstractArray{T,N},
   vmr_prev2::AbstractArray{T,N},
-  density::AbstractArray{T,N},
-  means::AbstractArray{T,N},
-  time_step::Real,
-  tol1::Real,
-  tol2::Real,
-  smoothness_duration::Integer,
-  smooth_counters::Array{Int8,N},
-  is_smooth::Array{Bool,N},
-  has_decreased::Array{Bool,N},
-  stable_duration::Integer,
-  stable_counters::Array{Int8,N},
-  is_stable::Array{Bool,N},
-) where {N,T<:Real}
+  smooth_counters::AbstractArray{Z1,N},
+  is_smooth::AbstractArray{Bool,N},
+  has_decreased::AbstractArray{Bool,N},
+  stable_counters::AbstractArray{Z1,N},
+  is_stable::AbstractArray{Bool,N},
+  time_step::S,
+  tol1::S,
+  tol2::S,
+  smoothness_duration::Z2,
+  stable_duration::Z2,
+) where {N,T<:Real,S<:Real,Z1<:Integer,Z2<:Integer}
   @inbounds @simd for i in eachindex(vmr_current)
     if !is_smooth[i]
       is_smooth[i], smooth_counters[i] = find_smoothness(
@@ -688,6 +688,7 @@ function identify_convergence!(
         smooth_counters[i],
         smoothness_duration
       )
+
 
       if (vmr_current[i] > vmr_prev1[i]) && (vmr_prev2[i] > vmr_prev1[i])
         density[i] = means[i]
@@ -714,31 +715,36 @@ function identify_convergence!(
       if is_stable[i]
         density[i] = means[i]
       end
-
     end
   end
+
+  return nothing
 end
 function identify_convergence!(
   ::Val{:threaded},
+  density::AbstractArray{T,N},
+  means::AbstractArray{T,N},
   vmr_current::AbstractArray{T,N},
   vmr_prev1::AbstractArray{T,N},
   vmr_prev2::AbstractArray{T,N},
-  density::AbstractArray{T,N},
-  means::AbstractArray{T,N},
-  time_step::Real,
-  tol1::Real,
-  tol2::Real,
-  smoothness_duration::Integer,
-  smooth_counters::Array{Int8,N},
-  is_smooth::Array{Bool,N},
-  has_decreased::Array{Bool,N},
-  stable_duration::Integer,
-  stable_counters::Array{Int8,N},
-  is_stable::Array{Bool,N},
-) where {N,T<:Real}
-  @inbounds Threads.@threads for i in eachindex(vmr_current)
-    if !is_smooth[i]
-      is_smooth[i], smooth_counters[i] = find_smoothness(
+  smooth_counters::AbstractArray{Z1,N},
+  is_smooth::AbstractArray{Bool,N},
+  has_decreased::AbstractArray{Bool,N},
+  stable_counters::AbstractArray{Z1,N},
+  is_stable::AbstractArray{Bool,N},
+  time_step::S,
+  tol1::S,
+  tol2::S,
+  smoothness_duration::Z2,
+  stable_duration::Z2,
+) where {N,T<:Real,S<:Real,Z1<:Integer,Z2<:Integer}
+  is_smooth_array = Array{Bool}(is_smooth)
+  has_decreased_array = Array{Bool}(has_decreased)
+  is_stable_array = Array{Bool}(is_stable)
+
+  Threads.@threads for i in eachindex(vmr_current)
+    if !is_smooth_array[i]
+      is_smooth_array[i], smooth_counters[i] = find_smoothness(
         vmr_current[i],
         vmr_prev1[i],
         vmr_prev2[i],
@@ -752,14 +758,14 @@ function identify_convergence!(
         density[i] = means[i]
       end
 
-    elseif !has_decreased[i]
-      has_decreased[i] = find_decrease(
+    elseif !has_decreased_array[i]
+      has_decreased_array[i] = find_decrease(
         vmr_current[i],
         vmr_prev1[i],
       )
 
-    elseif is_stable[i]
-      is_stable[i], stable_counters[i] = find_stability(
+    elseif !is_stable_array[i]
+      is_stable_array[i], stable_counters[i] = find_stability(
         vmr_current[i],
         vmr_prev1[i],
         vmr_prev2[i],
@@ -770,31 +776,36 @@ function identify_convergence!(
         stable_duration
       )
 
-      if is_stable[i]
+      if is_stable_array[i]
         density[i] = means[i]
       end
-
     end
   end
+
+  is_smooth .= is_smooth_array
+  has_decreased .= has_decreased_array
+  is_stable .= is_stable_array
+
+  return nothing
 end
 function identify_convergence!(
   ::Val{:cuda},
+  density::AnyCuArray{T,N},
+  means::AnyCuArray{T,N},
   vmr_current::AnyCuArray{T,N},
   vmr_prev1::AnyCuArray{T,N},
   vmr_prev2::AnyCuArray{T,N},
-  density::AnyCuArray{T,N},
-  means::AnyCuArray{T,N},
-  time_step::Real,
-  tol1::Real,
-  tol2::Real,
-  smoothness_duration::Z,
-  smooth_counters::AnyCuArray{Z,N},
+  smooth_counters::AnyCuArray{Z1,N},
   is_smooth::AnyCuArray{Bool,N},
   has_decreased::AnyCuArray{Bool,N},
-  stable_duration::Z,
-  stable_counters::AnyCuArray{Z,N},
+  stable_counters::AnyCuArray{Z1,N},
   is_stable::AnyCuArray{Bool,N},
-) where {N,T<:Real,Z<:Integer}
+  time_step::S,
+  tol1::S,
+  tol2::S,
+  smoothness_duration::Z2,
+  stable_duration::Z2,
+) where {N,T<:Real,S<:Real,Z1<:Integer,Z2<:Integer}
   n_points = length(vmr_current)
 
   # Stability detection
@@ -893,9 +904,9 @@ end
   vmr_prev2::T,
   tol2::Ttol,
   dt::P,
-  smooth_counter::Z,
-  smoothness_duration::Z,
-) where {T<:Real,Ttol<:Real,P<:Real,Z<:Integer}
+  smooth_counter::Z1,
+  smoothness_duration::Z2,
+) where {T<:Real,Ttol<:Real,P<:Real,Z1<:Integer,Z2<:Integer}
   second_derivative = second_difference(
     vmr_current, vmr_prev1, vmr_prev2, dt
   )
@@ -905,10 +916,10 @@ end
     if smooth_counter >= smoothness_duration
       is_smooth = true
     else
-      smooth_counter += Z(1)
+      smooth_counter += Z1(1)
     end
   else
-    smooth_counter = Z(0)
+    smooth_counter = Z1(0)
   end
 
   return is_smooth, smooth_counter
@@ -1014,9 +1025,9 @@ end
   tol1::Ttol,
   tol2::Ttol,
   dt::P,
-  stability_counter::Z,
-  stability_duration::Z,
-) where {T<:Real,Ttol<:Real,P<:Real,Z<:Integer}
+  stability_counter::Z1,
+  stability_duration::Z2,
+) where {T<:Real,Ttol<:Real,P<:Real,Z1<:Integer,Z2<:Integer}
   first_derivative = abs(first_difference(vmr_current, vmr_prev1, dt))
   second_derivative = abs(second_difference(vmr_current, vmr_prev1, vmr_prev2, dt))
 
@@ -1025,10 +1036,10 @@ end
     if stability_counter >= stability_duration
       is_stable = true
     else
-      stability_counter += Z(1)
+      stability_counter += Z1(1)
     end
   else
-    stability_counter = Z(0)
+    stability_counter = Z1(0)
   end
 
   return is_stable, stability_counter

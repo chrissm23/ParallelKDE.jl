@@ -63,7 +63,7 @@ function estimate!(estimator_type::Type{T}, kde::AbstractKDE; kwargs...)::Nothin
   return nothing
 end
 
-# NOTE: These function have to be implemented in the estimator modules
+# NOTE: These functions have to be implemented in the estimator modules
 function initialize_estimator(
   ::Type{T},
   kde::AbstractKDE

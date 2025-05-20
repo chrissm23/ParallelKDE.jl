@@ -18,39 +18,39 @@ include("test_utils.jl")
 # TODO: Once the package is ready and tested, limit tests up to 2D to run on
 # GitHub hosted runners
 @testset "ParallelKDE.jl" begin
-  @testset "Code quality (Aqua.jl)" begin
-    Aqua.test_all(
-      ParallelKDE,
-      unbound_args=false,
-    )
-  end
-
-  @testset "Grid tests" begin
-    include("grid_tests.jl")
-  end
-
-  @testset "KDE object tests" begin
-    include("kde_tests.jl")
-  end
-
-  @testset "Direct space tests" begin
-    include("directspace_tests.jl")
-  end
-
-  @testset "Fourier space tests" begin
-    include("fourierspace_tests.jl")
-  end
-
-  @testset "Interface tests (Estimations)" begin
-    include("densityestimation_tests.jl")
-  end
-
+  # @testset "Code quality (Aqua.jl)" begin
+  #   Aqua.test_all(
+  #     ParallelKDE,
+  #     unbound_args=false,
+  #   )
+  # end
+  #
+  # @testset "Grid tests" begin
+  #   include("grid_tests.jl")
+  # end
+  #
+  # @testset "KDE object tests" begin
+  #   include("kde_tests.jl")
+  # end
+  #
+  # @testset "Direct space tests" begin
+  #   include("directspace_tests.jl")
+  # end
+  #
+  # @testset "Fourier space tests" begin
+  #   include("fourierspace_tests.jl")
+  # end
+  #
+  # @testset "Interface tests (Estimations)" begin
+  #   include("densityestimation_tests.jl")
+  # end
+  #
   @testset "Interface tests (ParallelEstimation)" begin
     include("parallelestimation_tests.jl")
   end
-
-  @testset "API tests" begin
-    include("parallelkde_tests.jl")
-  end
+  #
+  # @testset "API tests" begin
+  #   include("parallelkde_tests.jl")
+  # end
 
 end

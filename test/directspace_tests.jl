@@ -66,6 +66,108 @@ function calculate_test_means(test_mean; n_samples=2)
   return means
 end
 
+function make_snapshot(::Val{:cpu}, n_dims, stage, smoothness_duration, stable_duration)
+  grid_size = ntuple(i -> 101, n_dims)
+  if stage == :rough
+    vmr_current = fill(1.0, grid_size)
+    vmr_prev1 = fill(0.98, grid_size)
+    vmr_prev2 = fill(1.0, grid_size)
+
+    smooth_counters = fill(Int8(smoothness_duration), grid_size)
+    is_smooth = falses(grid_size)
+    has_decreased = falses(grid_size)
+    stable_counters = zeros(Int8, grid_size)
+    is_stable = falses(grid_size)
+
+  elseif stage == :smooth
+    vmr_current = fill(0.9, grid_size)
+    vmr_prev1 = fill(1.0, grid_size)
+    vmr_prev2 = fill(1.1, grid_size)
+
+    smooth_counters = fill(Int8(smoothness_duration), grid_size)
+    is_smooth = trues(grid_size)
+    has_decreased = falses(grid_size)
+    stable_counters = zeros(Int8, grid_size)
+    is_stable = falses(grid_size)
+
+  elseif stage == :stable
+    vmr_current = fill(1.02, grid_size)
+    vmr_prev1 = fill(1.0, grid_size)
+    vmr_prev2 = fill(1.03, grid_size)
+
+    smooth_counters = fill(Int8(smoothness_duration), grid_size)
+    is_smooth = trues(grid_size)
+    has_decreased = trues(grid_size)
+    stable_counters = fill(Int8(stable_duration), grid_size)
+    is_stable = falses(grid_size)
+
+  else
+    throw(ArgumentError("stage can only be :rough, :smooth or :stable"))
+  end
+
+  return (
+    vmr_current=vmr_current,
+    vmr_prev1=vmr_prev1,
+    vmr_prev2=vmr_prev2,
+    smooth_counters=smooth_counters,
+    is_smooth=is_smooth,
+    has_decreased=has_decreased,
+    stable_counters=stable_counters,
+    is_stable=is_stable
+  )
+
+end
+function make_snapshot(::Val{:cuda}, n_dims, stage, smoothness_duration, stable_duration)
+  grid_size = ntuple(i -> 101, n_dims)
+  if stage == :rough
+    vmr_current = CUDA.fill(1.0f0, grid_size)
+    vmr_prev1 = CUDA.fill(0.98f0, grid_size)
+    vmr_prev2 = CUDA.fill(1.0f0, grid_size)
+
+    smooth_counters = CUDA.fill(Int8(smoothness_duration), grid_size)
+    is_smooth = CUDA.zeros(Bool, grid_size)
+    has_decreased = CUDA.zeros(Bool, grid_size)
+    stable_counters = CUDA.zeros(Int8, grid_size)
+    is_stable = CUDA.zeros(Bool, grid_size)
+
+  elseif stage == :smooth
+    vmr_current = CUDA.fill(0.9f0, grid_size)
+    vmr_prev1 = CUDA.fill(1.0f0, grid_size)
+    vmr_prev2 = CUDA.fill(1.1f0, grid_size)
+
+    smooth_counters = CUDA.fill(Int8(smoothness_duration), grid_size)
+    is_smooth = CUDA.ones(Bool, grid_size)
+    has_decreased = CUDA.zeros(Bool, grid_size)
+    stable_counters = CUDA.zeros(Int8, grid_size)
+    is_stable = CUDA.zeros(Bool, grid_size)
+
+  elseif stage == :stable
+    vmr_current = CUDA.fill(1.02f0, grid_size)
+    vmr_prev1 = CUDA.fill(1.0f0, grid_size)
+    vmr_prev2 = CUDA.fill(1.03f0, grid_size)
+
+    smooth_counters = CUDA.fill(Int8(smoothness_duration), grid_size)
+    is_smooth = CUDA.ones(Bool, grid_size)
+    has_decreased = CUDA.ones(Bool, grid_size)
+    stable_counters = CUDA.fill(Int8(stable_duration), grid_size)
+    is_stable = CUDA.zeros(Bool, grid_size)
+  else
+
+    throw(ArgumentError("stage can only be :rough, :smooth or :stable"))
+  end
+
+  return (
+    vmr_current=vmr_current,
+    vmr_prev1=vmr_prev1,
+    vmr_prev2=vmr_prev2,
+    smooth_counters=smooth_counters,
+    is_smooth=is_smooth,
+    has_decreased=has_decreased,
+    stable_counters=stable_counters,
+    is_stable=is_stable
+  )
+end
+
 @testset "CPU direct space operations tests" begin
   @testset "Implementation: $implementation tests" for implementation in [:serial, :threaded]
     @testset "Dirac sequences tests. $(n_dims)D" for n_dims in 1:3
@@ -122,8 +224,88 @@ end
       @test test_result ≈ calculated_mean
     end
 
-    # TODO: Design test to check that the detection of the stopping point works correctly.
-    # @testset "Indentify convergence tests" begin end
+    @testset "Indentify convergence tests. $(n_dims)D" for n_dims in 1:3
+      time_step = 0.2
+      tol1 = 1.0
+      tol2 = 3.0
+      smoothness_duration = 3
+      stable_duration = 3
+
+      # Test noisy VMR
+      snap = make_snapshot(Val(:cpu), n_dims, :rough, smoothness_duration, stable_duration)
+
+      density = fill(NaN, size(snap[1]))
+      means = ones(Float64, size(snap[1]))
+
+      ParallelKDE.DirectSpace.identify_convergence!(
+        Val(implementation),
+        density,
+        means,
+        snap...,
+        time_step,
+        tol1,
+        tol2,
+        smoothness_duration,
+        stable_duration
+      )
+
+      @test all(density .== 1.0)
+      @test all(snap.smooth_counters .== smoothness_duration)
+      @test all(snap.is_smooth .== true)
+      @test all(snap.has_decreased .== false)
+      @test all(snap.stable_counters .== 0)
+      @test all(snap.is_stable .== false)
+
+      # Test smooth increasing VMR
+      snap = make_snapshot(Val(:cpu), n_dims, :smooth, smoothness_duration, stable_duration)
+
+      density = fill(NaN, size(snap[1]))
+      means = ones(Float64, size(snap[1]))
+
+      ParallelKDE.DirectSpace.identify_convergence!(
+        Val(implementation),
+        density,
+        means,
+        snap...,
+        time_step,
+        tol1,
+        tol2,
+        smoothness_duration,
+        stable_duration
+      )
+
+      @test all(isnan.(density))
+      @test all(snap.smooth_counters .== smoothness_duration)
+      @test all(snap.is_smooth .== true)
+      @test all(snap.has_decreased .== true)
+      @test all(snap.stable_counters .== 0)
+      @test all(snap.is_stable .== false)
+
+      # Test stable VMR
+      snap = make_snapshot(Val(:cpu), n_dims, :stable, smoothness_duration, stable_duration)
+
+      density = fill(NaN, size(snap[1]))
+      means = ones(Float64, size(snap[1]))
+
+      ParallelKDE.DirectSpace.identify_convergence!(
+        Val(implementation),
+        density,
+        means,
+        snap...,
+        time_step,
+        tol1,
+        tol2,
+        smoothness_duration,
+        stable_duration
+      )
+
+      @test all(density .== 1.0)
+      @test all(snap.smooth_counters .== smoothness_duration)
+      @test all(snap.is_smooth .== true)
+      @test all(snap.has_decreased .== true)
+      @test all(snap.stable_counters .== stable_duration)
+      @test all(snap.is_stable .== true)
+    end
   end
 end
 
@@ -188,7 +370,87 @@ if CUDA.functional()
       @test test_result ≈ Array(calculated_mean_d)
     end
 
-    # TODO: Design test to check that the detection of the stopping point works correctly.
-    # @testset "Indentify convergence tests" begin end
+    @testset "Indentify convergence tests. $(n_dims)D" for n_dims in 1:3
+      time_step = 0.2f0
+      tol1 = 1.0f0
+      tol2 = 10.0f0
+      smoothness_duration = Int32(3)
+      stable_duration = Int32(3)
+
+      # Test noisy VMR
+      snap = make_snapshot(Val(:cuda), n_dims, :rough, smoothness_duration, stable_duration)
+
+      density = CUDA.fill(NaN32, size(snap[1]))
+      means = CUDA.ones(Float32, size(snap[1]))
+
+      ParallelKDE.DirectSpace.identify_convergence!(
+        Val(:cuda),
+        density,
+        means,
+        snap...,
+        time_step,
+        tol1,
+        tol2,
+        smoothness_duration,
+        stable_duration
+      )
+
+      @test all(density .== 1.0f0)
+      @test all(snap.smooth_counters .== smoothness_duration)
+      @test all(snap.is_smooth .== true)
+      @test all(snap.has_decreased .== false)
+      @test all(snap.stable_counters .== 0)
+      @test all(snap.is_stable .== false)
+
+      # Test smooth increasing VMR
+      snap = make_snapshot(Val(:cuda), n_dims, :smooth, smoothness_duration, stable_duration)
+
+      density = CUDA.fill(NaN32, size(snap[1]))
+      means = CUDA.ones(Float32, size(snap[1]))
+
+      ParallelKDE.DirectSpace.identify_convergence!(
+        Val(:cuda),
+        density,
+        means,
+        snap...,
+        time_step,
+        tol1,
+        tol2,
+        smoothness_duration,
+        stable_duration
+      )
+
+      @test all(isnan.(density))
+      @test all(snap.smooth_counters .== smoothness_duration)
+      @test all(snap.is_smooth .== true)
+      @test all(snap.has_decreased .== true)
+      @test all(snap.stable_counters .== 0)
+      @test all(snap.is_stable .== false)
+
+      # Test stable VMR
+      snap = make_snapshot(Val(:cuda), n_dims, :stable, smoothness_duration, stable_duration)
+
+      density = CUDA.fill(NaN32, size(snap[1]))
+      means = CUDA.ones(Float32, size(snap[1]))
+
+      ParallelKDE.DirectSpace.identify_convergence!(
+        Val(:cuda),
+        density,
+        means,
+        snap...,
+        time_step,
+        tol1,
+        tol2,
+        smoothness_duration,
+        stable_duration
+      )
+
+      @test all(density .== 1.0f0)
+      @test all(snap.smooth_counters .== smoothness_duration)
+      @test all(snap.is_smooth .== true)
+      @test all(snap.has_decreased .== true)
+      @test all(snap.stable_counters .== stable_duration)
+      @test all(snap.is_stable .== true)
+    end
   end
 end

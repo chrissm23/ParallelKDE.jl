@@ -596,21 +596,21 @@ function update_state!(
 
   identify_convergence!(
     Val(method),
+    kde.density,
+    means,
     vmr_var,
     density_state.f_prev1,
     density_state.f_prev2,
-    kde.density,
-    means,
+    density_state.smooth_counters,
+    density_state.is_smooth,
+    density_state.has_decreased,
+    density_state.stable_counters,
+    density_state.is_stable,
     density_state.dt,
     density_state.eps1,
     density_state.eps2,
     density_state.smoothness_duration,
-    density_state.smooth_counters,
-    density_state.is_smooth,
-    density_state.has_decreased,
     density_state.stable_duration,
-    density_state.stable_counters,
-    density_state.is_stable,
   )
 
   return nothing
