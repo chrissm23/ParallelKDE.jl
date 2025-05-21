@@ -66,7 +66,8 @@ end
 # NOTE: These functions have to be implemented in the estimator modules
 function initialize_estimator(
   ::Type{T},
-  kde::AbstractKDE
+  kde::AbstractKDE;
+  kwargs...
 )::AbstractEstimator where {T<:AbstractEstimator}
   throw(ArgumentError("Estimator not implemented"))
 

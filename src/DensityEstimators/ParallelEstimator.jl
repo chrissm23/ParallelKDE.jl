@@ -66,12 +66,12 @@ end
 
 function initialize_kernels(
   ::IsCPU,
-  kde::AbstractKDE{N,T,S},
-  grid::AbstractGrid{N,P,M};
+  kde::AbstractKDE{N,Tdens,Tdata},
+  grid::AbstractGrid{N,Tgrid,M};
   n_bootstraps::Integer=0,
   include_var::Bool=false,
   method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,S<:Real,M,P<:Real}
+) where {N,Tdens<:Real,Tdata<:Real,M,Tgrid<:Real}
   if n_bootstraps < 0
     throw(ArgumentError("Number of boostraps must be positive."))
 
@@ -512,8 +512,8 @@ abstract type AbstractDensityState{T,N} end
   dt::Float64
   eps1::Float64 = 1.0
   eps2::Float64 = 10.0
-  smoothness_duration::Int8 = Int8(3)
-  stable_duration::Int8 = Int8(3)
+  smoothness_duration::Int = 3
+  stable_duration::Int = 3
 
   # State
   smooth_counters::Array{Int8,N}
@@ -589,8 +589,6 @@ function update_state!(
   kernel_propagation::AbstractKernelPropagation{N,T,M};
   method::Symbol=CPU_SERIAL,
 ) where {N,T<:Real,S<:Real,M}
-  n_samples = get_nsamples(kde)
-
   vmr_var = get_vmr(kernel_propagation)
   means = get_means(kernel_propagation)
 
@@ -612,6 +610,9 @@ function update_state!(
     density_state.smoothness_duration,
     density_state.stable_duration,
   )
+
+  density_state.f_prev2 .= density_state.f_prev1
+  density_state.f_prev1 .= vmr_var
 
   return nothing
 
@@ -659,19 +660,20 @@ function initialize_estimator(
     throw(ArgumentError("Missing required keyword argument: 'grid'"))
   end
 
-  grid = kwargs[:grid]
+  kwargs_dict = Dict(kwargs)
+  grid = pop!(kwargs_dict, :grid)
   if Device(grid) != device
     throw(ArgumentError("KDE device $device does not match Grid device $(Device(grid))"))
   end
 
-  n_bootstraps = get(kwargs, :n_bootstraps, 100)
-  time_step = get(kwargs, :dt, nothing)
-  n_steps = get(kwargs, :n_steps, nothing)
+  n_bootstraps = pop!(kwargs_dict, :n_bootstraps, 100)
+  time_step = pop!(kwargs_dict, :dt, nothing)
+  n_steps = pop!(kwargs_dict, :n_steps, nothing)
 
   if device == IsCPU()
-    method = get(kwargs, :method, CPU_SERIAL)
+    method = pop!(kwargs_dict, :method, CPU_SERIAL)
   elseif device == IsCUDA()
-    method = get(kwargs, :method, GPU_CUDA)
+    method = pop!(kwargs_dict, :method, GPU_CUDA)
   else
     throw(ArgumentError("Implementation $method unknwon for device $device"))
   end
@@ -691,7 +693,8 @@ function initialize_estimator(
     means,
     grid;
     time_step,
-    n_steps
+    n_steps,
+    kwargs_dict...
   )
 
 end
@@ -708,6 +711,7 @@ function initialize_estimator_propagation(
   grid::Grid{N,P,M};
   time_step::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
+  kwargs...
 ) where {N,T<:Real,S<:Real,P<:Real,M}
   grid_fourier = fftgrid(grid)
 
@@ -715,7 +719,7 @@ function initialize_estimator_propagation(
   time_final = 2 .* silverman_rule(get_data(kde))
   times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-  density_state = DensityState(size(grid); dt=norm(dt), T=T)
+  density_state = DensityState(size(grid); dt=norm(dt), T=T, kwargs...)
 
   return ParallelEstimator(
     means_bootstraps,
@@ -738,6 +742,7 @@ function initialize_estimator_propagation(
   grid::CuGrid{N,P,M};
   time_step::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
+  kwargs...
 ) where {N,T<:Real,S<:Real,P<:Real,M}
   grid_fourier = fftgrid(grid)
 
@@ -745,7 +750,7 @@ function initialize_estimator_propagation(
   time_final = silverman_rule(Array(get_data(kde)))
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
-  density_state = CuDensityState(size(grid); dt=norm(dt), T=typeof(kde).parameters[2])
+  density_state = CuDensityState(size(grid); dt=norm(dt), T=typeof(kde).parameters[2], kwargs...)
 
   return CuParallelEstimator(
     means_bootstraps,
@@ -860,7 +865,6 @@ function estimate!(
 )::Nothing where {N,T,S}
   check_memory(estimator)
 
-  device = Device(kde)
   method = get(kwargs, :method, CPU_SERIAL)
   n_samples = get_nsamples(kde)
 

@@ -934,10 +934,10 @@ end
 end
 
 function kernel_smooth!(
-  vmr_current::CuDeviceArray{T,N},
+  vmr_current::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   vmr_prev1::CuDeviceArray{T,N},
   vmr_prev2::CuDeviceArray{T,N},
-  means::CuDeviceArray{T,N},
+  means::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   density::CuDeviceArray{T,N},
   is_smooth::CuDeviceArray{Bool,N},
   smoothness_counter::CuDeviceArray{Z,N},
@@ -995,7 +995,7 @@ end
 end
 
 function kernel_decrease!(
-  vmr_current::CuDeviceArray{T,N},
+  vmr_current::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   vmr_prev1::CuDeviceArray{T,N},
   is_smooth::CuDeviceArray{Bool,N},
   has_decreased::CuDeviceArray{Bool,N},
@@ -1046,10 +1046,10 @@ end
 end
 
 function kernel_stable!(
-  vmr_current::CuDeviceArray{T,N},
+  vmr_current::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   vmr_prev1::CuDeviceArray{T,N},
   vmr_prev2::CuDeviceArray{T,N},
-  means::CuDeviceArray{T,N},
+  means::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   density::CuDeviceArray{T,N},
   is_smooth::CuDeviceArray{Bool,N},
   has_decreased::CuDeviceArray{Bool,N},

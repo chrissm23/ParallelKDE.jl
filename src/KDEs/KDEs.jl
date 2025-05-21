@@ -32,14 +32,15 @@ Devices.Device(::KDE) = IsCPU()
 Devices.Device(::CuKDE) = IsCUDA()
 
 function initialize_kde(
-  data::Union{AbstractVector{<:AbstractVector{<:Real}},AbstractMatrix{<:Real}},
-  dims::NTuple{N};
+  data::Union{AbstractVector{<:AbstractVector{T}},AbstractMatrix{T}},
+  dims::Vararg{Z,N};
   device::Symbol=:cpu,
-)::AbstractKDE where {N}
+)::AbstractKDE where {T<:Real,N,Z<:Integer}
   device_type = obtain_device(device)
 
   return initialize_kde(device_type, data, dims)
 end
+initialize_kde(data, dims; device=:cpu) = initialize_kde(data, dims...; device)
 
 function initialize_kde(
   ::IsCPU,

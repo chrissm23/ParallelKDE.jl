@@ -1,8 +1,8 @@
-@testset "CPU parallel estimation tests. $(n_dims)D" for n_dims in 1:3
+@testset "CPU parallel estimation interfaces tests. $(n_dims)D" for n_dims in 1:3
   n_samples = 1000
   n_bootstraps = 30
 
-  grid_ranges = fill(-5.0:0.1:5.0, n_dims)
+  grid_ranges = fill(-5.0:0.5:5.0, n_dims)
   grid = initialize_grid(grid_ranges)
 
   data = generate_samples(n_samples, n_dims)
@@ -143,8 +143,24 @@
       @test all(isnan.(density_state.f_prev1))
       @test all(isnan.(density_state.f_prev2))
 
-      # TODO:
-      # - Test updating state after tests for identify convergence
+      means_bootstraps, vars_bootstraps = ParallelKDE.DensityEstimators.initialize_kernels(
+        kde_device, kde, grid, n_bootstraps=n_bootstraps, include_var=true, method=implementation
+      )
+      kernel_propagation = ParallelKDE.DensityEstimators.KernelPropagation(
+        means_bootstraps, vars_bootstraps
+      )
+      kernel_propagation.kernel_means .= 1.0
+      kernel_propagation.kernel_vars .= 5.0
+      kernel_propagation.calculated_vmr = true
+      kernel_propagation.calculated_means = true
+
+      density_state.f_prev1 .= 1.0
+      density_state.f_prev2 .= 2.0
+
+      ParallelKDE.DensityEstimators.update_state!(density_state, kde, kernel_propagation, method=implementation)
+
+      @test all(density_state.f_prev1 .== ParallelKDE.DensityEstimators.get_vmr(kernel_propagation))
+      @test all(density_state.f_prev2 .== 1.0)
     end
 
     @testset "Time settings tests" begin
@@ -218,18 +234,14 @@
       @test parallel_estimator.density_state isa ParallelKDE.DensityEstimators.DensityState
     end
 
-    @testset "Complete parallel estimation tests" begin
-      # TODO:
-      # - Test the whole parallel estimation method
-    end
   end
 end
 if CUDA.functional()
-  @testset "GPU parallel estimation tests. $(n_dims)D" for n_dims in 1:3
+  @testset "GPU parallel estimation interfaces tests. $(n_dims)D" for n_dims in 1:3
     n_samples = 1000
     n_bootstraps = 30
 
-    grid_ranges = fill(-5.0:0.1:5.0, n_dims)
+    grid_ranges = fill(-5.0:0.5:5.0, n_dims)
     grid = initialize_grid(grid_ranges, device=:cuda)
 
     data_cpu = generate_samples(n_samples, n_dims)
@@ -376,8 +388,24 @@ if CUDA.functional()
       @test all(isnan.(density_state.f_prev1))
       @test all(isnan.(density_state.f_prev2))
 
-      # TODO:
-      # - Test updating state after tests for identify convergence
+      means_bootstraps, vars_bootstraps = ParallelKDE.DensityEstimators.initialize_kernels(
+        kde_device, kde, grid, n_bootstraps=n_bootstraps, include_var=true, method=:cuda
+      )
+      kernel_propagation = ParallelKDE.DensityEstimators.CuKernelPropagation(
+        means_bootstraps, vars_bootstraps
+      )
+      kernel_propagation.kernel_means .= 1.0
+      kernel_propagation.kernel_vars .= 5.0
+      kernel_propagation.calculated_vmr = true
+      kernel_propagation.calculated_means = true
+
+      density_state.f_prev1 .= 1.0
+      density_state.f_prev2 .= 2.0
+
+      ParallelKDE.DensityEstimators.update_state!(density_state, kde, kernel_propagation, method=:cuda)
+
+      @test all(density_state.f_prev1 .== ParallelKDE.DensityEstimators.get_vmr(kernel_propagation))
+      @test all(density_state.f_prev2 .== 1.0)
     end
 
     @testset "Time settings tests" begin
@@ -450,9 +478,15 @@ if CUDA.functional()
       @test parallel_estimator.density_state isa ParallelKDE.DensityEstimators.CuDensityState
     end
 
-    @testset "Complete parallel estimation tests" begin
-      # TODO:
-      # - Test the whole parallel estimation method
-    end
+  end
+end
+
+@testset "Parallel estimation tests (CPU). $(n_dims)D" for n_dims in 1:1
+  # TODO: Complete test of ParallelKDE algorithm
+end
+
+if CUDA.functional()
+  @testset "Parallel estimation tests (GPU). $(n_dims)D" for n_dims in 1:1
+    # TODO: Complete test of ParallelKDE algorithm
   end
 end
