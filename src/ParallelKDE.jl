@@ -22,8 +22,6 @@ using StaticArrays,
 using Statistics,
   LinearAlgebra
 
-# TODO: Check which other functions or types from the other modules may be useful to export
-
 # General API exports
 export AbstractDensityEstimation,
   DensityEstimation,
@@ -61,12 +59,12 @@ end
 
 function initialize_estimation(
   data;
-  device=:cpu,
   grid::Union{Bool,G}=false,
   grid_ranges=nothing,
   dims=nothing,
   grid_bounds=nothing,
   grid_padding=nothing,
+  device=:cpu,
 )::DensityEstimation where {G<:AbstractGrid}
   if isa(data, AbstractMatrix)
     n_dims = size(data, 1)
@@ -86,22 +84,21 @@ function initialize_estimation(
       device = fallback_option
     end
   end
-  device = Devices.AVAILABLE_DEVICES[device]
 
   # Create grid object if required
   if grid isa Bool
     if grid
       if grid_ranges !== nothing
-        grid = initialize_grid(device, grid_ranges)
+        grid = initialize_grid(grid_ranges; device)
       else
-        grid = find_grid(device, data; grid_bounds, grid_dims=dims, grid_padding)
+        grid = find_grid(data; grid_bounds, grid_dims=dims, grid_padding, device)
       end
 
     else
       grid = nothing
     end
 
-  elseif Device(grid) !== device
+  elseif get_device(grid) !== device
     throw(ArgumentError("Grid must be of the same device as the KDE."))
   end
 
@@ -112,7 +109,7 @@ function initialize_estimation(
     dims = size(grid)
   end
 
-  kde = initialize_kde(device, data, dims)
+  kde = initialize_kde(data, dims; device)
 
   return DensityEstimation(kde, grid)
 

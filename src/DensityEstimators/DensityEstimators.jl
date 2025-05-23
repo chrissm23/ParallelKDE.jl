@@ -26,10 +26,10 @@ const DEVICE_IMPLEMENTATIONS = Dict{AbstractDevice,Set{Symbol}}(
   DeviceNotSpecified() => Set()
 )
 
-is_valid_implementation(device::AbstractDevice, implementation::Symbol)::Bool =
+is_valid_implementation(device::AbstractDevice, implementation::Symbol) =
   implementation in get(DEVICE_IMPLEMENTATIONS, typeof(device), Set())
 
-function ensure_valid_implementation(device::AbstractDevice, implementation::Symbol)::Bool
+function ensure_valid_implementation(device::AbstractDevice, implementation::Symbol)
   if !is_valid_implementation(device, implementation)
     throw(ArgumentError("Invalid implementation $implementation for device $device"))
   end
@@ -38,7 +38,7 @@ function ensure_valid_implementation(device::AbstractDevice, implementation::Sym
 end
 
 estimator_lookup = Dict()
-function add_estimator!(key::Symbol, value::Type{T})::Nothing where {T<:AbstractEstimator}
+function add_estimator!(key::Symbol, value::Type{<:AbstractEstimator})
   if haskey(estimator_lookup, key)
     throw(ArgumentError("Key $key already exists"))
   end
@@ -49,26 +49,29 @@ function add_estimator!(key::Symbol, value::Type{T})::Nothing where {T<:Abstract
 end
 
 # NOTE: This is the User API function for KDE estimators
-function estimate!(estimator_name::Symbol, kde::AbstractKDE; kwargs...)::Nothing
+function estimate!(estimator_name::Symbol, kde::AbstractKDE; kwargs...)
   estimator_type = estimator_lookup[estimator_name]
   estimate!(estimator_type, kde; kwargs...)
+
+  return nothing
 end
-function estimate!(estimator_type::Type{T}, kde::AbstractKDE; kwargs...)::Nothing where {T<:AbstractEstimator}
-  device = Device(kde)
+function estimate!(estimator_type::Type{<:AbstractEstimator}, kde::AbstractKDE; kwargs...)
+  device = get_device(kde)
   method = get(kwargs, :method, CPU_SERIAL)
   ensure_valid_implementation(device, method)
 
   estimator = initialize_estimator(estimator_type, kde; kwargs...)
   estimate!(estimator, kde; kwargs...)
+
   return nothing
 end
 
 # NOTE: These functions have to be implemented in the estimator modules
 function initialize_estimator(
-  ::Type{T},
+  ::Type{<:AbstractEstimator},
   kde::AbstractKDE;
   kwargs...
-)::AbstractEstimator where {T<:AbstractEstimator}
+)
   throw(ArgumentError("Estimator not implemented"))
 
 end

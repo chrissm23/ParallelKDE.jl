@@ -23,12 +23,12 @@ include("../CuStatistics/CuStatistics.jl")
 
 function initialize_dirac_sequence(
   ::Val{:serial},
-  data::AbstractVector{SVector{N,S}},
-  grid::AbstractGrid{N,P,M},
-  bootstrap_idxs::AbstractMatrix{F};
-  include_var::Bool=false,
+  data::AbstractVector{<:SVector{N,<:Real}},
+  grid::AbstractGrid{N,<:Real,M},
+  bootstrap_idxs::AbstractMatrix{<:Integer};
+  include_var=false,
   T=Float64,
-) where {N,S<:Real,M,P<:Real,F<:Integer}
+) where {N,M}
   grid_size = size(grid)
   n_bootstraps = size(bootstrap_idxs, 2)
 
@@ -72,12 +72,12 @@ function initialize_dirac_sequence(
 end
 function initialize_dirac_sequence(
   ::Val{:threaded},
-  data::AbstractVector{SVector{N,S}},
-  grid::AbstractGrid{N,P,M},
-  bootstrap_idxs::AbstractMatrix{F};
-  include_var::Bool=false,
+  data::AbstractVector{<:SVector{N,<:Real}},
+  grid::AbstractGrid{N,<:Real,M},
+  bootstrap_idxs::AbstractMatrix{<:Integer};
+  include_var=false,
   T=Float64,
-) where {N,S<:Real,M,P<:Real,F<:Integer}
+) where {N,M}
   grid_size = size(grid)
   n_bootstraps = size(bootstrap_idxs, 2)
 
@@ -123,15 +123,15 @@ end
 function generate_dirac_cpu!(
   dirac_series::AbstractArray{T,N},
   dirac_series_squared::AbstractArray{T,N},
-  data::AbstractVector{SVector{N,S}},
-  spacing::SVector{N,S},
-  low_bound::SVector{N,S},
-) where {N,T<:Real,S<:Real}
+  data::AbstractVector{<:AbstractVector{<:Real}},
+  spacing::AbstractVector{<:Real},
+  low_bound::AbstractVector{<:Real},
+) where {N,T<:Real}
   n_samples = length(data)
   spacing_squared = prod(spacing)^2
 
-  indices_l = @MVector zeros(Int64, N)
-  indices_h = @MVector zeros(Int64, N)
+  indices_l = @MVector zeros(Int, N)
+  indices_h = @MVector zeros(Int, N)
   remainder_l = @MVector zeros(T, N)
   remainder_h = @MVector zeros(T, N)
 
@@ -162,10 +162,10 @@ function generate_dirac_cpu!(
 end
 function generate_dirac_cpu!(
   dirac_series::AbstractArray{T,N},
-  data::AbstractVector{SVector{N,S}},
-  spacing::SVector{N,S},
-  low_bound::SVector{N,S},
-) where {N,T<:Real,S<:Real}
+  data::AbstractVector{<:AbstractVector{<:Real}},
+  spacing::AbstractVector{<:Real},
+  low_bound::AbstractVector{<:Real},
+) where {N,T<:Real}
   n_samples = length(data)
   spacing_squared = prod(spacing)^2
 
@@ -201,12 +201,12 @@ end
 
 function initialize_dirac_sequence(
   ::Val{:cuda},
-  data::CuMatrix{S},
-  grid::AbstractGrid{N,P,M},
-  bootstrap_idxs::CuMatrix{F};
-  include_var::Bool=false,
+  data::CuMatrix{<:Real},
+  grid::AbstractGrid{N,<:Real,M},
+  bootstrap_idxs::CuMatrix{<:Integer};
+  include_var=false,
   T=Float32,
-) where {N,S<:Real,M,P<:Real,F<:Integer}
+) where {N,M}
   grid_size = size(grid)
   n_samples, n_bootstraps = size(bootstrap_idxs)
 
@@ -271,13 +271,13 @@ function initialize_dirac_sequence(
 end
 
 function generate_dirac_cuda!(
-  dirac_series::Union{CuDeviceArray{T,M},SubArray{T,M,<:CuDeviceArray}},
-  dirac_series_squared::Union{CuDeviceArray{T,M},SubArray{T,M,<:CuDeviceArray}},
-  data::CuDeviceMatrix{S},
-  bootstrap_idxs::CuDeviceMatrix{Int32},
-  spacing::CuDeviceVector{S},
-  low_bound::CuDeviceVector{S}
-) where {M,T<:Real,S<:Real}
+  dirac_series::Union{CuDeviceArray{<:Real,M},SubArray{<:Real,M,<:CuDeviceArray}},
+  dirac_series_squared::Union{CuDeviceArray{<:Real,M},SubArray{<:Real,M,<:CuDeviceArray}},
+  data::CuDeviceMatrix{<:Real},
+  bootstrap_idxs::CuDeviceMatrix{<:Integer},
+  spacing::CuDeviceVector{<:Real},
+  low_bound::CuDeviceVector{<:Real}
+) where {M}
   spacing_squared = prod(spacing)^2i32
 
   n_dims = Int32(M) - 1i32
@@ -332,12 +332,12 @@ function generate_dirac_cuda!(
   return
 end
 function generate_dirac_cuda!(
-  dirac_series::Union{CuDeviceArray{T,M},SubArray{T,M,<:CuDeviceArray}},
-  data::CuDeviceMatrix{S},
-  bootstrap_idxs::CuDeviceMatrix{Int32},
-  spacing::CuDeviceVector{T},
-  low_bound::CuDeviceVector{T}
-) where {M,T<:Real,S<:Real}
+  dirac_series::Union{CuDeviceArray{<:Real,M},SubArray{<:Real,M,<:CuDeviceArray}},
+  data::CuDeviceMatrix{<:Real},
+  bootstrap_idxs::CuDeviceMatrix{<:Integer},
+  spacing::CuDeviceVector{<:Real},
+  low_bound::CuDeviceVector{<:Real}
+) where {M}
   spacing_squared = prod(spacing)^2i32
 
   n_dims = Int32(M) - 1i32
@@ -392,8 +392,8 @@ function generate_dirac_cuda!(
 end
 
 function check_data(
-  data::AbstractVector{<:AbstractVector{S}}, grid::Grid{N,S,M}
-) where {N,S<:Real,M}
+  data::AbstractVector{<:AbstractVector{<:Real}}, grid::Grid{N,<:Real,M}
+) where {N,M}
   @assert length(data[1]) == N "Dimensions of data and grid don't match."
 
   lows = low_bounds(grid)
@@ -411,7 +411,7 @@ function check_data(
 
   return nothing
 end
-function check_data(data::CuMatrix{S}, grid::CuGrid{N,S,M}) where {N,S<:Real,M}
+function check_data(data::CuMatrix{<:Real}, grid::CuGrid{N,<:Real,M}) where {N,M}
   @assert size(data, 1) == N "Dimensions of data and grid don't match."
 
   lows = low_bounds(grid)
@@ -430,10 +430,10 @@ function calculate_scaled_vmr!(
   ::Val{:serial},
   sk::AbstractArray{Complex{T},M},
   s2k::AbstractArray{Complex{T},M},
-  time::AbstractVector{P},
-  time_initial::AbstractVector{P},
-  n_samples::F,
-) where {M,T<:Real,P<:Real,F<:Integer}
+  time::AbstractVector{<:Real},
+  time_initial::AbstractVector{<:Real},
+  n_samples::Integer,
+) where {M,T<:Real}
   array_dims = size(sk)
   grid_dims = array_dims[begin:end-1]
 
@@ -489,10 +489,10 @@ function calculate_scaled_vmr!(
   ::Val{:threaded},
   sk::AbstractArray{Complex{T},M},
   s2k::AbstractArray{Complex{T},M},
-  time::AbstractVector{P},
-  time_initial::AbstractVector{P},
-  n_samples::F,
-) where {M,T<:Real,P<:Real,F<:Integer}
+  time::AbstractVector{<:Real},
+  time_initial::AbstractVector{<:Real},
+  n_samples::Integer,
+) where {M,T<:Real}
   array_dims = size(sk)
   grid_dims = array_dims[begin:end-1]
 
@@ -574,12 +574,12 @@ function calculate_scaled_vmr!(
 end
 function calculate_scaled_vmr!(
   ::Val{:cuda},
-  sk::AnyCuArray{Complex{T},M},
-  s2k::AnyCuArray{Complex{T},M},
-  time::AnyCuVector{P},
-  time_initial::AnyCuVector{P},
-  n_samples::F,
-) where {M,T<:Real,P<:Real,F<:Integer}
+  sk::AnyCuArray{<:Complex,M},
+  s2k::AnyCuArray{<:Complex,M},
+  time::AnyCuVector{<:Real},
+  time_initial::AnyCuVector{<:Real},
+  n_samples::Integer,
+) where {M}
   scaling_factor = prod(time .^ 2i32 .+ time_initial .^ 2i32)^(1.5f0) * n_samples^4i32
 
   @. sk = abs(sk) / n_samples
@@ -598,8 +598,8 @@ end
 function calculate_full_means!(
   ::Val{:serial},
   sk::AbstractArray{Complex{T},N},
-  n_samples::F,
-) where {N,T<:Real,F<:Integer}
+  n_samples::Integer,
+) where {N,T<:Real}
   sk_raw = vec(reinterpret(T, sk))
   n_elements = length(sk)
 
@@ -616,10 +616,8 @@ end
 function calculate_full_means!(
   ::Val{:threaded},
   sk::AbstractArray{Complex{T},N},
-  n_samples::F,
-) where {N,T<:Real,F<:Integer}
-  grid_dims = size(sk)
-
+  n_samples::Integer,
+) where {N,T<:Real}
   sk_raw = vec(reinterpret(T, sk))
   n_elements = length(sk)
 
@@ -649,11 +647,7 @@ function calculate_full_means!(
 
   return nothing
 end
-function calculate_full_means!(
-  ::Val{:cuda},
-  sk::AnyCuArray{Complex{T},N},
-  n_samples::F,
-) where {N,T<:Real,F<:Integer}
+function calculate_full_means!(::Val{:cuda}, sk::AnyCuArray, n_samples::Integer)
   @. sk = abs(sk) / n_samples
 
   return nothing
@@ -661,22 +655,22 @@ end
 
 function identify_convergence!(
   ::Val{:serial},
-  density::AbstractArray{T,N},
-  means::AbstractArray{T,N},
-  vmr_current::AbstractArray{T,N},
-  vmr_prev1::AbstractArray{T,N},
-  vmr_prev2::AbstractArray{T,N},
-  smooth_counters::AbstractArray{Z1,N},
+  density::AbstractArray{<:Real,N},
+  means::AbstractArray{<:Real,N},
+  vmr_current::AbstractArray{<:Real,N},
+  vmr_prev1::AbstractArray{<:Real,N},
+  vmr_prev2::AbstractArray{<:Real,N},
+  smooth_counters::AbstractArray{<:Integer,N},
   is_smooth::AbstractArray{Bool,N},
   has_decreased::AbstractArray{Bool,N},
-  stable_counters::AbstractArray{Z1,N},
+  stable_counters::AbstractArray{<:Integer,N},
   is_stable::AbstractArray{Bool,N},
-  time_step::S,
-  tol1::S,
-  tol2::S,
-  smoothness_duration::Z2,
-  stable_duration::Z2,
-) where {N,T<:Real,S<:Real,Z1<:Integer,Z2<:Integer}
+  time_step::Real,
+  tol1::Real,
+  tol2::Real,
+  smoothness_duration::Real,
+  stable_duration::Real,
+) where {N}
   @inbounds @simd for i in eachindex(vmr_current)
     if !is_smooth[i]
       is_smooth[i], smooth_counters[i] = find_smoothness(
@@ -722,22 +716,22 @@ function identify_convergence!(
 end
 function identify_convergence!(
   ::Val{:threaded},
-  density::AbstractArray{T,N},
-  means::AbstractArray{T,N},
-  vmr_current::AbstractArray{T,N},
-  vmr_prev1::AbstractArray{T,N},
-  vmr_prev2::AbstractArray{T,N},
-  smooth_counters::AbstractArray{Z1,N},
+  density::AbstractArray{<:Real,N},
+  means::AbstractArray{<:Real,N},
+  vmr_current::AbstractArray{<:Real,N},
+  vmr_prev1::AbstractArray{<:Real,N},
+  vmr_prev2::AbstractArray{<:Real,N},
+  smooth_counters::AbstractArray{<:Integer,N},
   is_smooth::AbstractArray{Bool,N},
   has_decreased::AbstractArray{Bool,N},
-  stable_counters::AbstractArray{Z1,N},
+  stable_counters::AbstractArray{<:Integer,N},
   is_stable::AbstractArray{Bool,N},
-  time_step::S,
-  tol1::S,
-  tol2::S,
-  smoothness_duration::Z2,
-  stable_duration::Z2,
-) where {N,T<:Real,S<:Real,Z1<:Integer,Z2<:Integer}
+  time_step::Real,
+  tol1::Real,
+  tol2::Real,
+  smoothness_duration::Integer,
+  stable_duration::Integer,
+) where {N}
   is_smooth_array = Array{Bool}(is_smooth)
   has_decreased_array = Array{Bool}(has_decreased)
   is_stable_array = Array{Bool}(is_stable)
@@ -790,22 +784,22 @@ function identify_convergence!(
 end
 function identify_convergence!(
   ::Val{:cuda},
-  density::AnyCuArray{T,N},
-  means::AnyCuArray{T,N},
-  vmr_current::AnyCuArray{T,N},
-  vmr_prev1::AnyCuArray{T,N},
-  vmr_prev2::AnyCuArray{T,N},
-  smooth_counters::AnyCuArray{Z1,N},
+  density::AnyCuArray{<:Real,N},
+  means::AnyCuArray{<:Real,N},
+  vmr_current::AnyCuArray{<:Real,N},
+  vmr_prev1::AnyCuArray{<:Real,N},
+  vmr_prev2::AnyCuArray{<:Real,N},
+  smooth_counters::AnyCuArray{<:Integer,N},
   is_smooth::AnyCuArray{Bool,N},
   has_decreased::AnyCuArray{Bool,N},
-  stable_counters::AnyCuArray{Z1,N},
+  stable_counters::AnyCuArray{<:Integer,N},
   is_stable::AnyCuArray{Bool,N},
-  time_step::S,
-  tol1::S,
-  tol2::S,
-  smoothness_duration::Z2,
-  stable_duration::Z2,
-) where {N,T<:Real,S<:Real,Z1<:Integer,Z2<:Integer}
+  time_step::Real,
+  tol1::Real,
+  tol2::Real,
+  smoothness_duration::Integer,
+  stable_duration::Integer,
+) where {N}
   n_points = length(vmr_current)
 
   # Stability detection
@@ -899,14 +893,14 @@ function identify_convergence!(
 end
 
 @inline function find_smoothness(
-  vmr_current::T,
-  vmr_prev1::T,
-  vmr_prev2::T,
-  tol2::Ttol,
-  dt::P,
-  smooth_counter::Z1,
-  smoothness_duration::Z2,
-) where {T<:Real,Ttol<:Real,P<:Real,Z1<:Integer,Z2<:Integer}
+  vmr_current::Real,
+  vmr_prev1::Real,
+  vmr_prev2::Real,
+  tol2::Real,
+  dt::Real,
+  smooth_counter::Integer,
+  smoothness_duration::Integer,
+)
   second_derivative = second_difference(
     vmr_current, vmr_prev1, vmr_prev2, dt
   )
@@ -916,19 +910,16 @@ end
     if smooth_counter >= smoothness_duration
       is_smooth = true
     else
-      smooth_counter += Z1(1)
+      smooth_counter += one(smooth_counter)
     end
   else
-    smooth_counter = Z1(0)
+    smooth_counter = zero(smooth_counter)
   end
 
   return is_smooth, smooth_counter
 end
 
-@inline function smoothness_check(
-  second_derivative::T1,
-  tol::T2,
-) where {T1<:Real,T2<:Real}
+@inline function smoothness_check(second_derivative::Real, tol::Real)
   factor = 2
   return abs(second_derivative) < factor * tol
 end
@@ -980,10 +971,7 @@ function kernel_smooth!(
   return
 end
 
-@inline function find_decrease(
-  vmr_current::T,
-  vmr_prev1::T,
-) where {T<:Real}
+@inline function find_decrease(vmr_current::Real, vmr_prev1::Real)
   vmr_diff = vmr_current - vmr_prev1
   if vmr_diff < 0
     has_decreased = true
@@ -1019,15 +1007,15 @@ function kernel_decrease!(
 end
 
 @inline function find_stability(
-  vmr_current::T,
-  vmr_prev1::T,
-  vmr_prev2::T,
-  tol1::Ttol,
-  tol2::Ttol,
-  dt::P,
-  stability_counter::Z1,
-  stability_duration::Z2,
-) where {T<:Real,Ttol<:Real,P<:Real,Z1<:Integer,Z2<:Integer}
+  vmr_current::Real,
+  vmr_prev1::Real,
+  vmr_prev2::Real,
+  tol1::Real,
+  tol2::Real,
+  dt::Real,
+  stability_counter::Integer,
+  stability_duration::Integer,
+)
   first_derivative = abs(first_difference(vmr_current, vmr_prev1, dt))
   second_derivative = abs(second_difference(vmr_current, vmr_prev1, vmr_prev2, dt))
 
@@ -1036,10 +1024,10 @@ end
     if stability_counter >= stability_duration
       is_stable = true
     else
-      stability_counter += Z1(1)
+      stability_counter += one(stability_counter)
     end
   else
-    stability_counter = Z1(0)
+    stability_counter = zero(stability_counter)
   end
 
   return is_stable, stability_counter
@@ -1095,19 +1083,15 @@ function kernel_stable!(
   return
 end
 
-@inline function first_difference(
-  f::T1, f_prev::T2, dt::P
-) where {T1<:Real,T2<:Real,P<:Real}
+@inline function first_difference(f::Real, f_prev::Real, dt::Real)
   return (f - f_prev) / (2dt)
 end
 
-@inline function second_difference(
-  f::T1, f_prev1::T2, f_prev2::T3, dt::P
-) where {T1<:Real,T2<:Real,T3<:Real,P<:Real}
+@inline function second_difference(f::Real, f_prev1::Real, f_prev2::Real, dt::Real)
   return (f - 2f_prev1 + f_prev2) / dt^2
 end
 
-function silverman_rule(data::AbstractMatrix{T}) where {T<:Real}
+function silverman_rule(data::AbstractMatrix)
   n_dims, n_samples = size(data)
 
   iqrs = ntuple(i -> iqr(selectdim(data, 1, i)), n_dims)

@@ -1,8 +1,8 @@
 function initialize_density(
-  data::Vector{SVector{N,S}},
-  grid_array::AbstractArray{S,M},
-  bandwidth::AbstractMatrix{P},
-) where {N,S<:Real,M,P<:Real}
+  data::Vector{<:SVector{N,<:Real}},
+  grid_array::AbstractArray{<:Real,M},
+  bandwidth::AbstractMatrix{<:Real},
+) where {N,M}
   n_samples = length(data)
 
   dens = zeros(Float64, size(grid_array)[begin+1:end])

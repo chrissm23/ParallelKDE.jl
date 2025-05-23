@@ -4,7 +4,7 @@ using CUDA
 
 export
   AbstractDevice,
-  Device,
+  get_device,
   IsCPU,
   IsCUDA,
   DeviceNotSpecified,
@@ -23,7 +23,7 @@ const AVAILABLE_DEVICES = Dict{Symbol,AbstractDevice}(
   :cuda => IsCUDA(),
 )
 
-Device(::Any) = DeviceNotSpecified()
+get_device(::Any) = DeviceNotSpecified()
 
 function obtain_device(device::Symbol)
   if !haskey(AVAILABLE_DEVICES, device)

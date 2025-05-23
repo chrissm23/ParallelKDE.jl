@@ -51,27 +51,27 @@ struct CuKernelVars{N,T<:Real,M} <: AbstractKernelVars{N,T,M}
   end
 end
 
-Devices.Device(::KernelMeans) = IsCPU()
-Devices.Device(::CuKernelMeans) = IsCUDA()
+Devices.get_device(::KernelMeans) = IsCPU()
+Devices.get_device(::CuKernelMeans) = IsCUDA()
 
 function is_bootstrapped(
   ::AbstractKernelStatistics{N,T,M}
-)::Bool where {N,T<:Real,M}
+) where {N,T<:Real,M}
   return ifelse(N == M, false, true)
 end
 
-function get_ndims(::AbstractKernelStatistics{N,T,M})::Int where {N,T<:Real,M}
+function get_ndims(::AbstractKernelStatistics{N,T,M}) where {N,T<:Real,M}
   return N
 end
 
 function initialize_kernels(
   ::IsCPU,
-  kde::AbstractKDE{N,Tdens,Tdata},
-  grid::AbstractGrid{N,Tgrid,M};
-  n_bootstraps::Integer=0,
-  include_var::Bool=false,
-  method::Symbol=CPU_SERIAL,
-) where {N,Tdens<:Real,Tdata<:Real,M,Tgrid<:Real}
+  kde::AbstractKDE{N,T,<:Real},
+  grid::AbstractGrid{N,<:Real,M};
+  n_bootstraps=0,
+  include_var=false,
+  method=CPU_SERIAL,
+) where {N,T<:Real,M}
   if n_bootstraps < 0
     throw(ArgumentError("Number of boostraps must be positive."))
 
@@ -122,12 +122,12 @@ function initialize_kernels(
 end
 function initialize_kernels(
   ::IsCUDA,
-  kde::AbstractKDE{N,T,S},
-  grid::AbstractGrid{N,P,M};
-  n_bootstraps::Integer=0,
-  include_var::Bool=false,
+  kde::AbstractKDE{N,T,<:Real},
+  grid::AbstractGrid{N,<:Real,M};
+  n_bootstraps=0,
+  include_var=false,
   method=GPU_CUDA
-) where {N,T<:Real,S<:Real,M,P<:Real}
+) where {N,T<:Real,M}
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
   if include_var == false
@@ -175,32 +175,32 @@ end
 function propagate!(
   means::AbstractArray{Complex{T},M},
   vars::AbstractArray{Complex{T},M},
-  kernel_means::AbstractKernelMeans{N,T,L},
-  kernel_vars::AbstractKernelVars{N,T,L},
-  grid::AbstractGrid{N,P,M},
+  kernel_means::AbstractKernelMeans{N,T,M},
+  kernel_vars::AbstractKernelVars{N,T,M},
+  grid::AbstractGrid{N,<:Real,L},
   time::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real};
-  method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,M,P<:Real,L}
+  method=CPU_SERIAL,
+) where {N,T<:Real,M,L}
   if is_bootstrapped(kernel_means)
-    means_bootstrap = kernel_means.statistic
+    kernel_means_reshaped = kernel_means.statistic
+    kernel_vars_reshaped = kernel_vars.statistic
+    means_reshaped = means
+    vars_reshaped = vars
   else
-    means_bootstrap = reshape(kernel_means.statistic, size(kernel_means.statistic)..., 1)
+    kernel_means_reshaped = reshape(kernel_means.statistic, size(kernel_means.statistic)..., 1)
+    kernel_vars_reshaped = reshape(kernel_vars.statistic, size(kernel_vars.statistic)..., 1)
+    means_reshaped = reshape(means, size(means)..., 1)
+    vars_reshaped = reshape(vars, size(vars)..., 1)
   end
-  if is_bootstrapped(kernel_vars)
-    vars_bootstrap = kernel_vars.statistic
-  else
-    vars_bootstrap = reshape(kernel_vars.statistic, size(kernel_vars.statistic)..., 1)
-  end
-
   grid_array = get_coordinates(grid)
 
   propagate_statistics!(
     Val(method),
-    means,
-    vars,
-    means_bootstrap,
-    vars_bootstrap,
+    means_reshaped,
+    vars_reshaped,
+    kernel_means_reshaped,
+    kernel_vars_reshaped,
     time,
     time_initial,
     grid_array,
@@ -208,22 +208,24 @@ function propagate!(
 end
 function propagate!(
   means::AbstractArray{Complex{T},M},
-  kernel_means::AbstractKernelMeans{N,T,L},
-  grid::AbstractGrid{N,P,M},
+  kernel_means::AbstractKernelMeans{N,T,M},
+  grid::AbstractGrid{N,<:Real,L},
   time::AbstractVector{<:Real};
-  method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,M,P<:Real,L}
+  method=CPU_SERIAL,
+) where {N,T<:Real,M,L}
   if is_bootstrapped(kernel_means)
-    means_initial = kernel_means.statistic
+    kernel_means_reshaped = kernel_means.statistic
+    means_reshaped = means
   else
-    means_initial = reshape(kernel_means.statistic, size(kernel_means.statistic)..., 1)
+    kernel_means_reshaped = reshape(kernel_means.statistic, size(kernel_means.statistic)..., 1)
+    means_reshaped = reshape(means, size(means)..., 1)
   end
   grid_array = get_coordinates(grid)
 
   propagate_statistics!(
     Val(method),
-    means,
-    means_initial,
+    means_reshaped,
+    kernel_means_reshaped,
     time,
     grid_array,
   )
@@ -289,18 +291,18 @@ mutable struct CuKernelPropagation{N,T<:Real,M} <: AbstractKernelPropagation{N,T
 
 end
 
-Devices.Device(::KernelPropagation) = IsCPU()
-Devices.Device(::CuKernelPropagation) = IsCUDA()
+Devices.get_device(::KernelPropagation) = IsCPU()
+Devices.get_device(::CuKernelPropagation) = IsCUDA()
 
-function is_vmr_calculated(kernel_propagation::AbstractKernelPropagation{N,T,M})::Bool where {N,T,M}
+function is_vmr_calculated(kernel_propagation::AbstractKernelPropagation)
   return kernel_propagation.calculated_vmr
 end
 
-function is_means_calculated(kernel_propagation::AbstractKernelPropagation{N,T,M})::Bool where {N,T,M}
+function is_means_calculated(kernel_propagation::AbstractKernelPropagation)
   return kernel_propagation.calculated_means
 end
 
-function get_vmr(kernel_propagation::KernelPropagation{N,T,M})::AbstractArray{T,N} where {N,T,M}
+function get_vmr(kernel_propagation::KernelPropagation{N,T,M}) where {N,T<:Real,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated"))
   end
@@ -315,7 +317,7 @@ function get_vmr(kernel_propagation::KernelPropagation{N,T,M})::AbstractArray{T,
 
   return vmr_var
 end
-function get_vmr(kernel_propagation::CuKernelPropagation{N,T,M})::AbstractArray{T,N} where {N,T,M}
+function get_vmr(kernel_propagation::CuKernelPropagation{N,T,M}) where {N,T<:Real,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated"))
   end
@@ -327,7 +329,7 @@ function get_vmr(kernel_propagation::CuKernelPropagation{N,T,M})::AbstractArray{
   return vmr_var
 end
 
-function get_means(kernel_propagation::KernelPropagation{N,T,M})::AbstractArray{T,N} where {N,T,M}
+function get_means(kernel_propagation::KernelPropagation{N,T,M}) where {N,T<:Real,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated"))
   elseif !is_means_calculated(kernel_propagation)
@@ -343,7 +345,7 @@ function get_means(kernel_propagation::KernelPropagation{N,T,M})::AbstractArray{
 
   return reshape(reinterpreted_means, grid_dims)
 end
-function get_means(kernel_propagation::CuKernelPropagation{N,T,M})::AbstractArray{T,N} where {N,T,M}
+function get_means(kernel_propagation::CuKernelPropagation{N,T,M}) where {N,T<:Real,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated"))
   elseif !is_means_calculated(kernel_propagation)
@@ -360,11 +362,11 @@ function propagate_bootstraps!(
   kernel_propagation::AbstractKernelPropagation{N,T,M},
   kernel_means::AbstractKernelMeans{N,T,M},
   kernel_vars::AbstractKernelVars{N,T,M},
-  grid::AbstractGrid{N,P,M},
-  time::AbstractVector{S},
-  time_initial::AbstractVector{S};
-  method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,M,P<:Real,S<:Real}
+  grid::AbstractGrid{N,<:Real,M},
+  time::AbstractVector{<:Real},
+  time_initial::AbstractVector{<:Real};
+  method=CPU_SERIAL,
+) where {N,T<:Real,M}
   propagate!(
     kernel_propagation.kernel_means,
     kernel_propagation.kernel_vars,
@@ -385,17 +387,17 @@ end
 function propagate_means!(
   kernel_propagation::AbstractKernelPropagation{N,T,M},
   means::AbstractKernelMeans{N,T,N},
-  grid::AbstractGrid{N,P,M},
-  time::AbstractVector{S};
-  method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,M,P<:Real,S<:Real}
+  grid::AbstractGrid{N,<:Real,M},
+  time::AbstractVector{<:Real};
+  method=CPU_SERIAL,
+) where {N,T<:Real,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated. Destination array may be in use."))
   end
 
   means_dst = view(kernel_propagation.kernel_means, fill(Colon(), N)..., 1)
   propagate!(
-    reshape(means_dst, size(means_dst)..., 1),
+    means_dst,
     means,
     grid,
     time;
@@ -406,9 +408,9 @@ function propagate_means!(
 end
 
 function ifft_bootstraps!(
-  kernel_propagation::KernelPropagation{N,T,M};
-  method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,M}
+  kernel_propagation::KernelPropagation;
+  method=CPU_SERIAL,
+)
   ifourier_statistics!(
     Val(method),
     kernel_propagation.kernel_means,
@@ -419,9 +421,9 @@ function ifft_bootstraps!(
   return nothing
 end
 function ifft_bootstraps!(
-  kernel_propagation::CuKernelPropagation{N,T,M};
-  method::Symbol=GPU_CUDA,
-) where {N,T<:Real,M}
+  kernel_propagation::CuKernelPropagation;
+  method=GPU_CUDA,
+)
   ifourier_statistics!(
     Val(method),
     kernel_propagation.kernel_means,
@@ -434,7 +436,7 @@ end
 
 function ifft_means!(
   kernel_propagation::KernelPropagation{N,T,M};
-  method::Symbol=CPU_SERIAL,
+  method=CPU_SERIAL,
 ) where {N,T<:Real,M}
   ifourier_statistics!(
     Val(method),
@@ -461,12 +463,12 @@ function ifft_means!(
 end
 
 function calculate_vmr!(
-  kernel_propagation::AbstractKernelPropagation{N,T,M},
-  time::AbstractVector{S},
-  grid::AbstractGrid{N,P,M},
-  n_samples::F;
-  method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,M,P<:Real,S<:Real,F<:Integer}
+  kernel_propagation::AbstractKernelPropagation{N,<:Real,M},
+  time::AbstractVector{<:Real},
+  grid::AbstractGrid{N,<:Real,M},
+  n_samples::Integer;
+  method=CPU_SERIAL,
+) where {N,M}
   if is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR already calculated. Propagate bootstraps first."))
   end
@@ -488,9 +490,9 @@ end
 
 function calculate_means!(
   kernel_propagation::AbstractKernelPropagation{N,T,M},
-  n_samples::F;
-  method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,M,F<:Real}
+  n_samples::Integer;
+  method=CPU_SERIAL,
+) where {N,T<:Real,M}
   if is_means_calculated(kernel_propagation)
     throw(ArgumentError("Means already calculated. Propagate bootstraps first."))
   end
@@ -505,9 +507,9 @@ function calculate_means!(
   kernel_propagation.calculated_means = true
 end
 
-abstract type AbstractDensityState{T,N} end
+abstract type AbstractDensityState{N,T} end
 
-@kwdef mutable struct DensityState{T,N} <: AbstractDensityState{T,N}
+@kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   dt::Float64
   eps1::Float64 = 1.0
@@ -527,12 +529,12 @@ abstract type AbstractDensityState{T,N} end
   f_prev2::Array{T,N}
 end
 function DensityState(
-  dims::NTuple{N,Int};
+  dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  dt::Float64,
+  dt::Real,
   kwargs...
 ) where {N}
-  DensityState{T,N}(;
+  DensityState{N,T}(;
     dt=dt,
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
@@ -545,7 +547,7 @@ function DensityState(
   )
 end
 
-@kwdef mutable struct CuDensityState{T,N} <: AbstractDensityState{T,N}
+@kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   dt::Float32
   eps1::Float32 = 1.0f0
@@ -565,12 +567,12 @@ end
   f_prev2::CuArray{T,N}
 end
 function CuDensityState(
-  dims::NTuple{N,Int};
+  dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  dt::Float32,
+  dt::Real,
   kwargs...
 ) where {N}
-  CuDensityState{T,N}(;
+  CuDensityState{N,T}(;
     dt=dt,
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
@@ -584,11 +586,11 @@ function CuDensityState(
 end
 
 function update_state!(
-  density_state::AbstractDensityState{T,N},
-  kde::AbstractKDE{N,T,S},
-  kernel_propagation::AbstractKernelPropagation{N,T,M};
-  method::Symbol=CPU_SERIAL,
-) where {N,T<:Real,S<:Real,M}
+  density_state::AbstractDensityState{N,<:Real},
+  kde::AbstractKDE{N,<:Real,<:Real},
+  kernel_propagation::AbstractKernelPropagation{N,<:Real,M};
+  method=CPU_SERIAL,
+) where {N,M}
   vmr_var = get_vmr(kernel_propagation)
   means = get_means(kernel_propagation)
 
@@ -620,41 +622,41 @@ end
 
 abstract type AbstractParallelEstimator{N,T,M} <: AbstractEstimator end
 
-struct ParallelEstimator{N,T<:Real,M} <: AbstractParallelEstimator{N,T,M}
+struct ParallelEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractParallelEstimator{N,T,M}
   means_bootstraps::KernelMeans{N,T,M}
   vars_bootstraps::KernelVars{N,T,M}
   means::KernelMeans{N,T,N}
   kernel_propagation::KernelPropagation{N,T,M}
-  grid_direct::Grid{N,T,M}
-  grid_fourier::Grid{N,T,M}
-  times::Vector{<:SVector{N,<:Real}}
-  dt::SVector{N,<:Real}
-  density_state::DensityState
+  grid_direct::Grid{N,P,M}
+  grid_fourier::Grid{N,P,M}
+  times::Vector{<:SVector{N,S}}
+  dt::SVector{N,S}
+  density_state::DensityState{N,T}
 end
 
-struct CuParallelEstimator{N,T<:Real,M} <: AbstractParallelEstimator{N,T,M}
+struct CuParallelEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractParallelEstimator{N,T,M}
   means_bootstraps::CuKernelMeans{N,T,M}
   vars_bootstraps::CuKernelVars{N,T,M}
   means::CuKernelMeans{N,T,N}
   kernel_propagation::CuKernelPropagation{N,T,M}
-  grid_direct::CuGrid{N,T,M}
-  grid_fourier::CuGrid{N,T,M}
-  times::CuMatrix{<:Real}
-  dt::CuVector{<:Real}
+  grid_direct::CuGrid{N,P,M}
+  grid_fourier::CuGrid{N,P,M}
+  times::CuMatrix{S}
+  dt::CuVector{S}
   density_state::CuDensityState
 end
 
 add_estimator!(:parallelEstimator, AbstractParallelEstimator)
 
-Devices.Device(::ParallelEstimator) = IsCPU()
-Devices.Device(::CuParallelEstimator) = IsCUDA()
+Devices.get_device(::ParallelEstimator) = IsCPU()
+Devices.get_device(::CuParallelEstimator) = IsCUDA()
 
 function initialize_estimator(
   ::Type{<:AbstractParallelEstimator},
   kde::AbstractKDE;
   kwargs...
 )::AbstractParallelEstimator
-  device = Device(kde)
+  device = get_device(kde)
 
   if !haskey(kwargs, :grid)
     throw(ArgumentError("Missing required keyword argument: 'grid'"))
@@ -662,8 +664,8 @@ function initialize_estimator(
 
   kwargs_dict = Dict(kwargs)
   grid = pop!(kwargs_dict, :grid)
-  if Device(grid) != device
-    throw(ArgumentError("KDE device $device does not match Grid device $(Device(grid))"))
+  if get_device(grid) != device
+    throw(ArgumentError("KDE device $device does not match Grid device $(get_device(grid))"))
   end
 
   n_bootstraps = pop!(kwargs_dict, :n_bootstraps, 100)
@@ -704,15 +706,15 @@ function initialize_estimator_propagation(device::AbstractDevice, args...)::Abst
 end
 function initialize_estimator_propagation(
   ::IsCPU,
-  kde::KDE{N,T,S},
+  kde::KDE{N,T,<:Real},
   means_bootstraps::KernelMeans{N,T,M},
   vars_bootstraps::KernelVars{N,T,M},
   means::KernelMeans{N,T,N},
-  grid::Grid{N,P,M};
+  grid::Grid{N,<:Real,M};
   time_step::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
   kwargs...
-) where {N,T<:Real,S<:Real,P<:Real,M}
+) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
@@ -735,15 +737,15 @@ function initialize_estimator_propagation(
 end
 function initialize_estimator_propagation(
   ::IsCUDA,
-  kde::CuKDE{N,T,S},
+  kde::CuKDE{N,T,<:Real},
   means_bootstraps::CuKernelMeans{N,T,M},
   vars_bootstraps::CuKernelVars{N,T,M},
   means::CuKernelMeans{N,T,N},
-  grid::CuGrid{N,P,M};
-  time_step::Union{Nothing,Real}=nothing,
-  n_steps::Union{Nothing,Integer}=nothing,
+  grid::CuGrid{N,<:Real,M};
+  time_step=nothing,
+  n_steps=nothing,
   kwargs...
-) where {N,T<:Real,S<:Real,P<:Real,M}
+) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = CuKernelPropagation(means_bootstraps, vars_bootstraps)
@@ -768,14 +770,14 @@ end
 function get_time(
   ::IsCPU,
   time_final::Union{Real,AbstractVector{<:Real}};
-  n_dims::Union{Nothing,Integer}=nothing,
-  n_steps::Union{Nothing,Integer}=nothing,
-  time_step::Union{Nothing,Real,AbstractVector{<:Real}}=nothing,
+  n_dims=nothing,
+  n_steps=nothing,
+  time_step=nothing,
 )
   if time_final isa Real
     if n_dims !== nothing
       time_final = SVector{n_dims,Float64}(time_final)
-    elseif time_step isa AbstractVector{<:Real}
+    elseif time_step isa AbstractVector
       n_dims = length(time_step)
       time_final = SVector{n_dims,Float64}(time_final)
     else
@@ -814,9 +816,9 @@ end
 function get_time(
   ::IsCUDA,
   time_final::Union{Real,AbstractVector{<:Real}};
-  n_dims::Union{Nothing,Integer}=nothing,
-  n_steps::Union{Nothing,Integer}=nothing,
-  time_step::Union{Nothing,Real,AbstractVector{<:Real}}=nothing,
+  n_dims=nothing,
+  n_steps=nothing,
+  time_step=nothing,
 )
   if time_final isa Real
     if n_dims !== nothing
@@ -859,10 +861,10 @@ function get_time(
 end
 
 function estimate!(
-  estimator::AbstractParallelEstimator,
-  kde::AbstractKDE{N,T,S};
+  estimator::AbstractParallelEstimator{N,<:Real,M},
+  kde::AbstractKDE{N,<:Real,<:Real};
   kwargs...
-)::Nothing where {N,T,S}
+) where {N,M}
   check_memory(estimator)
 
   method = get(kwargs, :method, CPU_SERIAL)
@@ -919,15 +921,15 @@ function estimate!(
   return nothing
 end
 
-function get_necessary_memory(estimator::AbstractParallelEstimator)::Float64
+function get_necessary_memory(estimator::AbstractParallelEstimator)
   bootstraps_memory = sizeof(estimator.means_boostraps.statistic) * 4
   means_memory = sizeof(estimator.means.statistic) * 3
 
   return 1.25(bootstraps_memory + means_memory) / 1024^2
 end
 
-function check_memory(estimator::AbstractParallelEstimator)::Nothing
-  available_memory = get_available_memory(Device(estimator))
+function check_memory(estimator::AbstractParallelEstimator)
+  available_memory = get_available_memory(get_device(estimator))
   required_memory = get_necessary_memory(estimator)
 
   if available_memory < required_memory

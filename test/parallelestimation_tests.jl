@@ -7,7 +7,7 @@
 
   data = generate_samples(n_samples, n_dims)
   kde = initialize_kde(data, size(grid), device=:cpu)
-  kde_device = ParallelKDE.Device(kde)
+  kde_device = ParallelKDE.get_device(kde)
 
   @testset "Implementation: $implementation tests" for implementation in [:serial, :threaded]
     @testset "Kernel statistics tests" begin
@@ -31,7 +31,7 @@
       fill!(means_bootstraps_array, NaN)
       vars_bootstraps_array = Array{ComplexF64}(undef, size(grid)..., n_bootstraps)
       fill!(vars_bootstraps_array, NaN)
-      means_array = Array{ComplexF64}(undef, size(grid)..., 1)
+      means_array = Array{ComplexF64}(undef, size(grid))
       fill!(means_array, NaN)
 
       ParallelKDE.DensityEstimators.propagate!(
@@ -246,7 +246,7 @@ if CUDA.functional()
 
     data_cpu = generate_samples(n_samples, n_dims)
     kde = initialize_kde(data_cpu, size(grid), device=:cuda)
-    kde_device = ParallelKDE.Device(kde)
+    kde_device = ParallelKDE.get_device(kde)
     data = get_data(kde)
 
     @testset "Kernel statistics tests" begin
@@ -274,9 +274,7 @@ if CUDA.functional()
         undef, size(grid)..., n_bootstraps
       )
       fill!(vars_bootstraps_array, NaN32)
-      means_array = CuArray{ComplexF32}(
-        undef, size(grid)..., 1
-      )
+      means_array = CuArray{ComplexF32}(undef, size(grid))
       fill!(means_array, NaN32)
 
       ParallelKDE.DensityEstimators.propagate!(

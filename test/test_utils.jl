@@ -1,14 +1,14 @@
 function normal_distribution(
-  x::AbstractVector{S},
-  μ::SVector{N,S},
-  bandwidth::AbstractMatrix{P}
-) where {N,S<:Real,P<:Real}
+  x::AbstractVector{<:Real},
+  μ::SVector{N,<:Real},
+  bandwidth::AbstractMatrix{<:Real}
+) where {N}
   normal_distro = MvNormal(μ, bandwidth .^ 2)
 
   return pdf(normal_distro, x)
 end
 
-function generate_samples(n_samples::Integer, n_dims::Int; normal_distro=nothing)
+function generate_samples(n_samples::Integer, n_dims::Integer; normal_distro=nothing)
   μ = zeros(n_dims)
   cov = Diagonal(ones(n_dims))
 
