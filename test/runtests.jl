@@ -15,8 +15,6 @@ using StaticArrays,
 
 include("test_utils.jl")
 
-# TODO: Once the package is ready and tested, limit tests up to 2D to run on
-# GitHub hosted runners
 @testset "ParallelKDE.jl" begin
   @testset "Code quality (Aqua.jl)" begin
     Aqua.test_all(
