@@ -80,7 +80,7 @@ function estimate!(
   estimator::AbstractEstimator,
   kde::AbstractKDE;
   kwargs...
-)::Nothing
+)
   throw(ArgumentError("Estimator not implemented"))
 
 end

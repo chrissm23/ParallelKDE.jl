@@ -65,7 +65,7 @@ function initialize_estimation(
   grid_bounds=nothing,
   grid_padding=nothing,
   device=:cpu,
-)::DensityEstimation where {G<:AbstractGrid}
+) where {G<:AbstractGrid}
   if isa(data, AbstractMatrix)
     n_dims = size(data, 1)
   elseif isa(data, AbstractVector)
@@ -115,14 +115,15 @@ function initialize_estimation(
 
 end
 
-has_grid(density_estimation::DensityEstimation)::Bool =
+has_grid(density_estimation::DensityEstimation) =
   density_estimation.grid !== nothing
+KDEs.get_density(density_estimation::DensityEstimation) = get_density(density_estimation.kde)
 
 function estimate_density!(
   density_estimation::DensityEstimation,
   estimation::Symbol;
   kwargs...
-)::Nothing
+)
   set_nan_density!(density_estimation.kde)
 
   if has_grid(density_estimation)

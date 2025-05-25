@@ -36,7 +36,7 @@ function initialize_kde(
   data::Union{AbstractVector{<:AbstractVector{T}},AbstractMatrix{T}},
   dims::NTuple{N,Z};
   device::Symbol=:cpu,
-)::AbstractKDE where {T<:Real,N,Z<:Integer}
+) where {T<:Real,N,Z<:Integer}
   device_type = obtain_device(device)
 
   return initialize_kde(device_type, data, dims)
@@ -47,7 +47,7 @@ function initialize_kde(
   data::Union{AbstractVector{<:AbstractVector{<:Real}},AbstractMatrix{<:Real}},
   dims::NTuple{N};
   T=Float64,
-)::KDE where {N}
+) where {N}
   if isa(data, AbstractMatrix)
     if size(data, 1) != N
       throw(ArgumentError("Data must have $N dimensions"))
@@ -65,7 +65,7 @@ function initialize_kde(
   data::Union{AbstractVector{<:AbstractVector{<:Real}},AbstractMatrix{<:Real}},
   dims::NTuple{N};
   T=Float32,
-)::CuKDE where {N}
+) where {N}
   if isa(data, AbstractMatrix)
     if size(data, 1) != N
       throw(ArgumentError("Data must have $N dimensions"))

@@ -655,7 +655,7 @@ function initialize_estimator(
   ::Type{<:AbstractParallelEstimator},
   kde::AbstractKDE;
   kwargs...
-)::AbstractParallelEstimator
+)
   device = get_device(kde)
 
   if !haskey(kwargs, :grid)
@@ -701,7 +701,7 @@ function initialize_estimator(
 
 end
 
-function initialize_estimator_propagation(device::AbstractDevice, args...)::AbstractKernelPropagation
+function initialize_estimator_propagation(device::AbstractDevice, args...)
   throw(ArgumentError("Propagation not implemented for device: $(typeof(device))"))
 end
 function initialize_estimator_propagation(
