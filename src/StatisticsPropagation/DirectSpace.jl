@@ -1,5 +1,6 @@
 module DirectSpace
 
+using ..Devices
 using ..Grids
 using ..KDEs
 
@@ -21,6 +22,51 @@ export silverman_rule,
 
 include("../CuStatistics/CuStatistics.jl")
 
+function initialize_dirac_sequence(
+  data::Union{AbstractMatrix{<:Real},AbstractVector{<:AbstractVector{<:Real}}};
+  grid::Union{AbstractGrid{N,<:Real,M},Nothing}=nothing,
+  bootstrap_idxs::Union{AbstractMatrix{<:Integer},Nothing}=nothing,
+  device=:cpu,
+  method=:serial,
+  include_var=false,
+  T=Float64,
+) where {N,M}
+  ensure_valid_implementation(device, method)
+  if grid === nothing
+    grid = find_grid(data; device)
+  end
+
+  if bootstrap_idxs === nothing
+    n_bootstraps = 1
+    bootstrap_idxs = zeros(Int, N, n_bootstraps)
+    bootstrap_idxs[:, 1] = 1:N
+  end
+
+  if obtain_device(device) isa IsCPU
+    if data isa AbstractMatrix
+      data = Vector{SVector{N,T}}(eachcol(data))
+    else
+      data = Vector{SVector{N,T}}(data)
+    end
+  else
+    if !(data isa AbstractMatrix)
+      data = reduce(hcat, data)
+    end
+  end
+
+  if obtain_device(device) isa IsCUDA
+    data = CUDA.CuArray(data)
+  end
+
+  return initialize_dirac_sequence(
+    Val(method),
+    data,
+    grid,
+    bootstrap_idxs;
+    include_var=include_var,
+    T=T,
+  )
+end
 function initialize_dirac_sequence(
   ::Val{:serial},
   data::AbstractVector{<:SVector{N,<:Real}},

@@ -10,7 +10,11 @@ export
   DeviceNotSpecified,
   AVAILABLE_DEVICES,
   obtain_device,
-  get_available_memory
+  get_available_memory,
+  CPU_SERIAL,
+  CPU_THREADED,
+  GPU_CUDA,
+  ensure_valid_implementation
 
 abstract type AbstractDevice end
 
@@ -40,5 +44,27 @@ function get_available_memory(::IsCUDA)
   return CUDA.memory_info()[1] / 1024^2
 end
 
+const CPU_SERIAL = :serial
+const CPU_THREADED = :threaded
+const GPU_CUDA = :cuda
+
+const DEVICE_IMPLEMENTATIONS = Dict{AbstractDevice,Set{Symbol}}(
+  IsCPU() => Set([CPU_SERIAL, CPU_THREADED]),
+  IsCUDA() => Set([GPU_CUDA]),
+  DeviceNotSpecified() => Set()
+)
+
+is_valid_implementation(device::AbstractDevice, implementation::Symbol) =
+  implementation in get(DEVICE_IMPLEMENTATIONS, typeof(device), Set())
+
+function ensure_valid_implementation(device::AbstractDevice, implementation::Symbol)
+  if !is_valid_implementation(device, implementation)
+    throw(ArgumentError("Invalid implementation $implementation for device $device"))
+  end
+
+  return true
+end
+ensure_valid_implementation(device::Symbol, implementation::Symbol) =
+  ensure_valid_implementation(obtain_device(device), implementation)
 
 end

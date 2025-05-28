@@ -1,16 +1,16 @@
 @testset "Density estimators API tests" begin
   @testset "Valid implementation tests" for implementation in [:serial, :threaded, :cuda]
     if implementation in [:serial, :threaded]
-      @test_throws ArgumentError ParallelKDE.DensityEstimators.ensure_valid_implementation(
+      @test_throws ArgumentError ParallelKDE.Devices.ensure_valid_implementation(
         ParallelKDE.Devices.IsCUDA(), implementation
       )
     else
-      @test_throws ArgumentError ParallelKDE.DensityEstimators.ensure_valid_implementation(
+      @test_throws ArgumentError ParallelKDE.Devices.ensure_valid_implementation(
         ParallelKDE.Devices.IsCPU(), implementation
       )
     end
 
-    @test_throws ArgumentError ParallelKDE.DensityEstimators.ensure_valid_implementation(
+    @test_throws ArgumentError ParallelKDE.Devices.ensure_valid_implementation(
       ParallelKDE.Devices.DeviceNotSpecified(), implementation
     )
   end

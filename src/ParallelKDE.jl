@@ -58,7 +58,7 @@ struct DensityEstimation{K<:AbstractKDE,G<:Union{Nothing,AbstractGrid}} <: Abstr
 end
 
 function initialize_estimation(
-  data;
+  data::Union{AbstractMatrix,AbstractVector{<:AbstractVector}};
   grid::Union{Bool,G}=false,
   grid_ranges=nothing,
   dims=nothing,
@@ -121,16 +121,16 @@ KDEs.get_density(density_estimation::DensityEstimation) = get_density(density_es
 
 function estimate_density!(
   density_estimation::DensityEstimation,
-  estimation::Symbol;
+  estimation_method::Symbol;
   kwargs...
 )
   set_nan_density!(density_estimation.kde)
 
   if has_grid(density_estimation)
     grid = density_estimation.grid
-    estimate!(estimation, density_estimation.kde; grid, kwargs...)
+    estimate!(estimation_method, density_estimation.kde; grid, kwargs...)
   else
-    estimate!(estimation, density_estimation.kde; kwargs...)
+    estimate!(estimation_method, density_estimation.kde; kwargs...)
   end
 
   return nothing

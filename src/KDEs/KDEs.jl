@@ -52,9 +52,9 @@ function initialize_kde(
     if size(data, 1) != N
       throw(ArgumentError("Data must have $N dimensions"))
     end
-    data_reinterpreted = Vector{SVector{N,Float64}}(eachcol(data))
+    data_reinterpreted = Vector{SVector{N,T}}(eachcol(data))
   else
-    data_reinterpreted = Vector{SVector{N,Float64}}(data)
+    data_reinterpreted = Vector{SVector{N,T}}(data)
   end
 
   density = fill(T(NaN), dims)
@@ -70,9 +70,9 @@ function initialize_kde(
     if size(data, 1) != N
       throw(ArgumentError("Data must have $N dimensions"))
     end
-    data_reinterpreted = CuMatrix{Float32}(data)
+    data_reinterpreted = CuMatrix{T}(data)
   else
-    data_reinterpreted = CuMatrix{Float32}(reduce(hcat, data))
+    data_reinterpreted = CuMatrix{T}(reduce(hcat, data))
   end
 
   density = CUDA.fill(T(NaN), dims)

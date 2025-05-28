@@ -16,27 +16,6 @@ export AbstractEstimator,
 
 abstract type AbstractEstimator end
 
-const CPU_SERIAL = :serial
-const CPU_THREADED = :threaded
-const GPU_CUDA = :cuda
-
-const DEVICE_IMPLEMENTATIONS = Dict{AbstractDevice,Set{Symbol}}(
-  IsCPU() => Set([CPU_SERIAL, CPU_THREADED]),
-  IsCUDA() => Set([GPU_CUDA]),
-  DeviceNotSpecified() => Set()
-)
-
-is_valid_implementation(device::AbstractDevice, implementation::Symbol) =
-  implementation in get(DEVICE_IMPLEMENTATIONS, typeof(device), Set())
-
-function ensure_valid_implementation(device::AbstractDevice, implementation::Symbol)
-  if !is_valid_implementation(device, implementation)
-    throw(ArgumentError("Invalid implementation $implementation for device $device"))
-  end
-
-  return true
-end
-
 estimator_lookup = Dict()
 function add_estimator!(key::Symbol, value::Type{<:AbstractEstimator})
   if haskey(estimator_lookup, key)
