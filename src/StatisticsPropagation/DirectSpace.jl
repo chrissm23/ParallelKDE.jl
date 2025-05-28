@@ -36,22 +36,23 @@ function initialize_dirac_sequence(
     grid = find_grid(data; device)
   end
 
-  if bootstrap_idxs === nothing
-    n_bootstraps = 1
-    bootstrap_idxs = zeros(Int, N, n_bootstraps)
-    bootstrap_idxs[:, 1] = 1:N
-  end
-
   if obtain_device(device) isa IsCPU
     if data isa AbstractMatrix
       data = Vector{SVector{N,T}}(eachcol(data))
     else
       data = Vector{SVector{N,T}}(data)
     end
+    n_samples = length(data)
   else
     if !(data isa AbstractMatrix)
       data = reduce(hcat, data)
     end
+    n_samples = size(data, 2)
+  end
+
+  if bootstrap_idxs === nothing
+    bootstrap_idxs = zeros(Int, n_samples, 1)
+    bootstrap_idxs[:, 1] = 1:n_samples
   end
 
   if obtain_device(device) isa IsCUDA
@@ -182,10 +183,10 @@ function generate_dirac_cpu!(
   remainder_h = @MVector zeros(T, N)
 
   mask = falses(N)
-  grid_indices = @MVector zeros(Int64, N)
+  grid_indices = @MVector zeros(Int, N)
 
   for sample in data
-    @. indices_l = floor(Int64, (sample - low_bound) / spacing) + 1
+    @. indices_l = floor(Int, (sample - low_bound) / spacing) + 1
     @. remainder_l = (sample - low_bound) % spacing
     @. indices_h = indices_l + 1
     @. remainder_h = spacing - remainder_l
@@ -215,19 +216,26 @@ function generate_dirac_cpu!(
   n_samples = length(data)
   spacing_squared = prod(spacing)^2
 
-  indices_l = @MVector zeros(Int64, N)
-  indices_h = @MVector zeros(Int64, N)
+  indices_l = @MVector zeros(Int, N)
+  indices_h = @MVector zeros(Int, N)
   remainder_l = @MVector zeros(T, N)
   remainder_h = @MVector zeros(T, N)
 
   mask = falses(N)
-  grid_indices = @MVector zeros(Int64, N)
+  grid_indices = @MVector zeros(Int, N)
 
   for sample in data
-    @. indices_l = floor(Int64, (sample - low_bound) / spacing) + 1
-    @. remainder_l = (sample - low_bound) % spacing
-    @. indices_h = indices_l + 1
-    @. remainder_h = spacing - remainder_l
+    @inbounds @simd for i in 1:N
+      sample_i = sample[i]
+      low_bound_i = low_bound[i]
+      spacing_i = spacing[i]
+      delta_i = sample_i - low_bound_i
+      index_l = floor(Int, delta_i / spacing_i)
+      indices_l[i] = index_l + 1
+      remainder_h[i] = delta_i % spacing_i
+      indices_h[i] = indices_l[i] + 1
+      remainder_l[i] = spacing_i - remainder_h[i]
+    end
 
     @inbounds for i in 0:(2^N-1)
       @inbounds @simd for j in 1:N
