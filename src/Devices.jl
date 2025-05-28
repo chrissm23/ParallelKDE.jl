@@ -55,7 +55,6 @@ const DEVICE_IMPLEMENTATIONS = Dict{AbstractDevice,Set{Symbol}}(
 )
 
 is_valid_implementation(device::AbstractDevice, implementation::Symbol) =
-  println("Checking implementation $implementation for device $device\n") |
   implementation in get(DEVICE_IMPLEMENTATIONS, device, Set())
 
 function ensure_valid_implementation(device::AbstractDevice, implementation::Symbol)
