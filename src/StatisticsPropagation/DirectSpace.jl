@@ -57,6 +57,7 @@ function initialize_dirac_sequence(
 
   if obtain_device(device) isa IsCUDA
     data = CUDA.CuArray(data)
+    bootstrap_idxs = CUDA.CuArray(bootstrap_idxs)
   end
 
   return initialize_dirac_sequence(
