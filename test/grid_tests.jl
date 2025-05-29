@@ -28,6 +28,11 @@
   @test low_bounds(grid) == bounds_matrix[1, :]
   @test high_bounds(grid) == bounds_matrix[2, :]
   @test get_coordinates(grid_fourier) ≈ get_coordinates(fourier_grid)
+
+  data = [SVector{Float64}(fill(-1.0, n_dims)), SVector{Float64}(fill(1.0, n_dims))]
+  grid = find_grid(data)
+
+  @test bounds(grid) == SMatrix{2,n_dims,Float64}([-1.2; 1.2] .* ones(1, n_dims))
 end
 
 if CUDA.functional()
@@ -63,5 +68,10 @@ if CUDA.functional()
     @test Base.broadcastable(grid) isa CuArray{Float32,n_dims + 1}
     @test get_coordinates(grid_fourier) ≈ get_coordinates(fourier_grid)
     @test initial_bandwidth(grid) == CUDA.fill(0.05f0, n_dims)
+
+    data = CuMatrix{Float32}(ones(n_dims, 1) * [-1.0 1.0])
+    grid = find_grid(data, device=:cuda)
+
+    @test bounds(grid) == CuMatrix{Float32}([-1.2; 1.2] .* ones(1, n_dims))
   end
 end
