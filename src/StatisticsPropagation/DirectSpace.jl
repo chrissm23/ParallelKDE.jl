@@ -426,7 +426,7 @@ function generate_dirac_cuda!(
   boot_idx = bootstrap_idxs[idx_sample, idx_bootstrap]
   grid_idxs = ntuple(
     i -> let
-      index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i])
+      index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i]) + 1i32
       return mask[i] ? index_l : index_l + 1i32
     end,
     n_dims
