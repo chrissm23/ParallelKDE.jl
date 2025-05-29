@@ -23,7 +23,7 @@ struct IsCPU <: AbstractDevice end
 struct IsCUDA <: AbstractDevice end
 struct DeviceNotSpecified <: AbstractDevice end
 
-const AVAILABLE_DEVICES = Dict{Symbol,AbstractDevice}(
+const AVAILABLE_DEVICES = Dict(
   :cpu => IsCPU(),
   :cuda => IsCUDA(),
 )
@@ -32,13 +32,13 @@ const CPU_SERIAL = :serial
 const CPU_THREADED = :threaded
 const GPU_CUDA = :cuda
 
-const DEVICE_IMPLEMENTATIONS = Dict{AbstractDevice,Set{Symbol}}(
+const DEVICE_IMPLEMENTATIONS = Dict(
   IsCPU() => Set([CPU_SERIAL, CPU_THREADED]),
   IsCUDA() => Set([GPU_CUDA]),
   DeviceNotSpecified() => Set()
 )
 
-const DEFAULT_IMPLEMENTATIONS = Dict{Symbol,Symbol}(
+const DEFAULT_IMPLEMENTATIONS = Dict(
   IsCPU() => CPU_SERIAL,
   IsCUDA() => GPU_CUDA,
 )
