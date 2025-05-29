@@ -29,7 +29,7 @@
   @test high_bounds(grid) == bounds_matrix[2, :]
   @test get_coordinates(grid_fourier) ≈ get_coordinates(fourier_grid)
 
-  data = [SVector{Float64}(fill(-1.0, n_dims)), SVector{Float64}(fill(1.0, n_dims))]
+  data = [SVector{n_dims,Float64}(fill(-1.0, n_dims)), SVector{n_dims,Float64}(fill(1.0, n_dims))]
   grid = find_grid(data)
 
   @test bounds(grid) == SMatrix{2,n_dims,Float64}([-1.2; 1.2] .* ones(1, n_dims))

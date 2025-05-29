@@ -465,6 +465,7 @@ if CUDA.functional()
         n_bootstraps=n_bootstraps,
         time_step=0.2f0,
         n_steps=10,
+        method=:cuda,
       )
 
       @test parallel_estimator.means_bootstraps isa ParallelKDE.DensityEstimators.CuKernelMeans{n_dims,Float32,n_dims + 1}
