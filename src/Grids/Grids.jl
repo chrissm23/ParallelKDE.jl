@@ -179,7 +179,9 @@ function find_grid(
   default_size = 300
   if (grid_steps === nothing) && (grid_dims === nothing)
     grid_dims = ntuple(i -> default_size, Val(n_dims))
-  elseif grid_dims !== nothing
+  end
+
+  if grid_dims !== nothing
     grid_ranges = ntuple(
       i -> range(grid_bounds[i][1], stop=grid_bounds[i][2], length=grid_dims[i]),
       Val(n_dims)
