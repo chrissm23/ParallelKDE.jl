@@ -26,7 +26,7 @@ initialize_grid(ranges::Vararg{AbstractVector}; kwargs...) = initialize_grid(ran
 function initialize_grid(ranges::NTuple{N,<:AbstractVector{T}}; kwargs...) where {N,T<:Real}
   kwargs_dict = Dict(kwargs)
   device = pop!(kwargs_dict, :device, :cpu)
-  device_type = obtain_device(device)
+  device_type = get_device(device)
 
   return initialize_grid(device_type, ranges; kwargs_dict...)
 end

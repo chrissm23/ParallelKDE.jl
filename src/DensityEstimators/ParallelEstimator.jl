@@ -70,7 +70,7 @@ function initialize_kernels(
   grid::AbstractGrid{N,<:Real,M};
   n_bootstraps=0,
   include_var=false,
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M}
   if n_bootstraps < 0
     throw(ArgumentError("Number of boostraps must be positive."))
@@ -126,7 +126,7 @@ function initialize_kernels(
   grid::AbstractGrid{N,<:Real,M};
   n_bootstraps=0,
   include_var=false,
-  method=GPU_CUDA
+  method=Devices.GPU_CUDA
 ) where {N,T<:Real,M}
   bootstrap_idxs = bootstrap_indices(kde, n_bootstraps)
 
@@ -180,7 +180,7 @@ function propagate!(
   grid::AbstractGrid{N,<:Real,L},
   time::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real};
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M,L}
   if is_bootstrapped(kernel_means)
     kernel_means_reshaped = kernel_means.statistic
@@ -211,7 +211,7 @@ function propagate!(
   kernel_means::AbstractKernelMeans{N,T,M},
   grid::AbstractGrid{N,<:Real,L},
   time::AbstractVector{<:Real};
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M,L}
   if is_bootstrapped(kernel_means)
     kernel_means_reshaped = kernel_means.statistic
@@ -365,7 +365,7 @@ function propagate_bootstraps!(
   grid::AbstractGrid{N,<:Real,M},
   time::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real};
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M}
   propagate!(
     kernel_propagation.kernel_means,
@@ -389,7 +389,7 @@ function propagate_means!(
   means::AbstractKernelMeans{N,T,N},
   grid::AbstractGrid{N,<:Real,M},
   time::AbstractVector{<:Real};
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M}
   if !is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR not calculated. Destination array may be in use."))
@@ -409,7 +409,7 @@ end
 
 function ifft_bootstraps!(
   kernel_propagation::KernelPropagation;
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 )
   ifourier_statistics!(
     Val(method),
@@ -422,7 +422,7 @@ function ifft_bootstraps!(
 end
 function ifft_bootstraps!(
   kernel_propagation::CuKernelPropagation;
-  method=GPU_CUDA,
+  method=Devices.GPU_CUDA,
 )
   ifourier_statistics!(
     Val(method),
@@ -436,7 +436,7 @@ end
 
 function ifft_means!(
   kernel_propagation::KernelPropagation{N,T,M};
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M}
   ifourier_statistics!(
     Val(method),
@@ -451,7 +451,7 @@ function ifft_means!(
 end
 function ifft_means!(
   kernel_propagation::CuKernelPropagation{N,T,M};
-  method::Symbol=GPU_CUDA,
+  method::Symbol=Devices.GPU_CUDA,
 ) where {N,T<:Real,M}
   ifourier_statistics!(
     Val(method),
@@ -467,7 +467,7 @@ function calculate_vmr!(
   time::AbstractVector{<:Real},
   grid::AbstractGrid{N,<:Real,M},
   n_samples::Integer;
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 ) where {N,M}
   if is_vmr_calculated(kernel_propagation)
     throw(ArgumentError("VMR already calculated. Propagate bootstraps first."))
@@ -491,7 +491,7 @@ end
 function calculate_means!(
   kernel_propagation::AbstractKernelPropagation{N,T,M},
   n_samples::Integer;
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M}
   if is_means_calculated(kernel_propagation)
     throw(ArgumentError("Means already calculated. Propagate bootstraps first."))
@@ -589,7 +589,7 @@ function update_state!(
   density_state::AbstractDensityState{N,<:Real},
   kde::AbstractKDE{N,<:Real,<:Real},
   kernel_propagation::AbstractKernelPropagation{N,<:Real,M};
-  method=CPU_SERIAL,
+  method=Devices.CPU_SERIAL,
 ) where {N,M}
   vmr_var = get_vmr(kernel_propagation)
   means = get_means(kernel_propagation)
@@ -654,6 +654,7 @@ Devices.get_device(::CuParallelEstimator) = IsCUDA()
 function initialize_estimator(
   ::Type{<:AbstractParallelEstimator},
   kde::AbstractKDE;
+  method::Symbol,
   kwargs...
 )
   device = get_device(kde)
@@ -671,14 +672,6 @@ function initialize_estimator(
   n_bootstraps = pop!(kwargs_dict, :n_bootstraps, 100)
   time_step = pop!(kwargs_dict, :dt, nothing)
   n_steps = pop!(kwargs_dict, :n_steps, nothing)
-
-  if device == IsCPU()
-    method = pop!(kwargs_dict, :method, CPU_SERIAL)
-  elseif device == IsCUDA()
-    method = pop!(kwargs_dict, :method, GPU_CUDA)
-  else
-    throw(ArgumentError("Implementation $method unknwon for device $device"))
-  end
 
   means_bootstraps, vars_bootstraps = initialize_kernels(
     device, kde, grid; n_bootstraps=n_bootstraps, include_var=true, method=method
@@ -863,11 +856,10 @@ end
 function estimate!(
   estimator::AbstractParallelEstimator{N,<:Real,M},
   kde::AbstractKDE{N,<:Real,<:Real};
-  kwargs...
+  method::Symbol
 ) where {N,M}
   check_memory(estimator)
 
-  method = get(kwargs, :method, CPU_SERIAL)
   n_samples = get_nsamples(kde)
 
   time_initial = initial_bandwidth(estimator.grid_direct)

@@ -37,7 +37,7 @@ function initialize_kde(
   dims::NTuple{N,Z};
   device::Symbol=:cpu,
 ) where {T<:Real,N,Z<:Integer}
-  device_type = obtain_device(device)
+  device_type = get_device(device)
 
   return initialize_kde(device_type, data, dims)
 end

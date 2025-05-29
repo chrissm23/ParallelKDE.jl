@@ -34,13 +34,20 @@ function estimate!(estimator_name::Symbol, kde::AbstractKDE; kwargs...)
 
   return nothing
 end
-function estimate!(estimator_type::Type{<:AbstractEstimator}, kde::AbstractKDE; kwargs...)
+function estimate!(
+  estimator_type::Type{<:AbstractEstimator},
+  kde::AbstractKDE;
+  method::Union{Nothing,Symbol}=nothing,
+  kwargs...
+)
   device = get_device(kde)
-  method = get(kwargs, :method, CPU_SERIAL)
+  if method === nothing
+    method = Devices.DEFAULT_IMPLEMENTATIONS[get_device(device)]
+  end
   ensure_valid_implementation(device, method)
 
-  estimator = initialize_estimator(estimator_type, kde; kwargs...)
-  estimate!(estimator, kde; kwargs...)
+  estimator = initialize_estimator(estimator_type, kde; method, kwargs...)
+  estimate!(estimator, kde; method, kwargs...)
 
   return nothing
 end

@@ -99,7 +99,7 @@ function initialize_estimation(
       grid = nothing
     end
 
-  elseif get_device(grid) !== device
+  elseif get_device(grid) !== get_device(device)
     throw(ArgumentError("Grid must be of the same device as the KDE."))
   end
 

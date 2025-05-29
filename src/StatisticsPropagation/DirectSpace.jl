@@ -27,16 +27,19 @@ function initialize_dirac_sequence(
   grid::Union{AbstractGrid{N,<:Real,M},Nothing}=nothing,
   bootstrap_idxs::Union{AbstractMatrix{<:Integer},Nothing}=nothing,
   device=:cpu,
-  method=:serial,
+  method=nothing,
   include_var=false,
   T=Float64,
 ) where {N,M}
+  if method === nothing
+    method = Devices.DEFAULT_IMPLEMENTATIONS[get_device(device)]
+  end
   ensure_valid_implementation(device, method)
   if grid === nothing
     grid = find_grid(data; device)
   end
 
-  if obtain_device(device) isa IsCPU
+  if get_device(device) isa IsCPU
     if data isa AbstractMatrix
       data = Vector{SVector{N,T}}(eachcol(data))
     else
@@ -55,7 +58,7 @@ function initialize_dirac_sequence(
     bootstrap_idxs[:, 1] = 1:n_samples
   end
 
-  if obtain_device(device) isa IsCUDA
+  if get_device(device) isa IsCUDA
     data = CUDA.CuArray(data)
     bootstrap_idxs = CUDA.CuArray(bootstrap_idxs)
   end
