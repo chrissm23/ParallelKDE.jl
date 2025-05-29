@@ -30,6 +30,7 @@ export AbstractDensityEstimation,
 
 # Grids exports
 export initialize_grid,
+  find_grid,
   spacings,
   bounds,
   low_bounds,
