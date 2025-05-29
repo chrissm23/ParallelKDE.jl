@@ -190,10 +190,17 @@ function generate_dirac_cpu!(
   grid_indices = @MVector zeros(Int, N)
 
   for sample in data
-    @. indices_l = floor(Int, (sample - low_bound) / spacing) + 1
-    @. remainder_l = (sample - low_bound) % spacing
-    @. indices_h = indices_l + 1
-    @. remainder_h = spacing - remainder_l
+    @inbounds @simd for i in 1:N
+      sample_i = sample[i]
+      low_bound_i = low_bound[i]
+      spacing_i = spacing[i]
+      delta_i = sample_i - low_bound_i
+      index_l = floor(Int, delta_i / spacing_i)
+      indices_l[i] = index_l + 1
+      remainder_h[i] = delta_i % spacing_i
+      indices_h[i] = indices_l[i] + 1
+      remainder_l[i] = spacing_i - remainder_h[i]
+    end
 
     @inbounds for i in 0:(2^N-1)
       @inbounds @simd for j in 1:N
@@ -368,10 +375,10 @@ function generate_dirac_cuda!(
   remainder_product = 1.0f0
   i = 1i32
   @inbounds while i <= n_dims
-    remainder_l = (
+    remainder_h = (
       data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]
     ) % spacing[i]
-    remainder_h = spacing[i] - remainder_l
+    remainder_l = spacing[i] - remainder_h
 
     remainder_product *= ifelse(
       mask[end-i+1i32],
@@ -428,10 +435,10 @@ function generate_dirac_cuda!(
   remainder_product = 1.0f0
   i = 1i32
   @inbounds while i <= n_dims
-    remainder_l = (
+    remainder_h = (
       data[i, bootstrap_idxs[idx_sample, idx_bootstrap]] - low_bound[i]
     ) % spacing[i]
-    remainder_h = spacing[i] - remainder_l
+    remainder_l = spacing[i] - remainder_h
 
     remainder_product *= ifelse(
       mask[end-i+1i32],
