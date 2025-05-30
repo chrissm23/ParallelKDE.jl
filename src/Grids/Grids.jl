@@ -23,12 +23,14 @@ abstract type AbstractGrid{N,T<:Real,M} end
 
 initialize_grid(ranges::AbstractVector{<:AbstractVector}; kwargs...) = initialize_grid(Tuple(ranges); kwargs...)
 initialize_grid(ranges::Vararg{AbstractVector}; kwargs...) = initialize_grid(ranges; kwargs...)
-function initialize_grid(ranges::NTuple{N,<:AbstractVector{T}}; kwargs...) where {N,T<:Real}
-  kwargs_dict = Dict(kwargs)
-  device = pop!(kwargs_dict, :device, :cpu)
+function initialize_grid(ranges::NTuple{N,<:AbstractVector{T}}; device=:cpu, kwargs...) where {N,T<:Real}
+  if (get_device(device) isa IsCUDA) && !CUDA.functional()
+    @warn "No functional CUDA detected. Falling back to ':cpu'."
+    device = :cpu
+  end
   device_type = get_device(device)
 
-  return initialize_grid(device_type, ranges; kwargs_dict...)
+  return initialize_grid(device_type, ranges; kwargs...)
 end
 
 initialize_grid(::IsCPU, ranges) = Grid(ranges)

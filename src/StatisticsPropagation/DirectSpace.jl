@@ -39,6 +39,11 @@ function initialize_dirac_sequence(
     grid = find_grid(data; device)
   end
 
+  if (get_device(device) isa IsCUDA) && !CUDA.functional()
+    @warn "No functional CUDA detected. Falling back to ':cpu'."
+    device = :cpu
+  end
+
   if get_device(device) isa IsCPU
     if data isa AbstractMatrix
       data = Vector{SVector{N,T}}(eachcol(data))

@@ -37,6 +37,10 @@ function initialize_kde(
   dims::NTuple{N,Z};
   device::Symbol=:cpu,
 ) where {T<:Real,N,Z<:Integer}
+  if (get_device(device) isa IsCUDA) && !CUDA.functional()
+    @warn "No functional CUDA detected. Falling back to ':cpu'."
+    device = :cpu
+  end
   device_type = get_device(device)
 
   return initialize_kde(device_type, data, dims)
