@@ -178,7 +178,7 @@ function propagate!(
   kernel_means::AbstractKernelMeans{N,T,M},
   kernel_vars::AbstractKernelVars{N,T,M},
   grid::AbstractGrid{N,<:Real,L},
-  time::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real};
   method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M,L}
@@ -201,7 +201,7 @@ function propagate!(
     vars_reshaped,
     kernel_means_reshaped,
     kernel_vars_reshaped,
-    time,
+    time_propagated,
     time_initial,
     grid_array,
   )
@@ -210,7 +210,7 @@ function propagate!(
   means::AbstractArray{Complex{T},M},
   kernel_means::AbstractKernelMeans{N,T,M},
   grid::AbstractGrid{N,<:Real,L},
-  time::AbstractVector{<:Real};
+  time_propagated::AbstractVector{<:Real};
   method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M,L}
   if is_bootstrapped(kernel_means)
@@ -226,7 +226,7 @@ function propagate!(
     Val(method),
     means_reshaped,
     kernel_means_reshaped,
-    time,
+    time_propagated,
     grid_array,
   )
 
@@ -363,7 +363,7 @@ function propagate_bootstraps!(
   kernel_means::AbstractKernelMeans{N,T,M},
   kernel_vars::AbstractKernelVars{N,T,M},
   grid::AbstractGrid{N,<:Real,M},
-  time::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real};
   method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M}
@@ -373,7 +373,7 @@ function propagate_bootstraps!(
     kernel_means,
     kernel_vars,
     grid,
-    time,
+    time_propagated,
     time_initial;
     method,
   )
@@ -388,7 +388,7 @@ function propagate_means!(
   kernel_propagation::AbstractKernelPropagation{N,T,M},
   means::AbstractKernelMeans{N,T,N},
   grid::AbstractGrid{N,<:Real,M},
-  time::AbstractVector{<:Real};
+  time_propagated::AbstractVector{<:Real};
   method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M}
   if !is_vmr_calculated(kernel_propagation)
@@ -400,7 +400,7 @@ function propagate_means!(
     means_dst,
     means,
     grid,
-    time;
+    time_propagated;
     method,
   )
 
@@ -464,7 +464,7 @@ end
 
 function calculate_vmr!(
   kernel_propagation::AbstractKernelPropagation{N,<:Real,M},
-  time::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real},
   grid::AbstractGrid{N,<:Real,M},
   n_samples::Integer;
   method=Devices.CPU_SERIAL,
@@ -474,18 +474,18 @@ function calculate_vmr!(
   end
 
   t0 = initial_bandwidth(grid)
-  vmr_var = calculate_scaled_vmr!(
+  calculate_scaled_vmr!(
     Val(method),
     kernel_propagation.kernel_means,
     kernel_propagation.kernel_vars,
-    time,
+    time_propagated,
     t0,
     n_samples,
   )
 
   kernel_propagation.calculated_vmr = true
 
-  return vmr_var
+  return nothing
 end
 
 function calculate_means!(
@@ -552,8 +552,8 @@ end
   dt::Float32
   eps1::Float32 = 1.0f0
   eps2::Float32 = 10.0f0
-  smoothness_duration::Int8 = Int8(3)
-  stable_duration::Int8 = Int8(3)
+  smoothness_duration::Int32 = Int32(3)
+  stable_duration::Int32 = Int32(3)
 
   # State
   smooth_counters::CuArray{Int8,N}
@@ -745,7 +745,9 @@ function initialize_estimator_propagation(
   time_final = silverman_rule(Array(get_data(kde)))
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
-  density_state = CuDensityState(size(grid); dt=norm(dt), T=typeof(kde).parameters[2], kwargs...)
+  density_state = CuDensityState(
+    size(grid); dt=norm(dt), T=typeof(kde).parameters[2], kwargs...
+  )
 
   return CuParallelEstimator(
     means_bootstraps,
@@ -854,23 +856,24 @@ function get_time(
 end
 
 function estimate!(
-  estimator::AbstractParallelEstimator{N,<:Real,M},
-  kde::AbstractKDE{N,<:Real,<:Real};
-  method::Symbol
-) where {N,M}
+  estimator::AbstractParallelEstimator,
+  kde::AbstractKDE;
+  method::Symbol,
+  kwargs...,
+)
   check_memory(estimator)
 
   n_samples = get_nsamples(kde)
 
   time_initial = initial_bandwidth(estimator.grid_direct)
 
-  for time in estimator.times
+  for time_propagated in estimator.times
     propagate_bootstraps!(
       estimator.kernel_propagation,
       estimator.means_bootstraps,
       estimator.vars_bootstraps,
       estimator.grid_fourier,
-      time,
+      time_propagated,
       time_initial;
       method,
     )
@@ -879,7 +882,7 @@ function estimate!(
 
     calculate_vmr!(
       estimator.kernel_propagation,
-      time,
+      time_propagated,
       estimator.grid_direct,
       n_samples;
       method
@@ -888,8 +891,8 @@ function estimate!(
     propagate_means!(
       estimator.kernel_propagation,
       estimator.means,
-      time,
-      estimator.grid_fourier;
+      estimator.grid_fourier,
+      time_propagated;
       method
     )
 
@@ -901,7 +904,6 @@ function estimate!(
       method
     )
 
-    # Use DensityState to identify stopping time
     update_state!(
       estimator.density_state,
       kde,
@@ -914,7 +916,7 @@ function estimate!(
 end
 
 function get_necessary_memory(estimator::AbstractParallelEstimator)
-  bootstraps_memory = sizeof(estimator.means_boostraps.statistic) * 4
+  bootstraps_memory = sizeof(estimator.means_bootstraps.statistic) * 4
   means_memory = sizeof(estimator.means.statistic) * 3
 
   return 1.25(bootstraps_memory + means_memory) / 1024^2

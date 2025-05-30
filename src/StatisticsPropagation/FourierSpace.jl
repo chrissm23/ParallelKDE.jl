@@ -95,7 +95,7 @@ function propagate_statistics!(
   variances_t::AbstractArray{<:Complex,M},
   means_0::AbstractArray{<:Complex,M},
   variances_0::AbstractArray{<:Complex,M},
-  time::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real},
   time_intial::AbstractVector{<:Real},
   grid_array::AbstractArray{<:Real,M},
 ) where {M}
@@ -107,7 +107,7 @@ function propagate_statistics!(
       selectdim(variances_t, M, i),
       selectdim(means_0, M, i),
       selectdim(variances_0, M, i),
-      time,
+      time_propagated,
       time_intial,
       grid_array,
     )
@@ -119,7 +119,7 @@ function propagate_statistics!(
   ::Val{:serial},
   means_t::AbstractArray{<:Complex,M},
   means_0::AbstractArray{<:Complex,M},
-  time::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real},
   grid_array::AbstractArray{<:Real,M},
 ) where {M}
   n_bootstraps = size(means_0)[end]
@@ -128,7 +128,7 @@ function propagate_statistics!(
     propagate_time_cpu!(
       selectdim(means_t, M, i),
       selectdim(means_0, M, i),
-      time,
+      time_propagated,
       grid_array,
     )
   end
@@ -141,7 +141,7 @@ function propagate_statistics!(
   variances_t::AbstractArray{<:Complex,M},
   means_0::AbstractArray{<:Complex,M},
   variances_0::AbstractArray{<:Complex,M},
-  time::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real},
   grid_array::AbstractArray{<:Real,M},
 ) where {M}
@@ -153,7 +153,7 @@ function propagate_statistics!(
       selectdim(variances_t, M, i),
       selectdim(means_0, M, i),
       selectdim(variances_0, M, i),
-      time,
+      time_propagated,
       time_initial,
       grid_array,
     )
@@ -165,7 +165,7 @@ function propagate_statistics!(
   ::Val{:threaded},
   means_t::AbstractArray{<:Complex,M},
   means_0::AbstractArray{<:Complex,M},
-  time::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real},
   grid_array::AbstractArray{<:Real,M},
 ) where {M}
   n_bootstraps = size(means_0)[end]
@@ -174,7 +174,7 @@ function propagate_statistics!(
     propagate_time_cpu!(
       selectdim(means_t, M, i),
       selectdim(means_0, M, i),
-      time,
+      time_propagated,
       grid_array,
     )
   end
@@ -187,19 +187,19 @@ function propagate_time_cpu!(
   variances_t::AbstractArray{<:Complex,N},
   means_0::AbstractArray{<:Complex,N},
   variances_0::AbstractArray{<:Complex,N},
-  time::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real},
   time_initial::AbstractVector{<:Real},
   grid_array::AbstractArray{<:Real,M},
 ) where {N,M}
   det_t0 = prod(time_initial)
-  det_t = sqrt(prod(time_initial .^ 2 .+ time .^ 2))
+  det_t = sqrt(prod(time_initial .^ 2 .+ time_propagated .^ 2))
 
   cartesian_idxs = CartesianIndices(means_t)
   @inbounds @simd for idx in eachindex(means_t)
     propagator = 0.0
     grid_point = view(grid_array, :, cartesian_idxs[idx])
     @inbounds @simd for i in 1:N
-      propagator += (grid_point[i] * time[i])^2
+      propagator += (grid_point[i] * time_propagated[i])^2
     end
     propagator = exp(-0.5 * propagator)
 
@@ -212,7 +212,7 @@ end
 function propagate_time_cpu!(
   means_t::AbstractArray{<:Complex,N},
   means_0::AbstractArray{<:Complex,N},
-  time::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real},
   grid_array::AbstractArray{<:Real,M},
 ) where {N,M}
   cartesian_idxs = CartesianIndices(means_t)
@@ -220,7 +220,7 @@ function propagate_time_cpu!(
     propagator = 0.0
     grid_point = view(grid_array, :, cartesian_idxs[idx])
     @inbounds @simd for i in 1:N
-      propagator += (grid_point[i] * time[i])^2
+      propagator += (grid_point[i] * time_propagated[i])^2
     end
 
     propagator = exp(-0.5 * propagator)
@@ -237,7 +237,7 @@ function propagate_statistics!(
   variances_t::AnyCuArray{<:Complex,M},
   means_0::AnyCuArray{<:Complex,M},
   variances_0::AnyCuArray{<:Complex,M},
-  time::CuVector{<:Real},
+  time_propagated::CuVector{<:Real},
   time_initial::CuVector{<:Real},
   grid_array::AnyCuArray{<:Real,M},
 ) where {M}
@@ -247,7 +247,7 @@ function propagate_statistics!(
     variances_t,
     means_0,
     variances_0,
-    time,
+    time_propagated,
     time_initial,
     grid_array,
   )
@@ -262,7 +262,7 @@ function propagate_statistics!(
       variances_t,
       means_0,
       variances_0,
-      time,
+      time_propagated,
       time_initial,
       grid_array;
       threads,
@@ -276,14 +276,14 @@ function propagate_statistics!(
   ::Val{:cuda},
   means_t::AnyCuArray{<:Complex,M},
   means_0::AnyCuArray{<:Complex,M},
-  time::CuVector{<:Real},
+  time_propagated::CuVector{<:Real},
   grid_array::AnyCuArray{<:Real,M},
 ) where {M}
   n_points = prod(size(means_t))
   kernel = @cuda maxregs = 32 launch = false propagate_time_cuda!(
     means_t,
     means_0,
-    time,
+    time_propagated,
     grid_array,
   )
 
@@ -295,7 +295,7 @@ function propagate_statistics!(
     kernel(
       means_t,
       means_0,
-      time,
+      time_propagated,
       grid_array;
       threads,
       blocks
@@ -310,7 +310,7 @@ function propagate_time_cuda!(
   variances_t::CuDeviceArray{<:Complex,M},
   means_0::CuDeviceArray{<:Complex,M},
   variances_0::CuDeviceArray{<:Complex,M},
-  time::CuDeviceVector{<:Real},
+  time_propagated::CuDeviceVector{<:Real},
   time_initial::CuDeviceVector{<:Real},
   grid_array::CuDeviceArray{<:Real,M},
 ) where {M}
@@ -339,9 +339,9 @@ function propagate_time_cuda!(
   i = 1i32
   while i <= N
     @inbounds propagator_mean *= exp(
-      -0.5f0 * (grid_array[i, cartesian_idx...] * time[i])^2i32
+      -0.5f0 * (grid_array[i, cartesian_idx...] * time_propagated[i])^2i32
     )
-    @inbounds det_t *= time_initial[i]^2i32 + time[i]^2i32
+    @inbounds det_t *= time_initial[i]^2i32 + time_propagated[i]^2i32
 
     i += 1i32
   end
@@ -362,7 +362,7 @@ end
 function propagate_time_cuda!(
   means_t::CuDeviceArray{<:Complex,M},
   means_0::CuDeviceArray{<:Complex,M},
-  time::CuDeviceVector{<:Real},
+  time_propagated::CuDeviceVector{<:Real},
   grid_array::CuDeviceArray{<:Real,M},
 ) where {M}
   N = M - 1i32
@@ -389,7 +389,7 @@ function propagate_time_cuda!(
   i = 1i32
   while i <= N
     @inbounds propagator_exponential *= exp(
-      -0.5f0 * (grid_array[i, cartesian_idx...] * time[i])^2i32
+      -0.5f0 * (grid_array[i, cartesian_idx...] * time_propagated[i])^2i32
     )
 
     i += 1i32

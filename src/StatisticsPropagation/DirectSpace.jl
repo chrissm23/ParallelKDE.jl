@@ -677,7 +677,7 @@ function calculate_full_means!(
     sk_real = sk_raw[2i-1]
     sk_imag = sk_raw[2i]
 
-    sk_i = sqrt(sk_real^2 + sk_imag^2) / n_samples
+    sk_i = sqrt(sk_real^2 + sk_imag^2)
     sk_raw[i] = sk_i
   end
 
@@ -696,7 +696,7 @@ function calculate_full_means!(
     sk_real = sk_raw[2i-1]
     sk_imag = sk_raw[2i]
 
-    sk_i = sqrt(sk_real^2 + sk_imag^2) / n_samples
+    sk_i = sqrt(sk_real^2 + sk_imag^2)
     sk_raw[2i-1] = sk_i
   end
 
@@ -718,7 +718,7 @@ function calculate_full_means!(
   return nothing
 end
 function calculate_full_means!(::Val{:cuda}, sk::AnyCuArray, n_samples::Integer)
-  @. sk = abs(sk) / n_samples
+  @. sk = abs(sk)
 
   return nothing
 end

@@ -42,9 +42,13 @@ function estimate!(
 )
   device = get_device(kde)
   if method === nothing
-    method = Devices.DEFAULT_IMPLEMENTATIONS[get_device(device)]
+    method = Devices.DEFAULT_IMPLEMENTATIONS[device]
   end
   ensure_valid_implementation(device, method)
+
+  if device isa IsCUDA
+    (_, kwargs) = convert32(; kwargs...)
+  end
 
   estimator = initialize_estimator(estimator_type, kde; method, kwargs...)
   estimate!(estimator, kde; method, kwargs...)

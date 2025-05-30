@@ -44,14 +44,14 @@ function create_test_array(n_dims)
   return rand(ComplexF64, ntuple(i -> 50, n_dims)..., 5)
 end
 
-function calculate_test_vmr(test_mean, test_var; time=1.0, time_initial=0.0, n_samples=2)
+function calculate_test_vmr(test_mean, test_var; time_final=1.0, time_initial=0.0, n_samples=2)
   n_dims = ndims(test_var) - 1
 
   means = @. abs(test_mean) / n_samples
   vars = @. abs(test_var) / n_samples - means^2
   vmr = vars ./ means
 
-  times = fill(time, n_dims)
+  times = fill(time_final, n_dims)
   times_initial = fill(time_initial, n_dims)
 
   scaling_factor = prod(times .^ 2 .+ times_initial .^ 2)^(3 / 2) * n_samples^4
@@ -191,17 +191,17 @@ end
       test_var = create_test_array(n_dims)
       test_mean = create_test_array(n_dims)
 
-      time = 1.0
+      time_final = 1.0
       time_initial = 0.0
       n_samples = 2
 
-      test_vmr = calculate_test_vmr(test_mean, test_var; time, time_initial, n_samples)
+      test_vmr = calculate_test_vmr(test_mean, test_var; time_final, time_initial, n_samples)
 
       grid_size = size(test_var)[begin:end-1]
       grid_length = prod(grid_size)
 
       ParallelKDE.calculate_scaled_vmr!(
-        Val(implementation), test_mean, test_var, fill(time, n_dims), fill(time_initial, n_dims), 2
+        Val(implementation), test_mean, test_var, fill(time_final, n_dims), fill(time_initial, n_dims), 2
       )
       calculated_vmr = vec(reinterpret(Float64, test_var))[begin:grid_length]
       calculated_vmr = reshape(calculated_vmr, grid_size)
@@ -332,11 +332,11 @@ if CUDA.functional()
       test_var = create_test_array(n_dims)
       test_mean = create_test_array(n_dims)
 
-      time = 1.0
+      time_final = 1.0
       time_initial = 0.0
       n_samples = 2
 
-      test_vmr = calculate_test_vmr(test_mean, test_var; time, time_initial, n_samples)
+      test_vmr = calculate_test_vmr(test_mean, test_var; time_final, time_initial, n_samples)
 
       grid_size = size(test_var)[begin:end-1]
       grid_length = prod(grid_size)
@@ -345,7 +345,7 @@ if CUDA.functional()
       test_var_d = CuArray{ComplexF32}(test_var)
 
       ParallelKDE.calculate_scaled_vmr!(
-        Val(:cuda), test_mean_d, test_var_d, CUDA.fill(time, n_dims), CUDA.fill(time_initial, n_dims), 2
+        Val(:cuda), test_mean_d, test_var_d, CUDA.fill(time_final, n_dims), CUDA.fill(time_initial, n_dims), 2
       )
       calculated_vmr_d = vec(reinterpret(Float32, test_var_d))[begin:2:2*grid_length]
       calculated_vmr_d = reshape(calculated_vmr_d, grid_size)

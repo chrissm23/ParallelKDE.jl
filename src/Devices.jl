@@ -15,7 +15,8 @@ export
   DEVICE_IMPLEMENTATIONS,
   DEFAULT_IMPLEMENTATIONS,
   get_available_memory,
-  ensure_valid_implementation
+  ensure_valid_implementation,
+  convert32
 
 abstract type AbstractDevice end
 
@@ -44,6 +45,8 @@ const DEFAULT_IMPLEMENTATIONS = Dict(
 )
 
 get_device(::Any) = DeviceNotSpecified()
+get_device(::IsCPU) = IsCPU()
+get_device(::IsCUDA) = IsCUDA()
 
 function get_device(device::Symbol)
   if !haskey(AVAILABLE_DEVICES, device)
@@ -72,5 +75,23 @@ function ensure_valid_implementation(device::AbstractDevice, implementation::Sym
 end
 ensure_valid_implementation(device::Symbol, implementation::Symbol) =
   ensure_valid_implementation(get_device(device), implementation)
+
+function convert32(x)
+  if x isa Float64
+    return Float32(x)
+  elseif x isa CuArray{Float64}
+    return CuArray{Float32}(x)
+  elseif x isa Array{Float64}
+    return Array{Float32}(x)
+  else
+    return x
+  end
+end
+function convert32(args...; kwargs...)
+  kwargs_32 = (; (k => convert32(v) for (k, v) in kwargs)...)
+  args_32 = (convert32(arg) for arg in args)
+
+  return (args_32, kwargs_32)
+end
 
 end

@@ -25,8 +25,10 @@ using Statistics,
 # General API exports
 export AbstractDensityEstimation,
   DensityEstimation,
+  has_grid,
   initialize_estimation,
-  estimate_density!
+  estimate_density!,
+  get_grid
 
 # Grids exports
 export initialize_grid,
@@ -116,8 +118,9 @@ function initialize_estimation(
 
 end
 
-has_grid(density_estimation::DensityEstimation) =
-  density_estimation.grid !== nothing
+has_grid(density_estimation::DensityEstimation) = density_estimation.grid !== nothing
+get_grid(density_estimation::DensityEstimation) = density_estimation.grid
+
 KDEs.get_density(density_estimation::DensityEstimation) = get_density(density_estimation.kde)
 
 function estimate_density!(
