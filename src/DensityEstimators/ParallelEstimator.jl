@@ -515,7 +515,7 @@ abstract type AbstractDensityState{N,T} end
   eps1::Float64 = 1.5
   eps2::Float64 = 0.75
   smoothness_duration::Int = 10
-  stable_duration::Int = 3
+  stable_duration::Int = 10
 
   # State
   smooth_counters::Array{Int8,N}
@@ -553,7 +553,7 @@ end
   eps1::Float32 = 1.5f0
   eps2::Float32 = 0.75f0
   smoothness_duration::Int32 = Int32(10)
-  stable_duration::Int32 = Int32(3)
+  stable_duration::Int32 = Int32(10)
 
   # State
   smooth_counters::CuArray{Int8,N}
