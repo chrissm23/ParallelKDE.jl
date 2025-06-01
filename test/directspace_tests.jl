@@ -57,11 +57,11 @@ function calculate_test_vmr(test_mean, test_var; time_final=1.0, time_initial=0.
   scaling_factor = prod(times .^ 2 .+ times_initial .^ 2)^(3 / 2) * n_samples^4
   vmr_v = scaling_factor .* dropdims(var(vmr, dims=n_dims + 1); dims=n_dims + 1)
 
-  return @. ifelse(isfinite(vmr_v), vmr_v, NaN)
+  return @. ifelse(isfinite(vmr_v), log10(vmr_v), NaN)
 end
 
-function calculate_test_means(test_mean; n_samples=2)
-  means = @. abs(test_mean) / n_samples
+function calculate_test_means(test_mean)
+  means = @. abs(test_mean)
 
   return means
 end
@@ -212,7 +212,7 @@ end
     @testset "All samples means calculation tests. $(n_dims)D" for n_dims in 1:3
       test_mean = create_test_array(n_dims)
       n_samples = 2
-      test_result = calculate_test_means(test_mean; n_samples)
+      test_result = calculate_test_means(test_mean)
 
       array_size = size(test_mean)
       array_length = length(test_mean)
@@ -357,7 +357,7 @@ if CUDA.functional()
     @testset "All samples means calculation tests. $(n_dims)D" for n_dims in 1:3
       test_mean = create_test_array(n_dims)
       n_samples = 2
-      test_result = calculate_test_means(test_mean; n_samples)
+      test_result = calculate_test_means(test_mean)
 
       array_size = size(test_mean)
       array_length = length(test_mean)

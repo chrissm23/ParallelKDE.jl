@@ -201,6 +201,17 @@ md"Tolerance for second derivative (`tol2`)"
 # ╔═╡ 38d840d8-0ae0-4fcb-b6c5-6b9c5f2acd15
 @bind tol2 Slider(logrange(0.01, 1e1, length=50))
 
+# ╔═╡ 1200e59e-388b-4c62-b2a8-084098311922
+function calculate_mise(
+	f1::AbstractArray{<:Real,N},
+	f2::AbstractArray{<:Real,N},
+	dx::Real
+) where {N}
+	n_points = length(f1)
+
+	return sum((f1 .- f2) .^ 2) * dx / n_points
+end
+
 # ╔═╡ 8a99a967-c3da-4cca-ac26-a507aa7c0dff
 md"##### Smaller time step requires a smaller threshold2"
 
@@ -223,7 +234,7 @@ let
 		# time_step=0.001,
 		# eps1=1.5,
 		# eps2=0.75,
-		smoothness_duration=10,
+		# smoothness_duration=10,
 		stable_duration=10,
 	)
 	
@@ -250,7 +261,11 @@ let
 		)
 	end
 
-	println(findall(isnan, density_estimated))
+	dx = prod(spacings(get_grid(density_estimation)))
+	mise = calculate_mise(density_estimated, distro_pdf, dx)
+	println(mise)
+	
+	# println(findall(isnan, density_estimated))
 
 	p_estimate
 end
@@ -283,7 +298,7 @@ begin
 		eps1=1.5,
 		eps2=0.75,
 		smoothness_duration=10,
-		stable_duration=10,
+		stable_duration=3,
 	)
 
 	time_step = parallel_estimator.density_state.dt
@@ -886,6 +901,7 @@ end
 # ╠═9eed9dbc-b16b-47f4-97d2-52fc7eb2088a
 # ╟─f8e360df-69ae-4e60-8181-9bd5209e2e97
 # ╠═38d840d8-0ae0-4fcb-b6c5-6b9c5f2acd15
+# ╟─1200e59e-388b-4c62-b2a8-084098311922
 # ╟─8a99a967-c3da-4cca-ac26-a507aa7c0dff
 # ╠═bbbd2e78-3a28-4783-9601-c883cf99d185
 # ╟─75e020f4-5682-46f3-8dff-7abeba257818
