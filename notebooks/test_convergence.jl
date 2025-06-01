@@ -103,8 +103,13 @@ md"Number of grid points (`n_gridpoints`)"
 # ╔═╡ c9911762-16c7-4490-aa0e-0e5a5ff62524
 @bind n_gridpoints Slider(100:100:2000, default=1000)
 
+# ╔═╡ 394ce4a6-f4da-464f-8fbb-e0c21af54a27
+@bind resample Button("Resample")
+
 # ╔═╡ 5bf23fbc-556a-4014-a84b-47c6dedf0b9f
 begin
+	resample
+	
 	x_min = 0
 	x_max = 20
 	distro = define_distro(distro_name)
@@ -148,21 +153,78 @@ begin
 	random_seed = rand(Int)
 end;
 
+# ╔═╡ d904caba-b00e-449b-b0b9-c6132c3a0e6c
+md"Number of test points (`n_testpoints`)."
+
+# ╔═╡ d0084330-0998-455c-8f35-7c9818e46c86
+@bind n_testpoints Slider(1:n_gridpoints÷50, default=5)
+
+# ╔═╡ bf77fdfb-2c8a-4e25-8423-46d7ab1df8aa
+md"Minimum value for test points (`testpoints_min`)."
+
+# ╔═╡ 501df99f-299c-47cf-bc53-0230368663c0
+@bind testpoints_min Slider(distro_support, default=minimum(distro_support))
+
+# ╔═╡ e6f5d29a-c5d9-445c-926e-615fea53d495
+md"maximum value for test points (`testpoints_max`)."
+
+# ╔═╡ dcf117aa-6d79-4a46-963b-e2a9b5157707
+@bind testpoints_max Slider(distro_support, default=maximum(distro_support))
+
+# ╔═╡ d048004b-ecbf-4455-944b-4a7ea105a50e
+md"
+Test points in `test_points`.\
+Indices in `test_indices`.\
+Color palette for those test points in `test_palette`.
+"
+
+# ╔═╡ 23b14634-08bf-4a96-8c5c-361392fa4ad2
+begin
+	testpoints_min_idx = findfirst(x -> (x - testpoints_min) >= 0, distro_support)
+	testpoints_max_idx = findfirst(x -> (x - testpoints_max) >= 0, distro_support)
+	test_indices = floor.(
+		Int, range(testpoints_min_idx, testpoints_max_idx, length=n_testpoints)
+	)
+	test_points = distro_support[test_indices]
+	test_palette = palette(:vik, n_testpoints)
+end;
+
+# ╔═╡ 4adba47b-afee-4816-9874-12192162e8e4
+md"Tolerance for first derivative (`tol1`)"
+
+# ╔═╡ 9eed9dbc-b16b-47f4-97d2-52fc7eb2088a
+@bind tol1 Slider(range(0.1, 2, length=50))
+
+# ╔═╡ f8e360df-69ae-4e60-8181-9bd5209e2e97
+md"Tolerance for second derivative (`tol2`)"
+
+# ╔═╡ 38d840d8-0ae0-4fcb-b6c5-6b9c5f2acd15
+@bind tol2 Slider(logrange(0.01, 1e1, length=50))
+
+# ╔═╡ 8a99a967-c3da-4cca-ac26-a507aa7c0dff
+md"##### Smaller time step requires a smaller threshold2"
+
 # ╔═╡ bbbd2e78-3a28-4783-9601-c883cf99d185
 let
+	data_filtered = data[
+		(data .>= minimum(distro_support)) .& (data .<= maximum(distro_support))
+	]
+	data_filtered = reshape(data_filtered, 1, length(data_filtered))
 	Random.seed!(random_seed)
 	density_estimation = initialize_estimation(
-		data,
+		data_filtered,
 		grid=true,
 		grid_ranges=distro_support
 	)
 	estimate_density!(
 		density_estimation,
 		:parallelEstimator,
-		# smoothness_duration=5,
-		# stable_duration=5,
-		# eps1=0.1,
-		# eps2=0.1,
+		# n_bootstraps=1000,
+		# time_step=0.001,
+		# eps1=1.5,
+		# eps2=0.75,
+		smoothness_duration=10,
+		stable_duration=10,
 	)
 	
 	density_estimated = get_density(density_estimation)
@@ -178,10 +240,28 @@ let
 		lw=2,
 		lc=:forestgreen
 	)
+
+	for (i, point) in enumerate(test_points)
+		vline!(
+			p_estimate,
+			[point],
+			label=false,
+			c=test_palette[i],
+		)
+	end
+
+	println(findall(isnan, density_estimated))
+
+	p_estimate
 end
 
 # ╔═╡ 75e020f4-5682-46f3-8dff-7abeba257818
-md"### VMR vs time"
+md"### Propagation behavior"
+
+# ╔═╡ ccc52b83-2073-48aa-8f5a-8af4dc3e917d
+md"For bimodal,\
+`time_step=default` -> better `threshold=1.0`\
+`time_step=0.001` -> better `threshold = 0.5`"
 
 # ╔═╡ c7ae5c52-72ca-4449-bfa6-18fb36003ace
 begin
@@ -190,19 +270,44 @@ begin
 	grid_support = initialize_grid(distro_support)
 	time_initial = initial_bandwidth(grid_support)
 
-	times_range = range(0.0, 2.0, step=0.005)
-	times = [[t] for t in times_range]
-	
+	method=:serial
+
 	kde = initialize_kde(data, size(grid_support))
 	
 	parallel_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
 		ParallelKDE.DensityEstimators.AbstractParallelEstimator,
-		kde,
-		method=:serial,
-		grid=grid_support
+		kde;
+		method,
+		grid=grid_support,
+		# time_step=0.001,
+		eps1=1.5,
+		eps2=0.75,
+		smoothness_duration=10,
+		stable_duration=10,
 	)
 
-	vmr_time = fill(NaN, length(distro_support), length(times))
+	time_step = parallel_estimator.density_state.dt
+	times = parallel_estimator.times
+	n_times = length(times)
+	times_reinterpreted = reinterpret(Float64, times)
+	times_range = range(
+		minimum(times_reinterpreted), maximum(times_reinterpreted), length=n_times
+	)
+
+	previous_density = fill(NaN, size(kde.density))
+
+	derivatives1 = fill(NaN, n_gridpoints, n_times)
+	derivatives2 = fill(NaN, n_gridpoints, n_times)
+
+	vmr_time = fill(NaN, n_gridpoints, n_times)
+	means_time = fill(NaN, n_gridpoints, n_times)
+	is_smooth_time = falses(n_gridpoints, n_times)
+	has_decreased_time = falses(n_gridpoints, n_times)
+	is_stable_time = falses(n_gridpoints, n_times)
+	density_assigned_time = falses(n_gridpoints, n_times)
+
+	println(parallel_estimator.density_state.dt)
+	println(n_times)
 end;
 
 # ╔═╡ fb725626-e5eb-4dfc-93e7-4946af668652
@@ -215,9 +320,8 @@ for (idx,time_propagated) in enumerate(times)
 		parallel_estimator.grid_fourier,
 		time_propagated,
 		time_initial;
-		method=:serial
+		method
 	)
-
 	# Fourier transform back
 	ParallelKDE.DensityEstimators.ifft_bootstraps!(
 		parallel_estimator.kernel_propagation; method=:serial
@@ -229,21 +333,525 @@ for (idx,time_propagated) in enumerate(times)
 		time_propagated,
 		parallel_estimator.grid_direct,
 		n_samples;
-		method=:serial
+		method
+	)
+	vmr_time[:, idx] .= ParallelKDE.DensityEstimators.get_vmr(
+		parallel_estimator.kernel_propagation
 	)
 
-	vmr_time[:, idx] .= ParallelKDE.DensityEstimators.get_vmr(parallel_estimator.kernel_propagation)
+	# Propagate means of full samples
+	ParallelKDE.DensityEstimators.propagate_means!(
+		parallel_estimator.kernel_propagation,
+		parallel_estimator.means,
+		parallel_estimator.grid_fourier,
+		time_propagated;
+		method
+	)
+	# Fourier transform back
+	ParallelKDE.DensityEstimators.ifft_means!(
+		parallel_estimator.kernel_propagation;
+		method
+	)
+	ParallelKDE.DensityEstimators.calculate_means!(
+		parallel_estimator.kernel_propagation,
+		n_samples;
+		method
+	)
+	means_time[:, idx] .= ParallelKDE.DensityEstimators.get_means(
+		parallel_estimator.kernel_propagation
+	)
+
+	# Update convergence state
+	ParallelKDE.DensityEstimators.update_state!(
+		parallel_estimator.density_state,
+		kde,
+		parallel_estimator.kernel_propagation;
+		method
+	)
+	is_smooth_time[:, idx] .= parallel_estimator.density_state.is_smooth
+	has_decreased_time[:, idx] .= parallel_estimator.density_state.has_decreased
+	is_stable_time[:, idx] .= parallel_estimator.density_state.is_stable
+
+	@. density_assigned_time[:, idx] = ifelse(
+		(
+			(kde.density ≈ previous_density) | 
+			(isnan(kde.density) & isnan(previous_density))
+		),
+		false,
+		true
+	)
+	previous_density .= kde.density
 end
 
+# ╔═╡ dadb8821-1384-4748-ab98-32e23e64f7f8
+findall(isnan, kde.density)
+
+# ╔═╡ 5cca44db-4f10-4f9b-9c0a-6e6e1a983720
+begin
+	derivatives1[:, begin+1:end] .= abs.(diff(vmr_time, dims=2) ./ (2*time_step))
+	derivatives2[:, begin+2:end] .= log10.(
+		abs.(diff(diff(vmr_time, dims=2), dims=2) ./ time_step^2)
+	)
+	optimal_times = times_range[
+		argmin.(eachrow(abs.(means_time .- reshape(distro_pdf, n_gridpoints, 1))))
+	]
+end;
+
+# ╔═╡ 95746d99-132a-4f7c-8075-5da357841e1f
+md"Propagation time (`propagation_time`)"
+
+# ╔═╡ 33a0e17b-cf1e-4fb0-b9c4-1e2498f285a4
+@bind propagation_time Slider(times_range, default=0)
+
+# ╔═╡ badcc2b6-c438-47f0-b8b6-afc4e0cc741d
+md"#### Propagation of mean Dirac sequences"
+
+# ╔═╡ f5278add-a94e-4d43-a1be-4093f6bcefae
+begin
+	p_propagation = plot(
+		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
+	)
+	plot!(
+		p_propagation,
+		distro_support,
+		means_time[:, findfirst(t -> t == propagation_time, times_range)],
+		label="Propagated sequence\nt=$propagation_time",
+		lw=2,
+		lc=:forestgreen,
+	)
+
+	for (i, point) in enumerate(test_points)
+		vline!(
+			p_propagation,
+			[point],
+			label=false,
+			c=test_palette[i],
+		)
+	end
+
+	p_propagation
+end
+
+# ╔═╡ 9d33bbd6-2f00-4633-8500-ef1fd18dead9
+md"#### Known optimal time propagation"
+
+# ╔═╡ b62dc21c-c3a5-482e-9ad4-97f0e161d3dc
+begin
+	p_means = plot(
+		times_range,
+		eachrow(means_time)[test_indices],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=1.1 .* extrema(means_time[test_indices, :]),
+		xlims=extrema(times_range),
+	)
+
+	vline!(p_means, [propagation_time], c=:forestgreen, label="Propagation time")
+
+	for (i, val) in enumerate(distro_pdf[test_indices])
+		hline!(
+			p_means,
+			[val],
+			label=false,
+			lc=test_palette[i],
+			lw=2,
+			ls=:dashdotdot,
+		)
+
+		vline!(
+			p_means,
+			[optimal_times[test_indices[i]]],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dashdot,
+		)
+	end
+
+	# Manual label
+	plot!(
+		p_means,
+		[-10; -20], lw=2, lc=:black, ls=:solid, label="Propagated means"
+	)
+	plot!(
+		p_means,
+		[-10; -20], lw=2, lc=:black, ls=:dashdotdot, label="PDF"
+	)
+	plot!(
+		p_means,
+		[-10; -20], lw=2, lc=:black, ls=:dashdot, label="Optimal time"
+	)
+end
+
+# ╔═╡ d132f438-3764-4844-9634-7416f2e062b7
+vmr_bounds = (0, 10);
+
+# ╔═╡ 6ec06af2-1b94-4986-94e2-6b629c3b6205
+md"#### Finding smooth regime"
+
 # ╔═╡ 62ea2943-0007-4278-8e70-e93e243ef1eb
-plot(
-	times_range,
-	eachrow(vmr_time)[begin:200:end],
-	label=false,
-	ylims=(1e-5, 1e8),
-	yaxis=:log,
-	palette=palette(:vik, length(eachrow(vmr_time)[begin:200:end]))
-)
+begin
+	p_smooth = plot(
+		times_range,
+		eachrow(vmr_time)[test_indices],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=vmr_bounds,
+		xlims=extrema(times_range),
+		# yaxis=:log
+	)
+
+	vline!(p_smooth, [propagation_time], c=:forestgreen, label="Propagation time")
+
+	for (i, test_idx) in enumerate(test_indices)
+		vline!(
+			p_smooth,
+			[times_range[findfirst(is_smooth_time[test_idx, :])]],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dash,
+		)
+	end
+
+	# Manual label
+	plot!(
+		p_smooth, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
+	)
+	plot!(
+		p_smooth, [-10; -20], lw=2, lc=:black, ls=:dash, label="Smoothness found"
+	)
+end
+
+# ╔═╡ 7f9cf2ba-2085-4b80-a98a-9feb7fe0c4de
+md"#### Finding decrease point"
+
+# ╔═╡ 097c40b2-2b34-442d-8cb9-4c63b60abfc4
+begin
+	p_decrease = plot(
+		times_range,
+		eachrow(vmr_time)[test_indices],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=vmr_bounds,
+		xlims=extrema(times_range),
+		# yaxis=:log
+	)
+
+	vline!(p_decrease, [propagation_time], c=:forestgreen, label="Propagation time")
+
+	for (i, test_idx) in enumerate(test_indices)
+		vline!(
+			p_decrease,
+			[
+				let
+					try
+						times_range[findfirst(has_decreased_time[test_idx, :])]
+					catch
+						NaN
+					end
+				end
+			],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dash,
+		)
+	end
+
+	# Manual label
+	plot!(
+		p_decrease, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
+	)
+	plot!(
+		p_decrease, [-10; -20], lw=2, lc=:black, ls=:dash, label="Decrease found"
+	)
+end
+
+# ╔═╡ 42a8a50a-6c62-4056-ad93-96e228a9e1d8
+md"#### Finding stable regime"
+
+# ╔═╡ c20c3541-d935-423c-a07f-77d8e0679d8d
+begin
+	p_stability = plot(
+		times_range,
+		eachrow(vmr_time)[test_indices],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=vmr_bounds,
+		xlims=extrema(times_range),
+		# yaxis=:log
+	)
+
+	vline!(p_stability, [propagation_time], c=:forestgreen, label="Propagation time")
+
+	for (i, test_idx) in enumerate(test_indices)
+		vline!(
+			p_stability,
+			[
+				let
+					try
+						times_range[findfirst(is_stable_time[test_idx, :])]
+					catch
+						NaN
+					end
+				end
+			],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dash,
+		)
+	end
+
+	# Manual label
+	plot!(
+		p_stability, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
+	)
+	plot!(
+		p_stability, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
+	)
+end
+
+# ╔═╡ c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
+md"#### First derivative"
+
+# ╔═╡ 239d91b7-1a08-48aa-9e86-93e4c006bc06
+md"#### Second derivative"
+
+# ╔═╡ 7ccef59f-ae73-4480-a80a-5129ed7d3d61
+begin
+	threshold2_range = range(0, 8, length=100)
+	@bind threshold_2 Slider(
+		threshold2_range,
+		default=threshold2_range[argmin(abs.(threshold2_range .- 1.0))]
+	)
+end
+
+# ╔═╡ ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
+begin
+	threshold1_range = range(0, 2, length=100)
+	@bind threshold_1 Slider(
+		threshold2_range,
+		default=threshold2_range[argmin(abs.(threshold2_range .- 1.5))]
+	)
+end
+
+# ╔═╡ 36ff4668-62aa-4cb1-b732-2bc278d723e2
+begin
+	p_dev1 = plot(
+		times_range,
+		eachrow(derivatives1)[test_indices],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=(0,2),
+		xlims=extrema(times_range),
+		# yaxis=:log,
+	)
+
+	# vline!(p_dev1, [propagation_time], c=:forestgreen, label="Propagation time")
+	hline!(p_dev1, [threshold_1], c=:red, label="Threshold: $threshold_1")
+
+	for (i, val) in enumerate(distro_pdf[test_indices])
+		vline!(
+			p_dev1,
+			[
+				let
+					try
+						times_range[findfirst(is_stable_time[test_indices[i], :])]
+					catch
+						NaN
+					end
+				end
+			],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dash,
+		)
+	end
+
+	# Manual label
+	plot!(
+		p_dev1, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
+	)
+	plot!(
+		p_dev1, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
+	)
+end
+
+# ╔═╡ c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
+begin
+	p_dev2 = plot(
+		times_range,
+		eachrow(derivatives2)[test_indices],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=(0,8),
+		xlims=extrema(times_range),
+		# yaxis=:log,
+	)
+
+	# vline!(p_dev2, [propagation_time], c=:forestgreen, label="Propagation time")
+	hline!(p_dev2, [threshold_2], c=:red, label="Threshold: $threshold_2")
+
+	for (i, val) in enumerate(distro_pdf[test_indices])
+		vline!(
+			p_dev2,
+			[
+				let
+					try
+						times_range[findfirst(is_stable_time[test_indices[i], :])]
+					catch
+						NaN
+					end
+				end
+			],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dash,
+		)
+	end
+
+	# Manual label
+	plot!(
+		p_dev2, [-10; -20], lw=2, lc=:black, ls=:solid, label="Second derivative"
+	)
+	# plot!(
+	# 	p_dev2, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
+	# )
+end
+
+# ╔═╡ 8bd6926d-dbec-4858-9c72-5e0904bc71d7
+md"#### Final stopping point"
+
+# ╔═╡ 123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
+begin
+	p_optimal = plot(
+		times_range,
+		eachrow(vmr_time)[test_indices],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=vmr_bounds,
+		xlims=extrema(times_range),
+		# yaxis=:log
+	)
+
+	vline!(p_optimal, [propagation_time], c=:forestgreen, label="Propagation time")
+
+	for (i, val) in enumerate(distro_pdf[test_indices])
+		vline!(
+			p_optimal,
+			[
+				times_range[
+					findlast(density_assigned_time[test_indices[i], :])
+				]
+			],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dash,
+		)
+		
+		vline!(
+			p_optimal,
+			[optimal_times[test_indices[i]]],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dashdot,
+		)
+	end
+
+	# Manual label
+	plot!(
+		p_optimal, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
+	)
+	plot!(
+		p_optimal, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stopping point"
+	)
+	plot!(
+		p_optimal,
+		[-10; -20], lw=1, lc=:black, ls=:dashdot, label="Optimal time"
+	)
+end
+
+# ╔═╡ 9f5e3a30-0104-45f8-b3f5-eaa4b73dce32
+md"#### Error comparison"
+
+# ╔═╡ c85f42eb-6667-4bcf-8888-db105378cb55
+begin
+	p_means2 = plot(
+		times_range,
+		eachrow(means_time)[test_indices],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=1.1 .* extrema(means_time[test_indices, :]),
+		xlims=extrema(times_range),
+	)
+
+	vline!(p_means2, [propagation_time], c=:forestgreen, label="Propagation time")
+
+	for (i, val) in enumerate(distro_pdf[test_indices])
+		hline!(
+			p_means2,
+			[val],
+			label=false,
+			lc=test_palette[i],
+			lw=2,
+			ls=:dashdotdot,
+		)
+
+		vline!(
+			p_means2,
+			[
+				times_range[
+					findlast(density_assigned_time[test_indices[i], :])
+				]
+			],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dash,
+		)
+
+		vline!(
+			p_means2,
+			[optimal_times[test_indices[i]]],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dashdot,
+		)
+	end
+
+	# Manual label
+	plot!(
+		p_means2,
+		[-10; -20], lw=2, lc=:black, ls=:solid, label="Propagated means"
+	)
+	plot!(
+		p_means2,
+		[-10; -20], lw=2, lc=:black, ls=:dashdotdot, label="PDF"
+	)
+	plot!(
+		p_means2,
+		[-10; -20], lw=2, lc=:black, ls=:dashdot, label="Optimal time"
+	)
+	plot!(
+		p_means2,
+		[-10; -20], lw=2, lc=:black, ls=:dash, label="Stopping time"
+	)
+end
 
 # ╔═╡ Cell order:
 # ╠═3add1086-3d31-11f0-0a9e-cd0909baedac
@@ -260,13 +868,52 @@ plot(
 # ╟─45f698a7-e91f-48b8-af2d-d77fe5264367
 # ╟─2473dd08-bff6-4d61-9448-fb9336404afd
 # ╟─c9911762-16c7-4490-aa0e-0e5a5ff62524
-# ╠═5bf23fbc-556a-4014-a84b-47c6dedf0b9f
+# ╟─394ce4a6-f4da-464f-8fbb-e0c21af54a27
+# ╟─5bf23fbc-556a-4014-a84b-47c6dedf0b9f
 # ╟─b2645b3b-2251-4d6a-9a41-e69eb101e12b
 # ╟─ca25a9af-0783-492c-8362-2c163c4ec5f1
 # ╟─87b3bd79-f44a-41a2-9aac-201d6bb3f00a
 # ╟─3e7d87af-6523-4218-86ee-e2af901bf491
+# ╟─d904caba-b00e-449b-b0b9-c6132c3a0e6c
+# ╠═d0084330-0998-455c-8f35-7c9818e46c86
+# ╟─bf77fdfb-2c8a-4e25-8423-46d7ab1df8aa
+# ╟─501df99f-299c-47cf-bc53-0230368663c0
+# ╟─e6f5d29a-c5d9-445c-926e-615fea53d495
+# ╟─dcf117aa-6d79-4a46-963b-e2a9b5157707
+# ╟─d048004b-ecbf-4455-944b-4a7ea105a50e
+# ╟─23b14634-08bf-4a96-8c5c-361392fa4ad2
+# ╟─4adba47b-afee-4816-9874-12192162e8e4
+# ╠═9eed9dbc-b16b-47f4-97d2-52fc7eb2088a
+# ╟─f8e360df-69ae-4e60-8181-9bd5209e2e97
+# ╠═38d840d8-0ae0-4fcb-b6c5-6b9c5f2acd15
+# ╟─8a99a967-c3da-4cca-ac26-a507aa7c0dff
 # ╠═bbbd2e78-3a28-4783-9601-c883cf99d185
 # ╟─75e020f4-5682-46f3-8dff-7abeba257818
+# ╠═ccc52b83-2073-48aa-8f5a-8af4dc3e917d
 # ╠═c7ae5c52-72ca-4449-bfa6-18fb36003ace
 # ╠═fb725626-e5eb-4dfc-93e7-4946af668652
-# ╠═62ea2943-0007-4278-8e70-e93e243ef1eb
+# ╠═dadb8821-1384-4748-ab98-32e23e64f7f8
+# ╠═5cca44db-4f10-4f9b-9c0a-6e6e1a983720
+# ╟─95746d99-132a-4f7c-8075-5da357841e1f
+# ╠═33a0e17b-cf1e-4fb0-b9c4-1e2498f285a4
+# ╟─badcc2b6-c438-47f0-b8b6-afc4e0cc741d
+# ╟─f5278add-a94e-4d43-a1be-4093f6bcefae
+# ╟─9d33bbd6-2f00-4633-8500-ef1fd18dead9
+# ╠═b62dc21c-c3a5-482e-9ad4-97f0e161d3dc
+# ╠═d132f438-3764-4844-9634-7416f2e062b7
+# ╟─6ec06af2-1b94-4986-94e2-6b629c3b6205
+# ╟─62ea2943-0007-4278-8e70-e93e243ef1eb
+# ╟─7f9cf2ba-2085-4b80-a98a-9feb7fe0c4de
+# ╟─097c40b2-2b34-442d-8cb9-4c63b60abfc4
+# ╟─42a8a50a-6c62-4056-ad93-96e228a9e1d8
+# ╟─c20c3541-d935-423c-a07f-77d8e0679d8d
+# ╟─c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
+# ╟─ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
+# ╟─36ff4668-62aa-4cb1-b732-2bc278d723e2
+# ╟─239d91b7-1a08-48aa-9e86-93e4c006bc06
+# ╟─7ccef59f-ae73-4480-a80a-5129ed7d3d61
+# ╠═c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
+# ╟─8bd6926d-dbec-4858-9c72-5e0904bc71d7
+# ╟─123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
+# ╟─9f5e3a30-0104-45f8-b3f5-eaa4b73dce32
+# ╟─c85f42eb-6667-4bcf-8888-db105378cb55
