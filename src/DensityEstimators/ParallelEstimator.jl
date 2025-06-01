@@ -867,7 +867,15 @@ function estimate!(
 
   time_initial = initial_bandwidth(estimator.grid_direct)
 
-  for time_propagated in estimator.times
+  if estimator.times isa AbstractVector{<:AbstractVector{<:Real}}
+    times = estimator.times
+  elseif estimator.times isa AbstractMatrix{<:Real}
+    times = eachcol(estimator.times)
+  else
+    throw(ArgumentError("Unsupported type for times: $(typeof(estimator.times))"))
+  end
+
+  for time_propagated in times
     propagate_bootstraps!(
       estimator.kernel_propagation,
       estimator.means_bootstraps,
