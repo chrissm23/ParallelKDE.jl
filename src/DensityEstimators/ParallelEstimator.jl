@@ -512,9 +512,9 @@ abstract type AbstractDensityState{N,T} end
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   dt::Float64
-  eps1::Float64 = 1.0
-  eps2::Float64 = 10.0
-  smoothness_duration::Int = 3
+  eps1::Float64 = 1.5
+  eps2::Float64 = 1.0
+  smoothness_duration::Int = 10
   stable_duration::Int = 3
 
   # State

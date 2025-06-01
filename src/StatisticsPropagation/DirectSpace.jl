@@ -550,7 +550,7 @@ function calculate_scaled_vmr!(
     end
 
     vmr_v = scaling_factor * m2 / (n_bootstraps - 1)
-    vmr_var[j] = ifelse(isfinite(vmr_v), vmr_v, NaN)
+    vmr_var[j] = ifelse(isfinite(vmr_v), log10(vmr_v), NaN)
   end
 
   return nothing
@@ -637,7 +637,7 @@ function calculate_scaled_vmr!(
     end
 
     vmr_v = scaling_factor * m2 / (count - 1)
-    vmr_var[point+1] = ifelse(isfinite(vmr_v), vmr_v, NaN)
+    vmr_var[point+1] = ifelse(isfinite(vmr_v), log10(vmr_v), NaN)
   end
 
   return nothing
@@ -660,7 +660,7 @@ function calculate_scaled_vmr!(
   vmr .= dropdims(var(s2k, dims=M), dims=M)
   vmr .*= scaling_factor
 
-  @. vmr = ifelse(isfinite(vmr), vmr, NaN32)
+  @. vmr = ifelse(isfinite(vmr), log10(vmr), NaN32)
 
   return nothing
 end
@@ -990,8 +990,8 @@ end
 end
 
 @inline function smoothness_check(second_derivative::Real, tol::Real)
-  factor = 2
-  return abs(second_derivative) < factor * tol
+  factor = 4
+  return second_derivative < factor * tol
 end
 
 function kernel_smooth!(
@@ -1015,11 +1015,12 @@ function kernel_smooth!(
   tol = parms[1]
   dt = parms[2]
   smoothness_duration = Z(parms[3])
-  factor = 2i32
+  factor = 4i32
 
   second_derivative = (
     (vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]) / dt^2i32
   )
+  second_derivative = log10(abs(second_derivative))
   counter = smoothness_counter[idx]
 
   if abs(second_derivative) < factor * tol
@@ -1086,8 +1087,8 @@ end
   stability_counter::Integer,
   stability_duration::Integer,
 )
-  first_derivative = abs(first_difference(vmr_current, vmr_prev1, dt))
-  second_derivative = abs(second_difference(vmr_current, vmr_prev1, vmr_prev2, dt))
+  first_derivative = first_difference(vmr_current, vmr_prev1, dt)
+  second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dt)
 
   is_stable = false
   if (first_derivative < tol1) && (second_derivative < tol2)
@@ -1136,6 +1137,7 @@ function kernel_stable!(
   second_derivative = abs(
     vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]
   ) / dt^2i32
+  second_derivative = log10(second_derivative)
   counter = stability_counter[idx]
 
   if (first_derivative < tol1) && (second_derivative < tol2)
@@ -1154,11 +1156,11 @@ function kernel_stable!(
 end
 
 @inline function first_difference(f::Real, f_prev::Real, dt::Real)
-  return (f - f_prev) / (2dt)
+  return abs((f - f_prev) / (2dt))
 end
 
 @inline function second_difference(f::Real, f_prev1::Real, f_prev2::Real, dt::Real)
-  return (f - 2f_prev1 + f_prev2) / dt^2
+  return log10(abs((f - 2f_prev1 + f_prev2) / dt^2))
 end
 
 function silverman_rule(data::AbstractMatrix)
