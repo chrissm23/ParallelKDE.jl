@@ -20,3 +20,9 @@ function generate_samples(n_samples::Integer, n_dims::Integer; normal_distro=not
 
   return samples
 end
+
+function calculate_mise(f1::AbstractArray{<:Real,N}, f2::AbstractArray{<:Real,N}, dx::Real) where {N}
+  n_gridpoints = length(f1)
+
+  return sum((f1 .- f2) .^ 2) * dx / n_gridpoints
+end

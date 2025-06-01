@@ -480,12 +480,63 @@ if CUDA.functional()
   end
 end
 
+# TODO: Extend tests to cover more dimensions once tested
 @testset "Parallel estimation tests (CPU). $(n_dims)D" for n_dims in 1:1
-  # TODO: Complete test of ParallelKDE algorithm
+  @testset "Implementation: $implementation tests" for implementation in [:serial, :threaded]
+    data = generate_samples(1000, n_dims)
+
+    grid = initialize_grid(fill(range(-6.0, 6.0, length=300), n_dims), device=:cpu)
+    kde = inittailize_kde(data, size(grid), device=:cpu)
+
+    estimator = ParallelKDE.DensityEstimators.inititalize_estimator(
+      ParallelKDE.DensityEstimators.AbstractParallelEstimator,
+      kde,
+      grid=grid,
+      method=implementation
+    )
+    estimate!(estimator, kde; method=implementation)
+    density_estimated = get_density(kde)
+
+    density_mean = @SVector zeros(n_dims)
+    grid_vectors = eachslice(grid, dims=Tuple(2:n_dims+1))
+
+    density_true = normal_distribution.(grid_vectors, Ref(density_mean), Ref(Diagonal(ones(n_dims))))
+
+    dx = prod(spacings.(grid))
+    mise = calculate_mise(density_estimated, density_true, dx)
+
+    # TODO: Replace with appropriate MISE threshold
+    @test mise < 0.01
+  end
 end
 
+# TODO: Extend tests to cover more dimensions once tested
 if CUDA.functional()
   @testset "Parallel estimation tests (GPU). $(n_dims)D" for n_dims in 1:1
-    # TODO: Complete test of ParallelKDE algorithm
+    data = generate_samples(1000, n_dims)
+
+    grid = initialize_grid(fill(range(-6.0, 6.0, length=300), n_dims), device=:cuda)
+    kde = inittailize_kde(data, size(grid), device=:cuda)
+
+    estimator = ParallelKDE.DensityEstimators.inititalize_estimator(
+      ParallelKDE.DensityEstimators.AbstractParallelEstimator,
+      kde,
+      grid=grid,
+      method=:cuda
+    )
+    estimate!(estimator, kde; method=:cuda)
+    density_estimated_d = get_density(kde)
+    density_estimated = Array{Float64}(density_estimated_d)
+
+    density_mean = @SVector zeros(n_dims)
+    grid_vectors = eachslice(grid, dims=Tuple(2:n_dims+1))
+
+    density_true = normal_distribution.(grid_vectors, Ref(density_mean), Ref(Diagonal(ones(n_dims))))
+
+    dx = prod(spacings.(grid))
+    mise = calculate_mise(density_estimated, density_true, dx)
+
+    # TODO: Replace with appropriate MISE threshold
+    @test mise < 0.01
   end
 end
