@@ -513,7 +513,7 @@ abstract type AbstractDensityState{N,T} end
   # Parameters
   dt::Float64
   eps1::Float64 = 1.5
-  eps2::Float64 = 1.0
+  eps2::Float64 = 0.75
   smoothness_duration::Int = 10
   stable_duration::Int = 3
 
@@ -550,9 +550,9 @@ end
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   dt::Float32
-  eps1::Float32 = 1.0f0
-  eps2::Float32 = 10.0f0
-  smoothness_duration::Int32 = Int32(3)
+  eps1::Float32 = 1.5f0
+  eps2::Float32 = 0.75f0
+  smoothness_duration::Int32 = Int32(10)
   stable_duration::Int32 = Int32(3)
 
   # State
@@ -804,7 +804,7 @@ function get_time(
     return times, dt
   else
 
-    return get_time(IsCPU(), time_final, n_steps=50)
+    return get_time(IsCPU(), time_final, n_steps=1000)
   end
 
 end
@@ -850,7 +850,7 @@ function get_time(
     return times, dt
   else
 
-    return get_time(IsCUDA(), time_final, n_steps=50)
+    return get_time(IsCUDA(), time_final, n_steps=1000)
   end
 
 end
