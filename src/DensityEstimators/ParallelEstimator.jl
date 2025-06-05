@@ -512,14 +512,14 @@ abstract type AbstractDensityState{N,T} end
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   dt::Float64
-  eps1::Float64 = 1.5
-  eps2::Float64 = 0.75
-  smoothness_duration::Int = 10
-  stable_duration::Int = 10
+  eps1::Float64
+  eps2::Float64
+  smoothness_duration::Int
+  stable_duration::Int
 
   # State
-  smooth_counters::Array{Int8,N}
-  stable_counters::Array{Int8,N}
+  smooth_counters::Array{UInt16,N}
+  stable_counters::Array{UInt16,N}
   is_smooth::Array{Bool,N}
   has_decreased::Array{Bool,N}
   is_stable::Array{Bool,N}
@@ -532,32 +532,39 @@ function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
   dt::Real,
-  kwargs...
+  smoothness_duration::Integer,
+  stable_duration::Integer,
+  eps1::Real=1.5,
+  eps2::Real=0.75,
+  kwargs...,
 ) where {N}
   DensityState{N,T}(;
     dt=dt,
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
-    smooth_counters=fill(Int8(0), dims),
-    stable_counters=fill(Int8(0), dims),
+    smooth_counters=zeros(UInt16, dims),
+    stable_counters=zeros(UInt16, dims),
     is_smooth=fill(false, dims),
     has_decreased=fill(false, dims),
     is_stable=fill(false, dims),
-    kwargs...
+    eps1=Float64(eps1),
+    eps2=Float64(eps2),
+    smoothness_duration=Int(smoothness_duration),
+    stable_duration=Int(stable_duration),
   )
 end
 
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   dt::Float32
-  eps1::Float32 = 1.5f0
-  eps2::Float32 = 0.75f0
-  smoothness_duration::Int32 = Int32(10)
-  stable_duration::Int32 = Int32(10)
+  eps1::Float32
+  eps2::Float32
+  smoothness_duration::Int32
+  stable_duration::Int32
 
   # State
-  smooth_counters::CuArray{Int8,N}
-  stable_counters::CuArray{Int8,N}
+  smooth_counters::CuArray{UInt16,N}
+  stable_counters::CuArray{UInt16,N}
   is_smooth::CuArray{Bool,N}
   has_decreased::CuArray{Bool,N}
   is_stable::CuArray{Bool,N}
@@ -570,18 +577,25 @@ function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
   dt::Real,
+  smoothness_duration::Integer,
+  stable_duration::Integer,
+  eps1::Real=1.5,
+  eps2::Real=0.75,
   kwargs...
 ) where {N}
   CuDensityState{N,T}(;
     dt=dt,
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
-    smooth_counters=CUDA.fill(Int8(0), dims),
-    stable_counters=CUDA.fill(Int8(0), dims),
+    smooth_counters=CUDA.zeros(UInt16, dims),
+    stable_counters=CUDA.zeros(UInt16, dims),
     is_smooth=CUDA.fill(false, dims),
     has_decreased=CUDA.fill(false, dims),
     is_stable=CUDA.fill(false, dims),
-    kwargs...
+    eps1=Float32(eps1),
+    eps2=Float32(eps2),
+    smoothness_duration=Int32(smoothness_duration),
+    stable_duration=Int32(stable_duration),
   )
 end
 
@@ -705,16 +719,35 @@ function initialize_estimator_propagation(
   means::KernelMeans{N,T,N},
   grid::Grid{N,<:Real,M};
   time_step::Union{Nothing,Real}=nothing,
+  time_final::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
   kwargs...
 ) where {N,T<:Real,M}
+  kwargs_dict = Dict(kwargs)
+
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
-  time_final = 2 .* silverman_rule(get_data(kde))
+  if time_final === nothing
+    time_final = silverman_rule(get_data(kde))
+  end
   times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-  density_state = DensityState(size(grid); dt=norm(dt), T=T, kwargs...)
+  println("Time step: $dt")
+  println("Number of time steps: $(length(times))")
+  println("Final time: $(times[end])")
+
+  smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, nothing)
+  smoothness_duration = calculate_duration_steps(times[end], dt; fraction=smoothness_duration_fraction)
+  stable_duration_fraction = pop!(kwargs_dict, :stable_duration, nothing)
+  stable_duration = calculate_duration_steps(times[end], dt; fraction=stable_duration_fraction)
+
+  println("Smoothness duration: $smoothness_duration")
+  println("Stable duration: $stable_duration")
+
+  density_state = DensityState(
+    size(grid); dt=norm(dt), T=T, smoothness_duration, stable_duration, kwargs_dict...
+  )
 
   return ParallelEstimator(
     means_bootstraps,
@@ -739,14 +772,21 @@ function initialize_estimator_propagation(
   n_steps=nothing,
   kwargs...
 ) where {N,T<:Real,M}
+  kwargs_dict = Dict(kwargs)
+
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = CuKernelPropagation(means_bootstraps, vars_bootstraps)
   time_final = silverman_rule(Array(get_data(kde)))
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
+  smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, nothing)
+  smoothness_duration = calculate_duration_steps(times[end], dt; fraction=smoothness_duration_fraction)
+  stable_duration_fraction = pop!(kwargs_dict, :stable_duration, nothing)
+  stable_duration = calculate_duration_steps(times[end], dt; fraction=stable_duration_fraction)
+
   density_state = CuDensityState(
-    size(grid); dt=norm(dt), T=typeof(kde).parameters[2], kwargs...
+    size(grid); dt=norm(dt), T=typeof(kde).parameters[2], smoothness_duration, stable_duration, kwargs_dict...
   )
 
   return CuParallelEstimator(
@@ -853,6 +893,16 @@ function get_time(
     return get_time(IsCUDA(), time_final, n_steps=1000)
   end
 
+end
+
+function calculate_duration_steps(time_max, dt; fraction)
+  if fraction === nothing
+    fraction = 0.01
+  elseif fraction <= 0 || fraction > 1
+    throw(ArgumentError("Fraction must be in the range [0, 1]"))
+  end
+  duration_steps = fraction .* time_max ./ dt
+  return round(Int, mean(duration_steps))
 end
 
 function estimate!(

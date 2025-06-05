@@ -44,6 +44,16 @@ begin
 	pythonplot()
 end
 
+# ╔═╡ 5ab5c068-8f66-4be5-aea2-796fe7b84767
+md"# TODO:
+Remember to use different branches and merge into dev (add dev to CI).
+- Find where the NaNs come from
+- Increase tolerance for fourier transforms tests (run all tests while you're at it)\
+- Fix CUDA implementation
+- Tag release from dev, merge into main, store it in releases/\
+- Test all works in ParallelKDEpy
+- Write instructions in both packages and share"
+
 # ╔═╡ c823e934-2430-4c95-ae36-96879b565e47
 md"### Distribution definitions and sampling"
 
@@ -157,7 +167,7 @@ end;
 md"Number of test points (`n_testpoints`)."
 
 # ╔═╡ d0084330-0998-455c-8f35-7c9818e46c86
-@bind n_testpoints Slider(1:n_gridpoints÷50, default=5)
+@bind n_testpoints Slider(1:n_gridpoints÷50, default=7)
 
 # ╔═╡ bf77fdfb-2c8a-4e25-8423-46d7ab1df8aa
 md"Minimum value for test points (`testpoints_min`)."
@@ -189,18 +199,6 @@ begin
 	test_palette = palette(:vik, n_testpoints)
 end;
 
-# ╔═╡ 4adba47b-afee-4816-9874-12192162e8e4
-md"Tolerance for first derivative (`tol1`)"
-
-# ╔═╡ 9eed9dbc-b16b-47f4-97d2-52fc7eb2088a
-@bind tol1 Slider(range(0.1, 2, length=50))
-
-# ╔═╡ f8e360df-69ae-4e60-8181-9bd5209e2e97
-md"Tolerance for second derivative (`tol2`)"
-
-# ╔═╡ 38d840d8-0ae0-4fcb-b6c5-6b9c5f2acd15
-@bind tol2 Slider(logrange(0.01, 1e1, length=50))
-
 # ╔═╡ 1200e59e-388b-4c62-b2a8-084098311922
 function calculate_mise(
 	f1::AbstractArray{<:Real,N},
@@ -211,9 +209,6 @@ function calculate_mise(
 
 	return sum((f1 .- f2) .^ 2) * dx / n_points
 end
-
-# ╔═╡ 8a99a967-c3da-4cca-ac26-a507aa7c0dff
-md"##### Smaller time step requires a smaller threshold2"
 
 # ╔═╡ bbbd2e78-3a28-4783-9601-c883cf99d185
 let
@@ -230,12 +225,13 @@ let
 	estimate_density!(
 		density_estimation,
 		:parallelEstimator,
-		# n_bootstraps=1000,
-		# time_step=0.001,
+		time_step=0.00001,
+		# smoothness_duration=0.1,
+		# stable_duration=0.1,
 		# eps1=1.5,
 		# eps2=0.75,
-		# smoothness_duration=10,
-		stable_duration=10,
+		# n_bootstraps=1000,
+
 	)
 	
 	density_estimated = get_density(density_estimation)
@@ -263,9 +259,9 @@ let
 
 	dx = prod(spacings(get_grid(density_estimation)))
 	mise = calculate_mise(density_estimated, distro_pdf, dx)
-	println(mise)
+	# println(mise)
 	
-	# println(findall(isnan, density_estimated))
+	println(findall(isnan, density_estimated))
 
 	p_estimate
 end
@@ -294,11 +290,11 @@ begin
 		kde;
 		method,
 		grid=grid_support,
-		# time_step=0.001,
-		eps1=1.5,
-		eps2=0.75,
-		smoothness_duration=10,
-		stable_duration=3,
+		time_step=0.00001,
+		# eps1=1.5,
+		# eps2=0.75,
+		# smoothness_duration=10,
+		# stable_duration=10,
 	)
 
 	time_step = parallel_estimator.density_state.dt
@@ -320,9 +316,6 @@ begin
 	has_decreased_time = falses(n_gridpoints, n_times)
 	is_stable_time = falses(n_gridpoints, n_times)
 	density_assigned_time = falses(n_gridpoints, n_times)
-
-	println(parallel_estimator.density_state.dt)
-	println(n_times)
 end;
 
 # ╔═╡ fb725626-e5eb-4dfc-93e7-4946af668652
@@ -471,7 +464,7 @@ begin
 			label=false,
 			lc=test_palette[i],
 			lw=2,
-			ls=:dashdotdot,
+			ls=:dash,
 		)
 
 		vline!(
@@ -491,7 +484,7 @@ begin
 	)
 	plot!(
 		p_means,
-		[-10; -20], lw=2, lc=:black, ls=:dashdotdot, label="PDF"
+		[-10; -20], lw=2, lc=:black, ls=:dash, label="PDF"
 	)
 	plot!(
 		p_means,
@@ -523,7 +516,15 @@ begin
 	for (i, test_idx) in enumerate(test_indices)
 		vline!(
 			p_smooth,
-			[times_range[findfirst(is_smooth_time[test_idx, :])]],
+			[
+				let
+					try
+						times_range[findfirst(is_smooth_time[test_idx, :])]
+					catch
+						NaN
+					end
+				end
+			],
 			label=false,
 			lw=2,
 			lc=test_palette[i],
@@ -640,10 +641,10 @@ md"#### Second derivative"
 
 # ╔═╡ 7ccef59f-ae73-4480-a80a-5129ed7d3d61
 begin
-	threshold2_range = range(0, 8, length=100)
+	threshold2_range = range(0, 4, length=100)
 	@bind threshold_2 Slider(
 		threshold2_range,
-		default=threshold2_range[argmin(abs.(threshold2_range .- 1.0))]
+		default=threshold2_range[argmin(abs.(threshold2_range .- 0.75))]
 	)
 end
 
@@ -711,6 +712,7 @@ begin
 		ylims=(0,8),
 		xlims=extrema(times_range),
 		# yaxis=:log,
+		dpi=500,
 	)
 
 	# vline!(p_dev2, [propagation_time], c=:forestgreen, label="Propagation time")
@@ -742,6 +744,10 @@ begin
 	# plot!(
 	# 	p_dev2, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
 	# )
+
+	savefig(p_dev2, "dev2_step1e5_count266.png")
+
+	p_dev2
 end
 
 # ╔═╡ 8bd6926d-dbec-4858-9c72-5e0904bc71d7
@@ -757,7 +763,8 @@ begin
 		lw=2,
 		ylims=vmr_bounds,
 		xlims=extrema(times_range),
-		# yaxis=:log
+		# yaxis=:log,
+		dpi=500,
 	)
 
 	vline!(p_optimal, [propagation_time], c=:forestgreen, label="Propagation time")
@@ -797,6 +804,10 @@ begin
 		p_optimal,
 		[-10; -20], lw=1, lc=:black, ls=:dashdot, label="Optimal time"
 	)
+
+	savefig(p_optimal, "vmr_step1e5_count266.png")
+
+	p_optimal
 end
 
 # ╔═╡ 9f5e3a30-0104-45f8-b3f5-eaa4b73dce32
@@ -869,6 +880,7 @@ begin
 end
 
 # ╔═╡ Cell order:
+# ╟─5ab5c068-8f66-4be5-aea2-796fe7b84767
 # ╠═3add1086-3d31-11f0-0a9e-cd0909baedac
 # ╟─c823e934-2430-4c95-ae36-96879b565e47
 # ╟─dd1af6a8-61a4-45dd-8b99-04a133175f04
@@ -897,15 +909,10 @@ end
 # ╟─dcf117aa-6d79-4a46-963b-e2a9b5157707
 # ╟─d048004b-ecbf-4455-944b-4a7ea105a50e
 # ╟─23b14634-08bf-4a96-8c5c-361392fa4ad2
-# ╟─4adba47b-afee-4816-9874-12192162e8e4
-# ╠═9eed9dbc-b16b-47f4-97d2-52fc7eb2088a
-# ╟─f8e360df-69ae-4e60-8181-9bd5209e2e97
-# ╠═38d840d8-0ae0-4fcb-b6c5-6b9c5f2acd15
 # ╟─1200e59e-388b-4c62-b2a8-084098311922
-# ╟─8a99a967-c3da-4cca-ac26-a507aa7c0dff
 # ╠═bbbd2e78-3a28-4783-9601-c883cf99d185
 # ╟─75e020f4-5682-46f3-8dff-7abeba257818
-# ╠═ccc52b83-2073-48aa-8f5a-8af4dc3e917d
+# ╟─ccc52b83-2073-48aa-8f5a-8af4dc3e917d
 # ╠═c7ae5c52-72ca-4449-bfa6-18fb36003ace
 # ╠═fb725626-e5eb-4dfc-93e7-4946af668652
 # ╠═dadb8821-1384-4748-ab98-32e23e64f7f8
@@ -915,7 +922,7 @@ end
 # ╟─badcc2b6-c438-47f0-b8b6-afc4e0cc741d
 # ╟─f5278add-a94e-4d43-a1be-4093f6bcefae
 # ╟─9d33bbd6-2f00-4633-8500-ef1fd18dead9
-# ╠═b62dc21c-c3a5-482e-9ad4-97f0e161d3dc
+# ╟─b62dc21c-c3a5-482e-9ad4-97f0e161d3dc
 # ╠═d132f438-3764-4844-9634-7416f2e062b7
 # ╟─6ec06af2-1b94-4986-94e2-6b629c3b6205
 # ╟─62ea2943-0007-4278-8e70-e93e243ef1eb
@@ -930,6 +937,6 @@ end
 # ╟─7ccef59f-ae73-4480-a80a-5129ed7d3d61
 # ╠═c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
 # ╟─8bd6926d-dbec-4858-9c72-5e0904bc71d7
-# ╟─123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
+# ╠═123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
 # ╟─9f5e3a30-0104-45f8-b3f5-eaa4b73dce32
 # ╟─c85f42eb-6667-4bcf-8888-db105378cb55
