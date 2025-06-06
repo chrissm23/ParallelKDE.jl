@@ -233,7 +233,6 @@ let
 		# eps1=1.5,
 		# eps2=0.1,
 		# n_bootstraps=1000,
-
 	)
 	
 	density_estimated = get_density(density_estimation)
@@ -434,7 +433,7 @@ begin
 		)
 	end
 
-	savefig(p_propagation, "dirac_cpu.png")
+	# savefig(p_propagation, "dirac_cpu.png")
 	
 	p_propagation
 end
@@ -744,7 +743,7 @@ begin
 	# 	p_dev2, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
 	# )
 
-	savefig(p_dev2, "dev2_cpu.png")
+	# savefig(p_dev2, "dev2_cpu.png")
 
 	p_dev2
 end
@@ -804,7 +803,7 @@ begin
 		[-10; -20], lw=1, lc=:black, ls=:dashdot, label="Optimal time"
 	)
 
-	savefig(p_optimal, "vmr_cpu.png")
+	# savefig(p_optimal, "vmr_cpu.png")
 
 	p_optimal
 end
@@ -919,7 +918,7 @@ end
 # ╟─95746d99-132a-4f7c-8075-5da357841e1f
 # ╟─33a0e17b-cf1e-4fb0-b9c4-1e2498f285a4
 # ╟─badcc2b6-c438-47f0-b8b6-afc4e0cc741d
-# ╠═f5278add-a94e-4d43-a1be-4093f6bcefae
+# ╟─f5278add-a94e-4d43-a1be-4093f6bcefae
 # ╟─9d33bbd6-2f00-4633-8500-ef1fd18dead9
 # ╟─b62dc21c-c3a5-482e-9ad4-97f0e161d3dc
 # ╠═d132f438-3764-4844-9634-7416f2e062b7
@@ -934,8 +933,8 @@ end
 # ╟─36ff4668-62aa-4cb1-b732-2bc278d723e2
 # ╟─239d91b7-1a08-48aa-9e86-93e4c006bc06
 # ╟─7ccef59f-ae73-4480-a80a-5129ed7d3d61
-# ╠═c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
+# ╟─c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
 # ╟─8bd6926d-dbec-4858-9c72-5e0904bc71d7
-# ╠═123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
+# ╟─123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
 # ╟─9f5e3a30-0104-45f8-b3f5-eaa4b73dce32
 # ╟─c85f42eb-6667-4bcf-8888-db105378cb55
