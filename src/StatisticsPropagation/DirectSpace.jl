@@ -763,6 +763,7 @@ function identify_convergence!(
         vmr_current[i],
         vmr_prev1[i],
       )
+      density[i] = means[i]
 
     elseif !is_stable[i]
       is_stable[i], stable_counters[i] = find_stability(
@@ -776,9 +777,7 @@ function identify_convergence!(
         stable_duration
       )
 
-      if is_stable[i]
-        density[i] = means[i]
-      end
+      density[i] = means[i]
     end
   end
 
@@ -827,6 +826,7 @@ function identify_convergence!(
         vmr_current[i],
         vmr_prev1[i],
       )
+      density[i] = means[i]
 
     elseif !is_stable_array[i]
       is_stable_array[i], stable_counters[i] = find_stability(
@@ -840,9 +840,7 @@ function identify_convergence!(
         stable_duration
       )
 
-      if is_stable_array[i]
-        density[i] = means[i]
-      end
+      density[i] = means[i]
     end
   end
 
@@ -990,7 +988,7 @@ end
 end
 
 @inline function smoothness_check(second_derivative::Real, tol::Real)
-  factor = 4
+  factor = 30
   return second_derivative < factor * tol
 end
 

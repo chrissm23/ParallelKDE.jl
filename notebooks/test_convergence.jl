@@ -44,16 +44,6 @@ begin
 	pythonplot()
 end
 
-# ╔═╡ 5ab5c068-8f66-4be5-aea2-796fe7b84767
-md"# TODO:
-Remember to use different branches and merge into dev (add dev to CI).
-- Find where the NaNs come from
-- Increase tolerance for fourier transforms tests (run all tests while you're at it)\
-- Fix CUDA implementation
-- Tag release from dev, merge into main, store it in releases/\
-- Test all works in ParallelKDEpy
-- Write instructions in both packages and share"
-
 # ╔═╡ c823e934-2430-4c95-ae36-96879b565e47
 md"### Distribution definitions and sampling"
 
@@ -225,11 +215,11 @@ let
 	estimate_density!(
 		density_estimation,
 		:parallelEstimator,
-		time_step=0.00001,
-		# smoothness_duration=0.1,
-		# stable_duration=0.1,
+		# time_step=0.00001,
+		# smoothness_duration=0.005,
+		# stable_duration=0.01,
 		# eps1=1.5,
-		# eps2=0.75,
+		# eps2=0.1,
 		# n_bootstraps=1000,
 
 	)
@@ -256,23 +246,18 @@ let
 			c=test_palette[i],
 		)
 	end
+	
+	println("NaNs: ", findall(isnan, density_estimated))
 
 	dx = prod(spacings(get_grid(density_estimation)))
 	mise = calculate_mise(density_estimated, distro_pdf, dx)
-	# println(mise)
-	
-	println(findall(isnan, density_estimated))
+	println("MISE: ", mise)
 
 	p_estimate
 end
 
 # ╔═╡ 75e020f4-5682-46f3-8dff-7abeba257818
 md"### Propagation behavior"
-
-# ╔═╡ ccc52b83-2073-48aa-8f5a-8af4dc3e917d
-md"For bimodal,\
-`time_step=default` -> better `threshold=1.0`\
-`time_step=0.001` -> better `threshold = 0.5`"
 
 # ╔═╡ c7ae5c52-72ca-4449-bfa6-18fb36003ace
 begin
@@ -290,11 +275,11 @@ begin
 		kde;
 		method,
 		grid=grid_support,
-		time_step=0.00001,
+		# time_step=0.00001,
 		# eps1=1.5,
-		# eps2=0.75,
-		# smoothness_duration=10,
-		# stable_duration=10,
+		# eps2=0.1,
+		# smoothness_duration=0.005,
+		# stable_duration=0.01,
 	)
 
 	time_step = parallel_estimator.density_state.dt
@@ -880,7 +865,6 @@ begin
 end
 
 # ╔═╡ Cell order:
-# ╟─5ab5c068-8f66-4be5-aea2-796fe7b84767
 # ╠═3add1086-3d31-11f0-0a9e-cd0909baedac
 # ╟─c823e934-2430-4c95-ae36-96879b565e47
 # ╟─dd1af6a8-61a4-45dd-8b99-04a133175f04
@@ -902,7 +886,7 @@ end
 # ╟─87b3bd79-f44a-41a2-9aac-201d6bb3f00a
 # ╟─3e7d87af-6523-4218-86ee-e2af901bf491
 # ╟─d904caba-b00e-449b-b0b9-c6132c3a0e6c
-# ╠═d0084330-0998-455c-8f35-7c9818e46c86
+# ╟─d0084330-0998-455c-8f35-7c9818e46c86
 # ╟─bf77fdfb-2c8a-4e25-8423-46d7ab1df8aa
 # ╟─501df99f-299c-47cf-bc53-0230368663c0
 # ╟─e6f5d29a-c5d9-445c-926e-615fea53d495
@@ -912,7 +896,6 @@ end
 # ╟─1200e59e-388b-4c62-b2a8-084098311922
 # ╠═bbbd2e78-3a28-4783-9601-c883cf99d185
 # ╟─75e020f4-5682-46f3-8dff-7abeba257818
-# ╟─ccc52b83-2073-48aa-8f5a-8af4dc3e917d
 # ╠═c7ae5c52-72ca-4449-bfa6-18fb36003ace
 # ╠═fb725626-e5eb-4dfc-93e7-4946af668652
 # ╠═dadb8821-1384-4748-ab98-32e23e64f7f8

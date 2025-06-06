@@ -535,7 +535,7 @@ function DensityState(
   smoothness_duration::Integer,
   stable_duration::Integer,
   eps1::Real=1.5,
-  eps2::Real=0.75,
+  eps2::Real=0.1,
   kwargs...,
 ) where {N}
   DensityState{N,T}(;
@@ -580,7 +580,7 @@ function CuDensityState(
   smoothness_duration::Integer,
   stable_duration::Integer,
   eps1::Real=1.5,
-  eps2::Real=0.75,
+  eps2::Real=0.1,
   kwargs...
 ) where {N}
   CuDensityState{N,T}(;
@@ -737,9 +737,9 @@ function initialize_estimator_propagation(
   println("Number of time steps: $(length(times))")
   println("Final time: $(times[end])")
 
-  smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, nothing)
+  smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, 0.005)
   smoothness_duration = calculate_duration_steps(times[end], dt; fraction=smoothness_duration_fraction)
-  stable_duration_fraction = pop!(kwargs_dict, :stable_duration, nothing)
+  stable_duration_fraction = pop!(kwargs_dict, :stable_duration, 0.01)
   stable_duration = calculate_duration_steps(times[end], dt; fraction=stable_duration_fraction)
 
   println("Smoothness duration: $smoothness_duration")
@@ -780,9 +780,9 @@ function initialize_estimator_propagation(
   time_final = silverman_rule(Array(get_data(kde)))
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
-  smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, nothing)
+  smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, 0.005)
   smoothness_duration = calculate_duration_steps(times[end], dt; fraction=smoothness_duration_fraction)
-  stable_duration_fraction = pop!(kwargs_dict, :stable_duration, nothing)
+  stable_duration_fraction = pop!(kwargs_dict, :stable_duration, 0.01)
   stable_duration = calculate_duration_steps(times[end], dt; fraction=stable_duration_fraction)
 
   density_state = CuDensityState(
