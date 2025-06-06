@@ -171,6 +171,18 @@ md"maximum value for test points (`testpoints_max`)."
 # ╔═╡ dcf117aa-6d79-4a46-963b-e2a9b5157707
 @bind testpoints_max Slider(distro_support, default=maximum(distro_support))
 
+# ╔═╡ 566ac44c-d485-4d9d-b78e-29a6f64794f7
+md"
+6.506506506506507\
+13.633633633633634
+"
+
+# ╔═╡ 67a1126e-ca9a-4551-9255-ea75004ec2ff
+begin
+	println(testpoints_min)
+	println(testpoints_max)
+end
+
 # ╔═╡ d048004b-ecbf-4455-944b-4a7ea105a50e
 md"
 Test points in `test_points`.\
@@ -402,7 +414,7 @@ md"#### Propagation of mean Dirac sequences"
 # ╔═╡ f5278add-a94e-4d43-a1be-4093f6bcefae
 begin
 	p_propagation = plot(
-		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
+		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue, dpi=500
 	)
 	plot!(
 		p_propagation,
@@ -422,6 +434,8 @@ begin
 		)
 	end
 
+	savefig(p_propagation, "dirac_cpu.png")
+	
 	p_propagation
 end
 
@@ -730,7 +744,7 @@ begin
 	# 	p_dev2, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
 	# )
 
-	savefig(p_dev2, "dev2_step1e5_count266.png")
+	savefig(p_dev2, "dev2_cpu.png")
 
 	p_dev2
 end
@@ -790,7 +804,7 @@ begin
 		[-10; -20], lw=1, lc=:black, ls=:dashdot, label="Optimal time"
 	)
 
-	savefig(p_optimal, "vmr_step1e5_count266.png")
+	savefig(p_optimal, "vmr_cpu.png")
 
 	p_optimal
 end
@@ -891,6 +905,8 @@ end
 # ╟─501df99f-299c-47cf-bc53-0230368663c0
 # ╟─e6f5d29a-c5d9-445c-926e-615fea53d495
 # ╟─dcf117aa-6d79-4a46-963b-e2a9b5157707
+# ╟─566ac44c-d485-4d9d-b78e-29a6f64794f7
+# ╠═67a1126e-ca9a-4551-9255-ea75004ec2ff
 # ╟─d048004b-ecbf-4455-944b-4a7ea105a50e
 # ╟─23b14634-08bf-4a96-8c5c-361392fa4ad2
 # ╟─1200e59e-388b-4c62-b2a8-084098311922
@@ -901,9 +917,9 @@ end
 # ╠═dadb8821-1384-4748-ab98-32e23e64f7f8
 # ╠═5cca44db-4f10-4f9b-9c0a-6e6e1a983720
 # ╟─95746d99-132a-4f7c-8075-5da357841e1f
-# ╠═33a0e17b-cf1e-4fb0-b9c4-1e2498f285a4
+# ╟─33a0e17b-cf1e-4fb0-b9c4-1e2498f285a4
 # ╟─badcc2b6-c438-47f0-b8b6-afc4e0cc741d
-# ╟─f5278add-a94e-4d43-a1be-4093f6bcefae
+# ╠═f5278add-a94e-4d43-a1be-4093f6bcefae
 # ╟─9d33bbd6-2f00-4633-8500-ef1fd18dead9
 # ╟─b62dc21c-c3a5-482e-9ad4-97f0e161d3dc
 # ╠═d132f438-3764-4844-9634-7416f2e062b7

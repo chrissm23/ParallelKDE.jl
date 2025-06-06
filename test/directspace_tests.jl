@@ -420,7 +420,7 @@ if CUDA.functional()
         stable_duration
       )
 
-      @test all(isnan.(density))
+      @test all(density .== 1.0f0)
       @test all(snap.smooth_counters .== smoothness_duration)
       @test all(snap.is_smooth .== true)
       @test all(snap.has_decreased .== true)

@@ -580,7 +580,7 @@ function CuDensityState(
   smoothness_duration::Integer,
   stable_duration::Integer,
   eps1::Real=1.5,
-  eps2::Real=0.1,
+  eps2::Real=1.0,
   kwargs...
 ) where {N}
   CuDensityState{N,T}(;

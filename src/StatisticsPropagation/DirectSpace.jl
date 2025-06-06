@@ -763,6 +763,7 @@ function identify_convergence!(
         vmr_current[i],
         vmr_prev1[i],
       )
+
       density[i] = means[i]
 
     elseif !is_stable[i]
@@ -826,6 +827,7 @@ function identify_convergence!(
         vmr_current[i],
         vmr_prev1[i],
       )
+
       density[i] = means[i]
 
     elseif !is_stable_array[i]
@@ -926,6 +928,12 @@ function identify_convergence!(
     )
   end
 
+  @. density = ifelse(
+    is_smooth & (!has_decreased) & (!is_stable),
+    means,
+    density,
+  )
+
   # Smoothness detection
   smooth_parms = CuArray{Float32}([tol2, time_step, smoothness_duration])
   kernel = @cuda launch = false kernel_smooth!(
@@ -956,6 +964,12 @@ function identify_convergence!(
       blocks
     )
   end
+
+  @. density = ifelse(
+    is_smooth & has_decreased & !is_stable,
+    means,
+    density,
+  )
 
   return nothing
 end
@@ -989,7 +1003,7 @@ end
 
 @inline function smoothness_check(second_derivative::Real, tol::Real)
   factor = 30
-  return second_derivative < factor * tol
+  return second_derivative < 3
 end
 
 function kernel_smooth!(
@@ -1013,7 +1027,7 @@ function kernel_smooth!(
   tol = parms[1]
   dt = parms[2]
   smoothness_duration = Z(parms[3])
-  factor = 4i32
+  factor = 2i32
 
   second_derivative = (
     (vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]) / dt^2i32
@@ -1021,14 +1035,14 @@ function kernel_smooth!(
   second_derivative = log10(abs(second_derivative))
   counter = smoothness_counter[idx]
 
-  if abs(second_derivative) < factor * tol
+  if abs(second_derivative) < 3
     if counter >= smoothness_duration
       is_smooth[idx] = true
     else
-      counter += Z(1)
+      counter += one(Z)
     end
   else
-    counter = Z(0)
+    counter = zero(Z)
   end
 
   smoothness_counter[idx] = counter
@@ -1129,7 +1143,7 @@ function kernel_stable!(
   tol1 = parms[1]
   tol2 = parms[2]
   dt = parms[3]
-  stable_duration = parms[4]
+  stable_duration = Z(parms[4])
 
   first_derivative = abs(vmr_current[idx] - vmr_prev1[idx]) / (2i32 * dt)
   second_derivative = abs(
@@ -1143,10 +1157,10 @@ function kernel_stable!(
       is_stable[idx] = true
       density[idx] = means[idx]
     else
-      counter += Z(1)
+      counter += one(Z)
     end
   else
-    counter = Z(0)
+    counter = zero(Z)
   end
   stability_counter[idx] = counter
 

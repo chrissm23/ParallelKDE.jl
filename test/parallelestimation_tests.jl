@@ -543,6 +543,6 @@ if CUDA.functional()
     dx = prod(spacings(grid))
     mise = calculate_mise(density_estimated, density_true, dx)
 
-    @test mise < 1e-5 broken = true
+    @test mise < 1e-5
   end
 end
