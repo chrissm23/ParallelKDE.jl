@@ -31,7 +31,7 @@ using ParallelKDE
 # Assume `data` is a 2D array of points for which you want to estimate the density
 # However, it can also be an AbstractVector of AbstractVectors
 data
-grid_ranges = ((x_min, x_max, n_points_x),) # Define the grid ranges for each dimension
+grid_ranges = fill(range(x_min, x_max, length=n_gridpoints_x), n_dims) # Define the grid ranges for each dimension
 
 "
 ParallelKDE currently supports two devices using the `device` keyword argument: `:cpu` and `:cuda`.
