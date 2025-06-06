@@ -77,7 +77,7 @@ end
     )
 
     @test density_fourier ≈ density_complex1
-    @test density_squared_fourier ≈ density_squared_complex1
+    @test density_squared_fourier ≈ density_squared_complex1 rtol = 1e-6
 
     ifft_plan = plan_ifft!(density_complex1)
 

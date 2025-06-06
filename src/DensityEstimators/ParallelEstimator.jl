@@ -733,17 +733,10 @@ function initialize_estimator_propagation(
   end
   times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-  println("Time step: $dt")
-  println("Number of time steps: $(length(times))")
-  println("Final time: $(times[end])")
-
   smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, 0.005)
   smoothness_duration = calculate_duration_steps(times[end], dt; fraction=smoothness_duration_fraction)
   stable_duration_fraction = pop!(kwargs_dict, :stable_duration, 0.01)
   stable_duration = calculate_duration_steps(times[end], dt; fraction=stable_duration_fraction)
-
-  println("Smoothness duration: $smoothness_duration")
-  println("Stable duration: $stable_duration")
 
   density_state = DensityState(
     size(grid); dt=norm(dt), T=T, smoothness_duration, stable_duration, kwargs_dict...
@@ -781,9 +774,9 @@ function initialize_estimator_propagation(
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
   smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, 0.005)
-  smoothness_duration = calculate_duration_steps(times[end], dt; fraction=smoothness_duration_fraction)
+  smoothness_duration = calculate_duration_steps(times[:, end], dt; fraction=smoothness_duration_fraction)
   stable_duration_fraction = pop!(kwargs_dict, :stable_duration, 0.01)
-  stable_duration = calculate_duration_steps(times[end], dt; fraction=stable_duration_fraction)
+  stable_duration = calculate_duration_steps(times[:, end], dt; fraction=stable_duration_fraction)
 
   density_state = CuDensityState(
     size(grid); dt=norm(dt), T=typeof(kde).parameters[2], smoothness_duration, stable_duration, kwargs_dict...

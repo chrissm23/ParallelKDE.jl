@@ -125,7 +125,9 @@
     end
 
     @testset "Density state tests" begin
-      density_state = ParallelKDE.DensityEstimators.DensityState(size(grid), dt=0.2)
+      density_state = ParallelKDE.DensityEstimators.DensityState(
+        size(grid), dt=0.2, smoothness_duration=10, stable_duration=10
+      )
 
       # Parameter tests
       @test density_state.dt == 0.2
@@ -134,8 +136,8 @@
       @test isfinite(density_state.smoothness_duration)
       @test isfinite(density_state.stable_duration)
       # State arrays test
-      @test density_state.smooth_counters isa Array{Int8,n_dims}
-      @test density_state.stable_counters isa Array{Int8,n_dims}
+      @test density_state.smooth_counters isa Array{UInt16,n_dims}
+      @test density_state.stable_counters isa Array{UInt16,n_dims}
       @test density_state.is_smooth isa Array{Bool,n_dims}
       @test density_state.has_decreased isa Array{Bool,n_dims}
       @test density_state.is_stable isa Array{Bool,n_dims}
@@ -189,7 +191,9 @@
 
       grid_fourier = fftgrid(grid)
 
-      density_state = ParallelKDE.DensityEstimators.DensityState(size(grid), dt=0.2)
+      density_state = ParallelKDE.DensityEstimators.DensityState(
+        size(grid), dt=0.2, smoothness_duration=10, stable_duration=10
+      )
 
       dt = @SVector fill(0.2, n_dims)
 
@@ -368,7 +372,9 @@ if CUDA.functional()
     end
 
     @testset "Density state tests" begin
-      density_state = ParallelKDE.DensityEstimators.CuDensityState(size(grid), dt=0.2f0)
+      density_state = ParallelKDE.DensityEstimators.CuDensityState(
+        size(grid), dt=0.2f0, smoothness_duration=10, stable_duration=10
+      )
 
       # Parameter tests
       @test density_state.dt == 0.2f0
@@ -377,8 +383,8 @@ if CUDA.functional()
       @test isfinite(density_state.smoothness_duration)
       @test isfinite(density_state.stable_duration)
       # State arrays test
-      @test density_state.smooth_counters isa CuArray{Int8,n_dims}
-      @test density_state.stable_counters isa CuArray{Int8,n_dims}
+      @test density_state.smooth_counters isa CuArray{UInt16,n_dims}
+      @test density_state.stable_counters isa CuArray{UInt16,n_dims}
       @test density_state.is_smooth isa CuArray{Bool,n_dims}
       @test density_state.has_decreased isa CuArray{Bool,n_dims}
       @test density_state.is_stable isa CuArray{Bool,n_dims}
@@ -432,7 +438,9 @@ if CUDA.functional()
 
       grid_fourier = fftgrid(grid)
 
-      density_state = ParallelKDE.DensityEstimators.CuDensityState(size(grid), dt=0.2f0)
+      density_state = ParallelKDE.DensityEstimators.CuDensityState(
+        size(grid), dt=0.2f0, smoothness_duration=10, stable_duration=10
+      )
 
       dt = CUDA.fill(0.2f0, n_dims)
 
