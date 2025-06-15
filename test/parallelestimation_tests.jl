@@ -488,8 +488,7 @@ if CUDA.functional()
   end
 end
 
-# TODO: Extend tests to cover more dimensions once tested
-@testset "Parallel estimation tests (CPU). $(n_dims)D" for n_dims in 1:1
+@testset "Parallel estimation tests (CPU). $(n_dims)D" for n_dims in 1:2
   @testset "Implementation: $implementation tests" for implementation in [:serial, :threaded]
     data = generate_samples(1000, n_dims)
 
@@ -517,9 +516,8 @@ end
   end
 end
 
-# TODO: Extend tests to cover more dimensions once tested
 if CUDA.functional()
-  @testset "Parallel estimation tests (GPU). $(n_dims)D" for n_dims in 1:1
+  @testset "Parallel estimation tests (GPU). $(n_dims)D" for n_dims in 1:2
     data = generate_samples(1000, n_dims)
 
     grid = initialize_grid(fill(range(-6.0, 6.0, length=300), n_dims), device=:cuda)
