@@ -687,7 +687,6 @@ function initialize_estimator(
   time_step = pop!(kwargs_dict, :dt, nothing)
   n_steps = pop!(kwargs_dict, :n_steps, nothing)
 
-  println("Initializing kernels...")
   means_bootstraps, vars_bootstraps = initialize_kernels(
     device, kde, grid; n_bootstraps=n_bootstraps, include_var=true, method=method
   )
@@ -920,9 +919,6 @@ function estimate!(
   end
 
   for time_propagated in times
-    println(time_propagated)
-
-    println("Propagating bootstraps...")
     propagate_bootstraps!(
       estimator.kernel_propagation,
       estimator.means_bootstraps,
@@ -933,10 +929,8 @@ function estimate!(
       method,
     )
 
-    println("IFFT bootstraps...")
     ifft_bootstraps!(estimator.kernel_propagation; method)
 
-    println("Calculating VMR...")
     calculate_vmr!(
       estimator.kernel_propagation,
       time_propagated,
@@ -945,7 +939,6 @@ function estimate!(
       method
     )
 
-    println("Propagating means...")
     propagate_means!(
       estimator.kernel_propagation,
       estimator.means,
@@ -954,17 +947,14 @@ function estimate!(
       method
     )
 
-    println("IFFT means...")
     ifft_means!(estimator.kernel_propagation; method)
 
-    println("Calculating means...")
     calculate_means!(
       estimator.kernel_propagation,
       n_samples;
       method
     )
 
-    println("Updating density state...")
     update_state!(
       estimator.density_state,
       kde,

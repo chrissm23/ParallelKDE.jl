@@ -634,24 +634,12 @@ end
 # ╔═╡ c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
 md"#### First derivative"
 
-# ╔═╡ 239d91b7-1a08-48aa-9e86-93e4c006bc06
-md"#### Second derivative"
-
-# ╔═╡ 7ccef59f-ae73-4480-a80a-5129ed7d3d61
-begin
-	threshold2_range = range(0, 4, length=100)
-	@bind threshold_2 Slider(
-		threshold2_range,
-		default=threshold2_range[argmin(abs.(threshold2_range .- 0.75))]
-	)
-end
-
 # ╔═╡ ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
 begin
 	threshold1_range = range(0, 2, length=100)
 	@bind threshold_1 Slider(
-		threshold2_range,
-		default=threshold2_range[argmin(abs.(threshold2_range .- 1.5))]
+		threshold1_range,
+		default=threshold1_range[argmin(abs.(threshold1_range .- 1.5))]
 	)
 end
 
@@ -696,6 +684,18 @@ begin
 	)
 	plot!(
 		p_dev1, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
+	)
+end
+
+# ╔═╡ 239d91b7-1a08-48aa-9e86-93e4c006bc06
+md"#### Second derivative"
+
+# ╔═╡ 7ccef59f-ae73-4480-a80a-5129ed7d3d61
+begin
+	threshold2_range = range(0, 4, length=100)
+	@bind threshold_2 Slider(
+		threshold2_range,
+		default=threshold2_range[argmin(abs.(threshold2_range .- 0.75))]
 	)
 end
 
