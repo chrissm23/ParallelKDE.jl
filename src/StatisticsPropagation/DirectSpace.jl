@@ -550,7 +550,7 @@ function calculate_scaled_vmr!(
     end
 
     vmr_v = scaling_factor * m2 / (n_bootstraps - 1)
-    vmr_var[j] = ifelse(isfinite(vmr_v), log10(vmr_v), NaN)
+    vmr_var[j] = ifelse(isfinite(vmr_v), log10(vmr_v) + (M - 2) * π, NaN)
   end
 
   return nothing
@@ -637,7 +637,7 @@ function calculate_scaled_vmr!(
     end
 
     vmr_v = scaling_factor * m2 / (count - 1)
-    vmr_var[point+1] = ifelse(isfinite(vmr_v), log10(vmr_v), NaN)
+    vmr_var[point+1] = ifelse(isfinite(vmr_v), log10(vmr_v) + (M - 2) * π, NaN)
   end
 
   return nothing
@@ -660,7 +660,7 @@ function calculate_scaled_vmr!(
   vmr .= dropdims(var(s2k, dims=M), dims=M)
   vmr .*= scaling_factor
 
-  @. vmr = ifelse(isfinite(vmr), log10(vmr), NaN32)
+  @. vmr = ifelse(isfinite(vmr), log10(vmr) + (M - 2) * π, NaN32)
 
   return nothing
 end

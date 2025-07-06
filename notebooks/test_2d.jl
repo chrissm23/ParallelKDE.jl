@@ -326,17 +326,17 @@ md"## Propagation behaviour"
 begin
 	Random.seed!(random_seed)
 
-	grid_support = initialize_grid(distro_support)
+	grid_support = initialize_grid(distro_support, device=:cuda)
 	time_initial = initial_bandwidth(grid_support)
 
-	method=:serial
+	method=:cuda
 
 	support_minima = vec(minimum(coordinates_support, dims=Tuple(2:n_dims+1)))
 	support_maxima = vec(maximum(coordinates_support, dims=Tuple(2:n_dims+1)))
 	filter_mask = support_minima .< data .< support_maxima
 	data_filtered = data[:, dropdims(reduce(&, filter_mask, dims=1), dims=1)]
 
-	kde = initialize_kde(data_filtered, size(grid_support))
+	kde = initialize_kde(data_filtered, size(grid_support), device=:cuda)
 	
 	parallel_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
 		ParallelKDE.DensityEstimators.AbstractParallelEstimator,
@@ -371,7 +371,7 @@ end;
   ╠═╡ =#
 
 # ╔═╡ e3ae3fb5-ab84-419d-95e0-8ad8f0404cbd
-for (idx,time_propagated) in enumerate(times)
+for (idx,time_propagated) in enumerate(eachcol(times))
 	# Propagate bootstrap samples
 	ParallelKDE.DensityEstimators.propagate_bootstraps!(
 		parallel_estimator.kernel_propagation,
@@ -578,7 +578,7 @@ begin
 end
 
 # ╔═╡ 80839339-a09d-4424-9025-af36aba59948
-vmr_bounds = (-2, 5);
+vmr_bounds = (-2, 8);
 
 # ╔═╡ 9049f192-c0b9-46d6-aa11-86563871926d
 md"### Finding smooth regime"
@@ -667,6 +667,9 @@ begin
 		p_decrease, [-10; -20], lw=2, lc=:black, ls=:dash, label="Decrease found"
 	)
 end
+
+# ╔═╡ 66bc5a7d-707c-4920-8c4e-db238ca87dd9
+md"### Find stability point"
 
 # ╔═╡ 64c2750e-bb4b-41bb-96e8-bf2955943fbe
 begin
@@ -958,7 +961,7 @@ end
 # ╠═43dc3677-c228-4abf-ba6b-b34c106e1dc2
 # ╟─73401400-07a5-4fd6-80f2-9a0774c15aaa
 # ╟─c1ec7102-c40a-4e7c-a490-7f2c189a8f07
-# ╠═f40919ff-d7f9-40fa-b5eb-c65c2d658323
+# ╟─f40919ff-d7f9-40fa-b5eb-c65c2d658323
 # ╟─e7fd4798-f05b-422c-a533-3e0fe8724726
 # ╟─3ae37896-fcb4-4d78-9f9a-ba1b2d8f02ff
 # ╟─8bd4c63f-bf8a-4076-95f2-915acd3f0ca0
@@ -976,7 +979,7 @@ end
 # ╟─0b4e1a19-e7d2-4acd-9687-ef8b3463f568
 # ╠═ddba9257-1165-4360-a35c-470c6c7a060d
 # ╟─28bef9db-c4a0-427a-b06c-695c1f51a0ad
-# ╠═c4808fbf-2ff1-4503-9f97-a71a84dce25b
+# ╟─c4808fbf-2ff1-4503-9f97-a71a84dce25b
 # ╠═f593e0a1-5be6-48d3-8ab0-1e6d16a618cb
 # ╠═515333c8-b1e4-411e-bd3b-d80bbbdaa878
 # ╟─894fdf5a-5a49-40d5-84bc-ea6098bd9cb4
@@ -994,13 +997,14 @@ end
 # ╟─7f3b3272-0d39-4b08-b705-358824d64ebb
 # ╟─074148c8-4fbc-4a45-b7e3-58cea7d03aca
 # ╟─1fa3871b-9f02-4e4c-9f26-c5f8cbf115e3
+# ╟─66bc5a7d-707c-4920-8c4e-db238ca87dd9
 # ╟─64c2750e-bb4b-41bb-96e8-bf2955943fbe
 # ╟─daac6add-0657-4a3a-bcba-0d4377b62b44
 # ╟─bfbae558-2cda-4224-ac88-45122cf751a5
 # ╟─3114aa7d-f0c8-45cd-a7fa-b1cee9b9cd3b
 # ╟─3e5b37f5-ebc8-4785-a8c2-7d1c258e38c6
 # ╟─5810171a-0703-4589-9534-12f4fde3bdcb
-# ╠═26e50e62-8e3b-48e4-8983-ded0c5b871ac
+# ╟─26e50e62-8e3b-48e4-8983-ded0c5b871ac
 # ╟─4f1bd110-b5ad-4066-a8d7-9973c989bb20
 # ╟─472e1f7c-d8c5-495f-954d-4ccf3adfc8bf
 # ╟─781b579d-3fa5-45d8-b404-6c4bf55d3321
