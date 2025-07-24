@@ -550,7 +550,7 @@ function calculate_scaled_vmr!(
     end
 
     vmr_v = scaling_factor * m2 / (n_bootstraps - 1)
-    vmr_var[j] = ifelse(isfinite(vmr_v), log10(vmr_v) + (M - 2) * π, NaN)
+    vmr_var[j] = ifelse(isfinite(vmr_v), log(vmr_v) + (M - 2) * π, NaN)
   end
 
   return nothing
@@ -637,7 +637,7 @@ function calculate_scaled_vmr!(
     end
 
     vmr_v = scaling_factor * m2 / (count - 1)
-    vmr_var[point+1] = ifelse(isfinite(vmr_v), log10(vmr_v) + (M - 2) * π, NaN)
+    vmr_var[point+1] = ifelse(isfinite(vmr_v), log(vmr_v) + (M - 2) * π, NaN)
   end
 
   return nothing
@@ -660,7 +660,7 @@ function calculate_scaled_vmr!(
   vmr .= dropdims(var(s2k, dims=M), dims=M)
   vmr .*= scaling_factor
 
-  @. vmr = ifelse(isfinite(vmr), log10(vmr) + (M - 2) * π, NaN32)
+  @. vmr = ifelse(isfinite(vmr), log(vmr) + (M - 2) * π, NaN32)
 
   return nothing
 end
@@ -735,7 +735,8 @@ function identify_convergence!(
   has_decreased::AbstractArray{Bool,N},
   stable_counters::AbstractArray{<:Integer,N},
   is_stable::AbstractArray{Bool,N},
-  time_step::Real,
+  # dt::AbstractVector{<:Real},
+  dlogt::Real,
   tol1::Real,
   tol2::Real,
   smoothness_duration::Real,
@@ -748,7 +749,7 @@ function identify_convergence!(
         vmr_prev1[i],
         vmr_prev2[i],
         tol2,
-        time_step,
+        dlogt,
         smooth_counters[i],
         smoothness_duration
       )
@@ -773,7 +774,7 @@ function identify_convergence!(
         vmr_prev2[i],
         tol1,
         tol2,
-        time_step,
+        dlogt,
         stable_counters[i],
         stable_duration
       )
@@ -796,7 +797,8 @@ function identify_convergence!(
   has_decreased::AbstractArray{Bool,N},
   stable_counters::AbstractArray{<:Integer,N},
   is_stable::AbstractArray{Bool,N},
-  time_step::Real,
+  # dt::AbstractVector{<:Real},
+  dlogt::Real,
   tol1::Real,
   tol2::Real,
   smoothness_duration::Integer,
@@ -813,7 +815,7 @@ function identify_convergence!(
         vmr_prev1[i],
         vmr_prev2[i],
         tol2,
-        time_step,
+        dlogt,
         smooth_counters[i],
         smoothness_duration
       )
@@ -837,7 +839,7 @@ function identify_convergence!(
         vmr_prev2[i],
         tol1,
         tol2,
-        time_step,
+        dlogt,
         stable_counters[i],
         stable_duration
       )
@@ -864,7 +866,8 @@ function identify_convergence!(
   has_decreased::AnyCuArray{Bool,N},
   stable_counters::AnyCuArray{<:Integer,N},
   is_stable::AnyCuArray{Bool,N},
-  time_step::Real,
+  # dt::AnyCuVector{<:Real},
+  dlogt::Real,
   tol1::Real,
   tol2::Real,
   smoothness_duration::Integer,
@@ -874,7 +877,7 @@ function identify_convergence!(
 
   # Stability detection
   stability_parms = CuArray{Float32}(
-    [tol1, tol2, time_step, stable_duration]
+    [tol1, tol2, dlogt, stable_duration]
   )
   kernel = @cuda launch = false kernel_stable!(
     vmr_current,
@@ -935,7 +938,7 @@ function identify_convergence!(
   )
 
   # Smoothness detection
-  smooth_parms = CuArray{Float32}([tol2, time_step, smoothness_duration])
+  smooth_parms = CuArray{Float32}([tol2, dlogt, smoothness_duration])
   kernel = @cuda launch = false kernel_smooth!(
     vmr_current,
     vmr_prev1,
@@ -979,12 +982,13 @@ end
   vmr_prev1::Real,
   vmr_prev2::Real,
   tol2::Real,
-  dt::Real,
+  # dt::Real,
+  dlogt::Real,
   smooth_counter::Integer,
   smoothness_duration::Integer,
 )
   second_derivative = second_difference(
-    vmr_current, vmr_prev1, vmr_prev2, dt
+    vmr_current, vmr_prev1, vmr_prev2, dlogt
   )
 
   is_smooth = false
@@ -1025,12 +1029,12 @@ function kernel_smooth!(
   end
 
   tol = parms[1]
-  dt = parms[2]
+  dlogt = parms[2]
   smoothness_duration = Z(parms[3])
   factor = 2i32
 
   second_derivative = (
-    (vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]) / dt^2i32
+    (vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]) / dlogt^2i32
   )
   second_derivative = log10(abs(second_derivative))
   counter = smoothness_counter[idx]
@@ -1095,12 +1099,13 @@ end
   vmr_prev2::Real,
   tol1::Real,
   tol2::Real,
-  dt::Real,
+  # dt::Real,
+  dlogt::Real,
   stability_counter::Integer,
   stability_duration::Integer,
 )
-  first_derivative = first_difference(vmr_current, vmr_prev1, dt)
-  second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dt)
+  first_derivative = first_difference(vmr_current, vmr_prev1, dlogt)
+  second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dlogt)
 
   is_stable = false
   if (first_derivative < tol1) && (second_derivative < tol2)
@@ -1142,13 +1147,13 @@ function kernel_stable!(
 
   tol1 = parms[1]
   tol2 = parms[2]
-  dt = parms[3]
+  dlogt = parms[3]
   stable_duration = Z(parms[4])
 
-  first_derivative = abs(vmr_current[idx] - vmr_prev1[idx]) / (2i32 * dt)
+  first_derivative = abs(vmr_current[idx] - vmr_prev1[idx]) / (2i32 * dlogt)
   second_derivative = abs(
     vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]
-  ) / dt^2i32
+  ) / dlogt^2i32
   second_derivative = log10(second_derivative)
   counter = stability_counter[idx]
 

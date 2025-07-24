@@ -539,7 +539,7 @@ function DensityState(
   kwargs...,
 ) where {N}
   DensityState{N,T}(;
-    dt=dt,
+    dt=Float64(dt),
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
     smooth_counters=zeros(UInt16, dims),
@@ -576,7 +576,7 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  dt::Real,
+  dt::Float32,
   smoothness_duration::Integer,
   stable_duration::Integer,
   eps1::Real=1.5,
@@ -584,7 +584,7 @@ function CuDensityState(
   kwargs...
 ) where {N}
   CuDensityState{N,T}(;
-    dt=dt,
+    dt=Float32(dt),
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
     smooth_counters=CUDA.zeros(UInt16, dims),
@@ -601,6 +601,7 @@ end
 
 function update_state!(
   density_state::AbstractDensityState{N,<:Real},
+  dlogt::Real,
   kde::AbstractKDE{N,<:Real,<:Real},
   kernel_propagation::AbstractKernelPropagation{N,<:Real,M};
   method=Devices.CPU_SERIAL,
@@ -620,7 +621,8 @@ function update_state!(
     density_state.has_decreased,
     density_state.stable_counters,
     density_state.is_stable,
-    density_state.dt,
+    # density_state.dt,
+    dlogt,
     density_state.eps1,
     density_state.eps2,
     density_state.smoothness_duration,
@@ -644,7 +646,6 @@ struct ParallelEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractParallelEstimat
   grid_direct::Grid{N,P,M}
   grid_fourier::Grid{N,P,M}
   times::Vector{<:SVector{N,S}}
-  dt::SVector{N,S}
   density_state::DensityState{N,T}
 end
 
@@ -656,7 +657,6 @@ struct CuParallelEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractParallelEstim
   grid_direct::CuGrid{N,P,M}
   grid_fourier::CuGrid{N,P,M}
   times::CuMatrix{S}
-  dt::CuVector{S}
   density_state::CuDensityState
 end
 
@@ -750,7 +750,6 @@ function initialize_estimator_propagation(
     grid,
     grid_fourier,
     times,
-    dt,
     density_state,
   )
 end
@@ -790,7 +789,6 @@ function initialize_estimator_propagation(
     grid,
     grid_fourier,
     times,
-    dt,
     density_state,
   )
 end
@@ -918,7 +916,7 @@ function estimate!(
     throw(ArgumentError("Unsupported type for times: $(typeof(estimator.times))"))
   end
 
-  for time_propagated in times
+  for (time_idx, time_propagated) in enumerate(times)
     propagate_bootstraps!(
       estimator.kernel_propagation,
       estimator.means_bootstraps,
@@ -955,8 +953,16 @@ function estimate!(
       method
     )
 
+    if time_idx == 1
+      det_previous = prod(time_initial .^ 2)
+    else
+      det_previous = prod(time_initial .^ 2 .+ times[time_idx-1] .^ 2)
+    end
+    det_current = prod(time_initial .^ 2 .+ time_propagated .^ 2)
+    dlogt = log(det_current / det_previous)
     update_state!(
       estimator.density_state,
+      dlogt,
       kde,
       estimator.kernel_propagation;
       method
