@@ -550,7 +550,7 @@ function calculate_scaled_vmr!(
     end
 
     vmr_v = scaling_factor * m2 / (n_bootstraps - 1)
-    vmr_var[j] = ifelse(isfinite(vmr_v), log(vmr_v) + (M - 2) * π, NaN)
+    vmr_var[j] = ifelse(isfinite(vmr_v), log(vmr_v), NaN)
   end
 
   return nothing
@@ -637,7 +637,7 @@ function calculate_scaled_vmr!(
     end
 
     vmr_v = scaling_factor * m2 / (count - 1)
-    vmr_var[point+1] = ifelse(isfinite(vmr_v), log(vmr_v) + (M - 2) * π, NaN)
+    vmr_var[point+1] = ifelse(isfinite(vmr_v), log(vmr_v), NaN)
   end
 
   return nothing
@@ -660,7 +660,7 @@ function calculate_scaled_vmr!(
   vmr .= dropdims(var(s2k, dims=M), dims=M)
   vmr .*= scaling_factor
 
-  @. vmr = ifelse(isfinite(vmr), log(vmr) + (M - 2) * π, NaN32)
+  @. vmr = ifelse(isfinite(vmr), log(vmr), NaN32)
 
   return nothing
 end
@@ -730,44 +730,15 @@ function identify_convergence!(
   vmr_current::AbstractArray{<:Real,N},
   vmr_prev1::AbstractArray{<:Real,N},
   vmr_prev2::AbstractArray{<:Real,N},
-  smooth_counters::AbstractArray{<:Integer,N},
-  is_smooth::AbstractArray{Bool,N},
-  has_decreased::AbstractArray{Bool,N},
-  stable_counters::AbstractArray{<:Integer,N},
-  is_stable::AbstractArray{Bool,N},
-  # dt::AbstractVector{<:Real},
   dlogt::Real,
   tol1::Real,
   tol2::Real,
-  smoothness_duration::Real,
+  stable_counters::AbstractArray{<:Integer,N},
+  is_stable::AbstractArray{Bool,N},
   stable_duration::Real,
 ) where {N}
   @inbounds @simd for i in eachindex(vmr_current)
-    if !is_smooth[i]
-      is_smooth[i], smooth_counters[i] = find_smoothness(
-        vmr_current[i],
-        vmr_prev1[i],
-        vmr_prev2[i],
-        tol2,
-        dlogt,
-        smooth_counters[i],
-        smoothness_duration
-      )
-
-
-      if (vmr_current[i] > vmr_prev1[i]) && (vmr_prev2[i] > vmr_prev1[i])
-        density[i] = means[i]
-      end
-
-    elseif !has_decreased[i]
-      has_decreased[i] = find_decrease(
-        vmr_current[i],
-        vmr_prev1[i],
-      )
-
-      density[i] = means[i]
-
-    elseif !is_stable[i]
+    if !is_stable[i]
       is_stable[i], stable_counters[i] = find_stability(
         vmr_current[i],
         vmr_prev1[i],
@@ -779,12 +750,15 @@ function identify_convergence!(
         stable_duration
       )
 
-      density[i] = means[i]
+      if is_stable[i]
+        density[i] = means[i]
+      end
     end
   end
 
   return nothing
 end
+
 function identify_convergence!(
   ::Val{:threaded},
   density::AbstractArray{<:Real,N},
@@ -792,47 +766,17 @@ function identify_convergence!(
   vmr_current::AbstractArray{<:Real,N},
   vmr_prev1::AbstractArray{<:Real,N},
   vmr_prev2::AbstractArray{<:Real,N},
-  smooth_counters::AbstractArray{<:Integer,N},
-  is_smooth::AbstractArray{Bool,N},
-  has_decreased::AbstractArray{Bool,N},
-  stable_counters::AbstractArray{<:Integer,N},
-  is_stable::AbstractArray{Bool,N},
-  # dt::AbstractVector{<:Real},
   dlogt::Real,
   tol1::Real,
   tol2::Real,
-  smoothness_duration::Integer,
+  stable_counters::AbstractArray{<:Integer,N},
+  is_stable::AbstractArray{Bool,N},
   stable_duration::Integer,
 ) where {N}
-  is_smooth_array = Array{Bool}(is_smooth)
-  has_decreased_array = Array{Bool}(has_decreased)
   is_stable_array = Array{Bool}(is_stable)
 
   Threads.@threads for i in eachindex(vmr_current)
-    if !is_smooth_array[i]
-      is_smooth_array[i], smooth_counters[i] = find_smoothness(
-        vmr_current[i],
-        vmr_prev1[i],
-        vmr_prev2[i],
-        tol2,
-        dlogt,
-        smooth_counters[i],
-        smoothness_duration
-      )
-
-      if (vmr_current[i] > vmr_prev1[i]) && (vmr_prev2[i] > vmr_prev1[i])
-        density[i] = means[i]
-      end
-
-    elseif !has_decreased_array[i]
-      has_decreased_array[i] = find_decrease(
-        vmr_current[i],
-        vmr_prev1[i],
-      )
-
-      density[i] = means[i]
-
-    elseif !is_stable_array[i]
+    if !is_stable_array[i]
       is_stable_array[i], stable_counters[i] = find_stability(
         vmr_current[i],
         vmr_prev1[i],
@@ -844,12 +788,12 @@ function identify_convergence!(
         stable_duration
       )
 
-      density[i] = means[i]
+      if is_stable_array[i]
+        density[i] = means[i]
+      end
     end
   end
 
-  is_smooth .= is_smooth_array
-  has_decreased .= has_decreased_array
   is_stable .= is_stable_array
 
   return nothing
@@ -1036,7 +980,7 @@ function kernel_smooth!(
   second_derivative = (
     (vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]) / dlogt^2i32
   )
-  second_derivative = log10(abs(second_derivative))
+  second_derivative = log(abs(second_derivative))
   counter = smoothness_counter[idx]
 
   if abs(second_derivative) < 3
@@ -1099,7 +1043,6 @@ end
   vmr_prev2::Real,
   tol1::Real,
   tol2::Real,
-  # dt::Real,
   dlogt::Real,
   stability_counter::Integer,
   stability_duration::Integer,
@@ -1154,7 +1097,7 @@ function kernel_stable!(
   second_derivative = abs(
     vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]
   ) / dlogt^2i32
-  second_derivative = log10(second_derivative)
+  second_derivative = log(second_derivative)
   counter = stability_counter[idx]
 
   if (first_derivative < tol1) && (second_derivative < tol2)
@@ -1173,11 +1116,11 @@ function kernel_stable!(
 end
 
 @inline function first_difference(f::Real, f_prev::Real, dt::Real)
-  return abs((f - f_prev) / (2dt))
+  return log(abs((f - f_prev) / (2dt)))
 end
 
 @inline function second_difference(f::Real, f_prev1::Real, f_prev2::Real, dt::Real)
-  return log10(abs((f - 2f_prev1 + f_prev2) / dt^2))
+  return log(abs((f - 2f_prev1 + f_prev2) / dt^2))
 end
 
 function silverman_rule(data::AbstractMatrix)

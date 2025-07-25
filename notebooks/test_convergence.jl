@@ -228,10 +228,10 @@ let
 		density_estimation,
 		:parallelEstimator,
 		# time_step=0.00001,
-		# smoothness_duration=0.005,
+		# smoothness_duration=0.01,
 		# stable_duration=0.01,
-		# eps1=1.5,
-		# eps2=0.1,
+		eps1=-4.5,
+		eps2=0,
 		# n_bootstraps=1000,
 	)
 	
@@ -276,6 +276,7 @@ begin
 
 	grid_support = initialize_grid(distro_support)
 	time_initial = initial_bandwidth(grid_support)
+	time_initial_squared = time_initial .^ 2
 
 	method=:serial
 
@@ -286,14 +287,13 @@ begin
 		kde;
 		method,
 		grid=grid_support,
-		# time_step=0.00001,
-		# eps1=1.5,
-		# eps2=0.1,
-		# smoothness_duration=0.005,
-		# stable_duration=0.01,
+		time_step=0.001,
+		eps1=-5,
+		eps2=0,
+		stable_duration=0.01,
+		# time_final=2.0
 	)
 
-	time_step = parallel_estimator.density_state.dt
 	times = parallel_estimator.times
 	n_times = length(times)
 	times_reinterpreted = reinterpret(Float64, times)
@@ -308,10 +308,10 @@ begin
 
 	vmr_time = fill(NaN, n_gridpoints, n_times)
 	means_time = fill(NaN, n_gridpoints, n_times)
-	is_smooth_time = falses(n_gridpoints, n_times)
-	has_decreased_time = falses(n_gridpoints, n_times)
 	is_stable_time = falses(n_gridpoints, n_times)
 	density_assigned_time = falses(n_gridpoints, n_times)
+
+	dlogts = fill(NaN, n_times)
 end;
 
 # ╔═╡ fb725626-e5eb-4dfc-93e7-4946af668652
@@ -366,24 +366,31 @@ for (idx,time_propagated) in enumerate(times)
 	)
 
 	# Update convergence state
+	if idx == 1
+		det_prev = prod(time_initial_squared)
+	else
+		det_prev = prod(time_initial_squared .+ times[idx-1] .^ 2)
+	end
+	det_curr = prod(time_initial_squared .+ time_propagated .^ 2)
+	dlogt = log(det_curr/det_prev)
+	dlogts[idx] = dlogt
 	ParallelKDE.DensityEstimators.update_state!(
 		parallel_estimator.density_state,
+		dlogt,
 		kde,
 		parallel_estimator.kernel_propagation;
 		method
 	)
-	is_smooth_time[:, idx] .= parallel_estimator.density_state.is_smooth
-	has_decreased_time[:, idx] .= parallel_estimator.density_state.has_decreased
 	is_stable_time[:, idx] .= parallel_estimator.density_state.is_stable
 
-	@. density_assigned_time[:, idx] = ifelse(
-		(
-			(kde.density ≈ previous_density) | 
-			(isnan(kde.density) & isnan(previous_density))
-		),
-		false,
-		true
-	)
+	# @. density_assigned_time[:, idx] = ifelse(
+	# 	(
+	# 		(kde.density ≈ previous_density) | 
+	# 		(isnan(kde.density) & isnan(previous_density))
+	# 	),
+	# 	false,
+	# 	true
+	# )
 	previous_density .= kde.density
 end
 
@@ -392,10 +399,17 @@ findall(isnan, kde.density)
 
 # ╔═╡ 5cca44db-4f10-4f9b-9c0a-6e6e1a983720
 begin
-	derivatives1[:, begin+1:end] .= abs.(diff(vmr_time, dims=2) ./ (2*time_step))
-	derivatives2[:, begin+2:end] .= log10.(
-		abs.(diff(diff(vmr_time, dims=2), dims=2) ./ time_step^2)
+	derivatives1[:, begin+1:end] .= log.(
+		abs.(
+			diff(vmr_time, dims=2) ./ reshape(2 .* dlogts[begin+1:end],1,:)
+		)
 	)
+		derivatives2[:, begin+2:end] .= log.(
+		abs.(
+			diff(diff(vmr_time, dims=2), dims=2) ./ reshape(dlogts[begin+2:end] .^2 ,1,:)
+		)
+	)
+	
 	optimal_times = times_range[
 		argmin.(eachrow(abs.(means_time .- reshape(distro_pdf, n_gridpoints, 1))))
 	]
@@ -591,14 +605,15 @@ md"#### Finding stable regime"
 # ╔═╡ c20c3541-d935-423c-a07f-77d8e0679d8d
 begin
 	p_stability = plot(
-		times_range,
-		eachrow(vmr_time)[test_indices],
+		times_range[begin+1:end],
+		eachrow(vmr_time[:, begin+1:end])[test_indices],
 		label=false,
 		palette=test_palette,
 		lw=2,
 		ylims=vmr_bounds,
-		xlims=extrema(times_range),
-		# yaxis=:log
+		xlims=extrema(times_range[begin+1:end]),
+		# yaxis=:log,
+		xaxis=:log
 	)
 
 	vline!(p_stability, [propagation_time], c=:forestgreen, label="Propagation time")
@@ -636,7 +651,7 @@ md"#### First derivative"
 
 # ╔═╡ ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
 begin
-	threshold1_range = range(0, 2, length=100)
+	threshold1_range = range(-10, 0, length=100)
 	@bind threshold_1 Slider(
 		threshold1_range,
 		default=threshold1_range[argmin(abs.(threshold1_range .- 1.5))]
@@ -646,14 +661,16 @@ end
 # ╔═╡ 36ff4668-62aa-4cb1-b732-2bc278d723e2
 begin
 	p_dev1 = plot(
-		times_range,
-		eachrow(derivatives1)[test_indices],
+		times_range[begin+1:end],
+		eachrow(derivatives1[:,begin+1:end])[test_indices],
 		label=false,
 		palette=test_palette,
 		lw=2,
-		ylims=(0,2),
-		xlims=extrema(times_range),
+		ylims=(-7,9),
+		xlims=extrema(times_range[begin+1:end]),
+		# xlims=(0,0.25),
 		# yaxis=:log,
+		# xaxis=:log
 	)
 
 	# vline!(p_dev1, [propagation_time], c=:forestgreen, label="Propagation time")
@@ -692,7 +709,7 @@ md"#### Second derivative"
 
 # ╔═╡ 7ccef59f-ae73-4480-a80a-5129ed7d3d61
 begin
-	threshold2_range = range(0, 4, length=100)
+	threshold2_range = range(-5, 5, length=100)
 	@bind threshold_2 Slider(
 		threshold2_range,
 		default=threshold2_range[argmin(abs.(threshold2_range .- 0.75))]
@@ -701,15 +718,17 @@ end
 
 # ╔═╡ c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
 begin
-	p_dev2 = plot(
-		times_range,
-		eachrow(derivatives2)[test_indices],
+	p_dev2 =plot(
+		times_range[begin+1:end],
+		eachrow(derivatives2[:, begin+1:end])[test_indices],
 		label=false,
 		palette=test_palette,
 		lw=2,
-		ylims=(0,8),
-		xlims=extrema(times_range),
+		ylims=(-8,15),
+		xlims=extrema(times_range[begin+1:end]),
+		# xlims=(0,0.25),
 		# yaxis=:log,
+		# xaxis=:log,
 		dpi=500,
 	)
 
@@ -929,10 +948,10 @@ end
 # ╟─42a8a50a-6c62-4056-ad93-96e228a9e1d8
 # ╟─c20c3541-d935-423c-a07f-77d8e0679d8d
 # ╟─c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
-# ╟─ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
+# ╠═ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
 # ╟─36ff4668-62aa-4cb1-b732-2bc278d723e2
 # ╟─239d91b7-1a08-48aa-9e86-93e4c006bc06
-# ╟─7ccef59f-ae73-4480-a80a-5129ed7d3d61
+# ╠═7ccef59f-ae73-4480-a80a-5129ed7d3d61
 # ╟─c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
 # ╟─8bd6926d-dbec-4858-9c72-5e0904bc71d7
 # ╟─123376cd-d638-41e9-a6bf-8ff9fcbe4b6b

@@ -511,17 +511,12 @@ abstract type AbstractDensityState{N,T} end
 
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  dt::Float64
   eps1::Float64
   eps2::Float64
-  smoothness_duration::Int
   stable_duration::Int
 
   # State
-  smooth_counters::Array{UInt16,N}
   stable_counters::Array{UInt16,N}
-  is_smooth::Array{Bool,N}
-  has_decreased::Array{Bool,N}
   is_stable::Array{Bool,N}
 
   # Buffers
@@ -531,42 +526,30 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  dt::Real,
-  smoothness_duration::Integer,
   stable_duration::Integer,
-  eps1::Real=1.5,
-  eps2::Real=0.1,
+  eps1::Real=-5.0,
+  eps2::Real=0.0,
   kwargs...,
 ) where {N}
   DensityState{N,T}(;
-    dt=Float64(dt),
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
-    smooth_counters=zeros(UInt16, dims),
     stable_counters=zeros(UInt16, dims),
-    is_smooth=fill(false, dims),
-    has_decreased=fill(false, dims),
     is_stable=fill(false, dims),
     eps1=Float64(eps1),
     eps2=Float64(eps2),
-    smoothness_duration=Int(smoothness_duration),
     stable_duration=Int(stable_duration),
   )
 end
 
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  dt::Float32
   eps1::Float32
   eps2::Float32
-  smoothness_duration::Int32
   stable_duration::Int32
 
   # State
-  smooth_counters::CuArray{UInt16,N}
   stable_counters::CuArray{UInt16,N}
-  is_smooth::CuArray{Bool,N}
-  has_decreased::CuArray{Bool,N}
   is_stable::CuArray{Bool,N}
 
   # Buffers
@@ -576,25 +559,18 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  dt::Float32,
-  smoothness_duration::Integer,
   stable_duration::Integer,
-  eps1::Real=1.5,
-  eps2::Real=1.0,
+  eps1::Real=-5.0,
+  eps2::Real=0.0,
   kwargs...
 ) where {N}
   CuDensityState{N,T}(;
-    dt=Float32(dt),
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
-    smooth_counters=CUDA.zeros(UInt16, dims),
     stable_counters=CUDA.zeros(UInt16, dims),
-    is_smooth=CUDA.fill(false, dims),
-    has_decreased=CUDA.fill(false, dims),
     is_stable=CUDA.fill(false, dims),
     eps1=Float32(eps1),
     eps2=Float32(eps2),
-    smoothness_duration=Int32(smoothness_duration),
     stable_duration=Int32(stable_duration),
   )
 end
@@ -616,16 +592,11 @@ function update_state!(
     vmr_var,
     density_state.f_prev1,
     density_state.f_prev2,
-    density_state.smooth_counters,
-    density_state.is_smooth,
-    density_state.has_decreased,
-    density_state.stable_counters,
-    density_state.is_stable,
-    # density_state.dt,
     dlogt,
     density_state.eps1,
     density_state.eps2,
-    density_state.smoothness_duration,
+    density_state.stable_counters,
+    density_state.is_stable,
     density_state.stable_duration,
   )
 
@@ -730,16 +701,16 @@ function initialize_estimator_propagation(
   kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
   if time_final === nothing
     time_final = silverman_rule(get_data(kde))
+  elseif time_final isa Real
+    time_final = fill(time_final, N)
   end
   times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-  smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, 0.005)
-  smoothness_duration = calculate_duration_steps(times[end], dt; fraction=smoothness_duration_fraction)
   stable_duration_fraction = pop!(kwargs_dict, :stable_duration, 0.01)
   stable_duration = calculate_duration_steps(times[end], dt; fraction=stable_duration_fraction)
 
   density_state = DensityState(
-    size(grid); dt=norm(dt), T=T, smoothness_duration, stable_duration, kwargs_dict...
+    size(grid); T=T, dt=prod(dt .^ 2), stable_duration, kwargs_dict...
   )
 
   return ParallelEstimator(
@@ -761,6 +732,7 @@ function initialize_estimator_propagation(
   means::CuKernelMeans{N,T,N},
   grid::CuGrid{N,<:Real,M};
   time_step=nothing,
+  time_final=nothing,
   n_steps=nothing,
   kwargs...
 ) where {N,T<:Real,M}
@@ -769,16 +741,18 @@ function initialize_estimator_propagation(
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = CuKernelPropagation(means_bootstraps, vars_bootstraps)
-  time_final = silverman_rule(Array(get_data(kde)))
+  if time_final === nothing
+    time_final = silverman_rule(Array(get_data(kde)))
+  elseif time_final isa Real
+    time_final = CUDA.fill(Float32(time_final), N)
+  end
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
-  smoothness_duration_fraction = pop!(kwargs_dict, :smoothness_duration, 0.005)
-  smoothness_duration = calculate_duration_steps(times[:, end], dt; fraction=smoothness_duration_fraction)
   stable_duration_fraction = pop!(kwargs_dict, :stable_duration, 0.01)
   stable_duration = calculate_duration_steps(times[:, end], dt; fraction=stable_duration_fraction)
 
   density_state = CuDensityState(
-    size(grid); dt=norm(dt), T=typeof(kde).parameters[2], smoothness_duration, stable_duration, kwargs_dict...
+    size(grid); T=typeof(kde).parameters[2], dt=prod(dt .^ 2), stable_duration, kwargs_dict...
   )
 
   return CuParallelEstimator(
@@ -907,6 +881,7 @@ function estimate!(
   n_samples = get_nsamples(kde)
 
   time_initial = initial_bandwidth(estimator.grid_direct)
+  time_initial_squared = time_initial .^ 2
 
   if estimator.times isa AbstractVector{<:AbstractVector{<:Real}}
     times = estimator.times
@@ -954,12 +929,10 @@ function estimate!(
     )
 
     if time_idx == 1
-      det_previous = prod(time_initial .^ 2)
+      dlogt = calculate_dlogt(time_initial_squared, time_propagated)
     else
-      det_previous = prod(time_initial .^ 2 .+ times[time_idx-1] .^ 2)
+      dlogt = calculate_dlogt(time_initial_squared, time_propagated, previous_time=times[time_idx-1])
     end
-    det_current = prod(time_initial .^ 2 .+ time_propagated .^ 2)
-    dlogt = log(det_current / det_previous)
     update_state!(
       estimator.density_state,
       dlogt,
@@ -968,8 +941,27 @@ function estimate!(
       method
     )
   end
+  remaining_nans = findall(isnan, kde.density)
+  kde.density[remaining_nans] .= get_means(estimator.kernel_propagation)[remaining_nans]
 
   return nothing
+end
+
+function calculate_dlogt(
+  time_initial_squared::AbstractVector{<:Real},
+  time_propagated::AbstractVector{<:Real};
+  previous_time::Union{AbstractVector{<:Real},Nothing}=nothing,
+)
+  if previous_time === nothing
+    det_prev = prod(time_initial_squared)
+  else
+    det_prev = prod(time_initial_squared .+ previous_time .^ 2)
+  end
+  det_curr = prod(time_initial_squared .+ time_propagated .^ 2)
+
+  dlogt = log(det_curr / det_prev)
+
+  return dlogt
 end
 
 function get_necessary_memory(estimator::AbstractParallelEstimator)
