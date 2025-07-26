@@ -511,13 +511,14 @@ abstract type AbstractDensityState{N,T} end
 
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  eps1::Float64
-  eps2::Float64
-  stable_duration::Int
+  eps::T
+  alpha::T
+  stable_duration::UInt16
 
   # State
+  norm1::Array{T,N}
+  norm2::Array{T,N}
   stable_counters::Array{UInt16,N}
-  is_stable::Array{Bool,N}
 
   # Buffers
   f_prev1::Array{T,N}
@@ -527,30 +528,30 @@ function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
   stable_duration::Integer,
-  eps1::Real=-5.0,
-  eps2::Real=0.0,
+  eps::Real=-1.0,
+  alpha::Real=0.9,
   kwargs...,
 ) where {N}
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
     stable_counters=zeros(UInt16, dims),
-    is_stable=fill(false, dims),
-    eps1=Float64(eps1),
-    eps2=Float64(eps2),
-    stable_duration=Int(stable_duration),
+    eps=T(eps),
+    alpha=T(alpha),
+    stable_duration=UInt16(stable_duration),
   )
 end
 
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  eps1::Float32
-  eps2::Float32
+  eps::T
+  alpha::T
   stable_duration::Int32
 
   # State
+  norm1::CuArray{T,N}
+  norm2::CuArray{T,N}
   stable_counters::CuArray{UInt16,N}
-  is_stable::CuArray{Bool,N}
 
   # Buffers
   f_prev1::CuArray{T,N}
@@ -560,17 +561,16 @@ function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
   stable_duration::Integer,
-  eps1::Real=-5.0,
-  eps2::Real=0.0,
+  eps1::Real=-1.0f0,
+  alpha::Real=0.9f0,
   kwargs...
 ) where {N}
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
     stable_counters=CUDA.zeros(UInt16, dims),
-    is_stable=CUDA.fill(false, dims),
-    eps1=Float32(eps1),
-    eps2=Float32(eps2),
+    eps=T(eps1),
+    alpha=T(alpha),
     stable_duration=Int32(stable_duration),
   )
 end
@@ -593,10 +593,11 @@ function update_state!(
     density_state.f_prev1,
     density_state.f_prev2,
     dlogt,
-    density_state.eps1,
-    density_state.eps2,
+    density_state.eps,
+    density_state.alpha,
+    density_state.norm1,
+    density_state.norm2,
     density_state.stable_counters,
-    density_state.is_stable,
     density_state.stable_duration,
   )
 

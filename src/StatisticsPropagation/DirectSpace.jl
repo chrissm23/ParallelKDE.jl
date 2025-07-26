@@ -731,34 +731,40 @@ function identify_convergence!(
   vmr_prev1::AbstractArray{<:Real,N},
   vmr_prev2::AbstractArray{<:Real,N},
   dlogt::Real,
-  tol1::Real,
-  tol2::Real,
+  tol::Real,
+  average_factor::Real,
+  normalization1::AbstractArray{<:Real,N},
+  normalization2::AbstractArray{<:Real,N},
   stable_counters::AbstractArray{<:Integer,N},
-  is_stable::AbstractArray{Bool,N},
   stable_duration::Real,
 ) where {N}
   @inbounds @simd for i in eachindex(vmr_current)
-    if !is_stable[i]
-      is_stable[i], stable_counters[i] = find_stability(
+    if !isnan(density[i])
+      results = find_stability(
         vmr_current[i],
         vmr_prev1[i],
         vmr_prev2[i],
-        tol1,
-        tol2,
-        dlogt,
+        normalization1[i],
+        normalization2[i],
         stable_counters[i],
-        stable_duration
+        dlogt,
+        tol,
+        average_factor,
+        stable_duration,
       )
+      normalization1[i] = results.norm1
+      normalization2[i] = results.norm2
+      stable_counters[i] = results.counter
 
-      if is_stable[i]
+      if results.is_stable
         density[i] = means[i]
       end
+
     end
   end
 
   return nothing
 end
-
 function identify_convergence!(
   ::Val{:threaded},
   density::AbstractArray{<:Real,N},
@@ -767,34 +773,38 @@ function identify_convergence!(
   vmr_prev1::AbstractArray{<:Real,N},
   vmr_prev2::AbstractArray{<:Real,N},
   dlogt::Real,
-  tol1::Real,
-  tol2::Real,
+  tol::Real,
+  average_factor::Real,
+  normalization1::AbstractArray{<:Real,N},
+  normalization2::AbstractArray{<:Real,N},
   stable_counters::AbstractArray{<:Integer,N},
-  is_stable::AbstractArray{Bool,N},
   stable_duration::Integer,
 ) where {N}
-  is_stable_array = Array{Bool}(is_stable)
-
   Threads.@threads for i in eachindex(vmr_current)
-    if !is_stable_array[i]
-      is_stable_array[i], stable_counters[i] = find_stability(
+    if !isnan(density[i])
+      results = find_stability(
         vmr_current[i],
         vmr_prev1[i],
         vmr_prev2[i],
-        tol1,
-        tol2,
-        dlogt,
+        normalization1[i],
+        normalization2[i],
         stable_counters[i],
-        stable_duration
+        dlogt,
+        tol,
+        average_factor,
+        stable_duration,
       )
 
-      if is_stable_array[i]
+      normalization1[i] = results.norm1
+      normalization2[i] = results.norm2
+      stable_counters[i] = results.counter
+
+      if results.is_stable
         density[i] = means[i]
       end
+
     end
   end
-
-  is_stable .= is_stable_array
 
   return nothing
 end
@@ -805,33 +815,28 @@ function identify_convergence!(
   vmr_current::AnyCuArray{<:Real,N},
   vmr_prev1::AnyCuArray{<:Real,N},
   vmr_prev2::AnyCuArray{<:Real,N},
-  smooth_counters::AnyCuArray{<:Integer,N},
-  is_smooth::AnyCuArray{Bool,N},
-  has_decreased::AnyCuArray{Bool,N},
-  stable_counters::AnyCuArray{<:Integer,N},
-  is_stable::AnyCuArray{Bool,N},
-  # dt::AnyCuVector{<:Real},
   dlogt::Real,
-  tol1::Real,
-  tol2::Real,
-  smoothness_duration::Integer,
+  tol::Real,
+  average_factor::Real,
+  normalization1::AnyCuArray{<:Real,N},
+  normalization2::AnyCuArray{<:Real,N},
+  stable_counters::AnyCuArray{<:Integer,N},
   stable_duration::Integer,
 ) where {N}
   n_points = length(vmr_current)
 
   # Stability detection
   stability_parms = CuArray{Float32}(
-    [tol1, tol2, dlogt, stable_duration]
+    [tol, average_factor, dlogt, stable_duration]
   )
   kernel = @cuda launch = false kernel_stable!(
     vmr_current,
     vmr_prev1,
     vmr_prev2,
+    normalization1,
+    normalization2,
     means,
     density,
-    is_smooth,
-    has_decreased,
-    is_stable,
     stable_counters,
     stability_parms,
   )
@@ -844,11 +849,10 @@ function identify_convergence!(
       vmr_current,
       vmr_prev1,
       vmr_prev2,
+      normalization1,
+      normalization2,
       means,
       density,
-      is_smooth,
-      has_decreased,
-      is_stable,
       stable_counters,
       stability_parms;
       threads,
@@ -856,202 +860,30 @@ function identify_convergence!(
     )
   end
 
-  # Decrease detection
-  kernel = @cuda launch = false kernel_decrease!(
-    vmr_current, vmr_prev1, is_smooth, has_decreased
-  )
-  config = launch_configuration(kernel.fun)
-  threads = min(n_points, config.threads)
-  blocks = cld(n_points, threads)
-
-  CUDA.@sync blocking = true begin
-    kernel(
-      vmr_current,
-      vmr_prev1,
-      is_smooth,
-      has_decreased;
-      threads,
-      blocks
-    )
-  end
-
-  @. density = ifelse(
-    is_smooth & (!has_decreased) & (!is_stable),
-    means,
-    density,
-  )
-
-  # Smoothness detection
-  smooth_parms = CuArray{Float32}([tol2, dlogt, smoothness_duration])
-  kernel = @cuda launch = false kernel_smooth!(
-    vmr_current,
-    vmr_prev1,
-    vmr_prev2,
-    means,
-    density,
-    is_smooth,
-    smooth_counters,
-    smooth_parms
-  )
-  config = launch_configuration(kernel.fun)
-  threads = min(n_points, config.threads)
-  blocks = cld(n_points, threads)
-
-  CUDA.@sync blocking = true begin
-    kernel(
-      vmr_current,
-      vmr_prev1,
-      vmr_prev2,
-      means,
-      density,
-      is_smooth,
-      smooth_counters,
-      smooth_parms;
-      threads,
-      blocks
-    )
-  end
-
-  @. density = ifelse(
-    is_smooth & has_decreased & !is_stable,
-    means,
-    density,
-  )
-
   return nothing
-end
-
-@inline function find_smoothness(
-  vmr_current::Real,
-  vmr_prev1::Real,
-  vmr_prev2::Real,
-  tol2::Real,
-  # dt::Real,
-  dlogt::Real,
-  smooth_counter::Integer,
-  smoothness_duration::Integer,
-)
-  second_derivative = second_difference(
-    vmr_current, vmr_prev1, vmr_prev2, dlogt
-  )
-
-  is_smooth = false
-  if smoothness_check(second_derivative, tol2)
-    if smooth_counter >= smoothness_duration
-      is_smooth = true
-    else
-      smooth_counter += one(smooth_counter)
-    end
-  else
-    smooth_counter = zero(smooth_counter)
-  end
-
-  return is_smooth, smooth_counter
-end
-
-@inline function smoothness_check(second_derivative::Real, tol::Real)
-  factor = 30
-  return second_derivative < 3
-end
-
-function kernel_smooth!(
-  vmr_current::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
-  vmr_prev1::CuDeviceArray{T,N},
-  vmr_prev2::CuDeviceArray{T,N},
-  means::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
-  density::CuDeviceArray{T,N},
-  is_smooth::CuDeviceArray{Bool,N},
-  smoothness_counter::CuDeviceArray{Z,N},
-  parms::CuDeviceArray{Float32,1},
-) where {T<:Real,N,Z<:Integer}
-  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
-
-  if idx > length(vmr_current)
-    return
-  elseif is_smooth[idx] == true
-    return
-  end
-
-  tol = parms[1]
-  dlogt = parms[2]
-  smoothness_duration = Z(parms[3])
-  factor = 2i32
-
-  second_derivative = (
-    (vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]) / dlogt^2i32
-  )
-  second_derivative = log(abs(second_derivative))
-  counter = smoothness_counter[idx]
-
-  if abs(second_derivative) < 3
-    if counter >= smoothness_duration
-      is_smooth[idx] = true
-    else
-      counter += one(Z)
-    end
-  else
-    counter = zero(Z)
-  end
-
-  smoothness_counter[idx] = counter
-
-  if (vmr_current[idx] > vmr_prev1[idx]) && (vmr_prev2[idx] > vmr_prev1[idx])
-    density[idx] = means[idx]
-  end
-
-  return
-end
-
-@inline function find_decrease(vmr_current::Real, vmr_prev1::Real)
-  vmr_diff = vmr_current - vmr_prev1
-  if vmr_diff < 0
-    has_decreased = true
-  else
-    has_decreased = false
-  end
-
-  return has_decreased
-end
-
-function kernel_decrease!(
-  vmr_current::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
-  vmr_prev1::CuDeviceArray{T,N},
-  is_smooth::CuDeviceArray{Bool,N},
-  has_decreased::CuDeviceArray{Bool,N},
-) where {T<:Real,N}
-  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
-
-  if idx > length(vmr_current)
-    return
-  elseif is_smooth[idx] == false
-    return
-  elseif has_decreased[idx] == true
-    return
-  end
-
-  vmr_diff = vmr_current[idx] - vmr_prev1[idx]
-  if vmr_diff < 0
-    has_decreased[idx] = true
-  end
-
-  return
 end
 
 @inline function find_stability(
   vmr_current::Real,
   vmr_prev1::Real,
   vmr_prev2::Real,
-  tol1::Real,
-  tol2::Real,
-  dlogt::Real,
+  normalization1::Real,
+  normalization2::Real,
   stability_counter::Integer,
+  dlogt::Real,
+  tol::Real,
+  average_factor::Real,
   stability_duration::Integer,
 )
   first_derivative = first_difference(vmr_current, vmr_prev1, dlogt)
+  normalization1 = average_factor * normalization1 + (1 - average_factor) * first_derivative
   second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dlogt)
+  normalization2 = average_factor * normalization2 + (1 - average_factor) * second_derivative
+
+  indicator = sqrt((first_derivative / normalization1)^2 + (second_derivative / normalization2)^2)
 
   is_stable = false
-  if (first_derivative < tol1) && (second_derivative < tol2)
+  if indicator < tol
     if stability_counter >= stability_duration
       is_stable = true
     else
@@ -1061,18 +893,17 @@ end
     stability_counter = zero(stability_counter)
   end
 
-  return is_stable, stability_counter
+  return (is_stable=is_stable, norm1=normalization1, norm2=normalization2, counter=stability_counter)
 end
 
 function kernel_stable!(
   vmr_current::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   vmr_prev1::CuDeviceArray{T,N},
   vmr_prev2::CuDeviceArray{T,N},
+  normalization1::CuDeviceArray{T,N},
+  normalization2::CuDeviceArray{T,N},
   means::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   density::CuDeviceArray{T,N},
-  is_smooth::CuDeviceArray{Bool,N},
-  has_decreased::CuDeviceArray{Bool,N},
-  is_stable::CuDeviceArray{Bool,N},
   stability_counter::CuDeviceArray{Z,N},
   parms::CuDeviceArray{Float32,1},
 ) where {T<:Real,N,Z<:Integer}
@@ -1080,29 +911,29 @@ function kernel_stable!(
 
   if idx > length(vmr_current)
     return
-  elseif is_smooth[idx] == false
-    return
-  elseif has_decreased[idx] == false
-    return
-  elseif is_stable[idx] == true
+  elseif !isnan(density[idx])
     return
   end
 
-  tol1 = parms[1]
-  tol2 = parms[2]
+  tol = parms[1]
+  average_factor = parms[2]
   dlogt = parms[3]
   stable_duration = Z(parms[4])
 
-  first_derivative = abs(vmr_current[idx] - vmr_prev1[idx]) / (2i32 * dlogt)
-  second_derivative = abs(
-    vmr_current[idx] - 2i32 * vmr_prev1[idx] + vmr_prev2[idx]
-  ) / dlogt^2i32
-  second_derivative = log(second_derivative)
+  vmr_i = vmr_current[idx]
+  vmr_im1 = vmr_prev1[idx]
+  vmr_im2 = vmr_prev2[idx]
+
+  first_derivative = log(abs(vmr_i - vmr_im1) / (2i32 * dlogt))
+  norm1 = average_factor * normalization1[idx] + (1 - average_factor) * first_derivative
+  second_derivative = log(abs(vmr_i - 2i32 * vmr_im1 + vmr_im2) / dlogt^2i32)
+  norm2 = average_factor * normalization2[idx] + (1 - average_factor) * second_derivative
+
+  indicator = sqrt((first_derivative / norm1)^2 + (second_derivative / norm2)^2)
   counter = stability_counter[idx]
 
-  if (first_derivative < tol1) && (second_derivative < tol2)
+  if indicator < tol
     if counter >= stable_duration
-      is_stable[idx] = true
       density[idx] = means[idx]
     else
       counter += one(Z)
@@ -1110,6 +941,9 @@ function kernel_stable!(
   else
     counter = zero(Z)
   end
+
+  normalization1[idx] = norm1
+  normalization2[idx] = norm2
   stability_counter[idx] = counter
 
   return
@@ -1126,12 +960,12 @@ end
 function silverman_rule(data::AbstractMatrix)
   n_dims, n_samples = size(data)
 
-  iqrs = ntuple(i -> iqr(selectdim(data, 1, i)), n_dims)
-  stds = ntuple(i -> std(selectdim(data, 1, i)), n_dims)
+  covariance = cov(data, dims=2)
+  stds = sqrt.(diag(covariance))
 
-  return collect(
-    min.(stds, iqrs ./ 1.34) .* (n_samples * (n_dims + 2) / 4)^(-1 / (n_dims + 4))
-  )
+  prefactor = (4 / ((n_dims + 2) * n_samples))^(1 / (n_dims + 4))
+
+  return prefactor .* stds
 end
 
 end
