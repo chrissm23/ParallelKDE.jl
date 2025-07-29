@@ -228,10 +228,9 @@ let
 		density_estimation,
 		:parallelEstimator,
 		# time_step=0.00001,
-		# smoothness_duration=0.01,
 		# stable_duration=0.01,
-		eps1=-4.5,
-		eps2=0,
+		# eps=-5.0,
+		# time_final=0.5,
 		# n_bootstraps=1000,
 	)
 	
@@ -287,11 +286,10 @@ begin
 		kde;
 		method,
 		grid=grid_support,
-		time_step=0.001,
-		eps1=-5,
-		eps2=0,
-		stable_duration=0.01,
-		# time_final=2.0
+		# time_step=0.001,
+		eps=-5.0,
+		# stable_duration=0.01,
+		time_final=0.5
 	)
 
 	times = parallel_estimator.times
@@ -308,7 +306,6 @@ begin
 
 	vmr_time = fill(NaN, n_gridpoints, n_times)
 	means_time = fill(NaN, n_gridpoints, n_times)
-	is_stable_time = falses(n_gridpoints, n_times)
 	density_assigned_time = falses(n_gridpoints, n_times)
 
 	dlogts = fill(NaN, n_times)
@@ -381,21 +378,20 @@ for (idx,time_propagated) in enumerate(times)
 		parallel_estimator.kernel_propagation;
 		method
 	)
-	is_stable_time[:, idx] .= parallel_estimator.density_state.is_stable
 
-	# @. density_assigned_time[:, idx] = ifelse(
-	# 	(
-	# 		(kde.density ≈ previous_density) | 
-	# 		(isnan(kde.density) & isnan(previous_density))
-	# 	),
-	# 	false,
-	# 	true
-	# )
+	@. density_assigned_time[:, idx] = ifelse(
+		(
+			(kde.density ≈ previous_density) | 
+			(isnan(kde.density) & isnan(previous_density))
+		),
+		false,
+		true
+	)
 	previous_density .= kde.density
 end
 
-# ╔═╡ dadb8821-1384-4748-ab98-32e23e64f7f8
-findall(isnan, kde.density)
+# ╔═╡ fec6f503-cd04-4a43-9b69-fdd1136ef981
+sum(count(density_assigned_time, dims=1))
 
 # ╔═╡ 5cca44db-4f10-4f9b-9c0a-6e6e1a983720
 begin
@@ -404,11 +400,12 @@ begin
 			diff(vmr_time, dims=2) ./ reshape(2 .* dlogts[begin+1:end],1,:)
 		)
 	)
-		derivatives2[:, begin+2:end] .= log.(
+	derivatives2[:, begin+2:end] .= log.(
 		abs.(
 			diff(diff(vmr_time, dims=2), dims=2) ./ reshape(dlogts[begin+2:end] .^2 ,1,:)
 		)
 	)
+	indicator = derivatives1[:, begin+2:end] .+ derivatives2[:, begin+2:end]
 	
 	optimal_times = times_range[
 		argmin.(eachrow(abs.(means_time .- reshape(distro_pdf, n_gridpoints, 1))))
@@ -666,7 +663,7 @@ begin
 		label=false,
 		palette=test_palette,
 		lw=2,
-		ylims=(-7,9),
+		ylims=(-15,10),
 		xlims=extrema(times_range[begin+1:end]),
 		# xlims=(0,0.25),
 		# yaxis=:log,
@@ -682,7 +679,9 @@ begin
 			[
 				let
 					try
-						times_range[findfirst(is_stable_time[test_indices[i], :])]
+						times_range[
+							findlast(density_assigned_time[test_indices[i], :])
+						]
 					catch
 						NaN
 					end
@@ -724,7 +723,7 @@ begin
 		label=false,
 		palette=test_palette,
 		lw=2,
-		ylims=(-8,15),
+		ylims=(-15,10),
 		xlims=extrema(times_range[begin+1:end]),
 		# xlims=(0,0.25),
 		# yaxis=:log,
@@ -741,7 +740,9 @@ begin
 			[
 				let
 					try
-						times_range[findfirst(is_stable_time[test_indices[i], :])]
+						times_range[
+							findlast(density_assigned_time[test_indices[i], :])
+						]
 					catch
 						NaN
 					end
@@ -765,6 +766,51 @@ begin
 	# savefig(p_dev2, "dev2_cpu.png")
 
 	p_dev2
+end
+
+# ╔═╡ fcb3dd19-8c34-4870-9cdb-05aa140da88a
+md"#### Combined derivative indicator"
+
+# ╔═╡ 5359ee63-8b88-4215-b216-58dd5af0c2b0
+begin
+	p_dev12 =plot(
+		times_range[begin+1:end],
+		eachrow(
+			derivatives2[:, begin+1:end] .+ derivatives1[:,begin+1:end]
+		)[test_indices],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=(-15,10),
+		xlims=extrema(times_range[begin+1:end]),
+		# xlims=(0,0.25),
+		# yaxis=:log,
+		# xaxis=:log,
+		dpi=500,
+	)
+
+	for (i, val) in enumerate(distro_pdf[test_indices])
+		vline!(
+			p_dev12,
+			[
+				let
+					try
+						times_range[
+							findlast(density_assigned_time[test_indices[i], :])
+						]
+					catch
+						NaN
+					end
+				end
+			],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dash,
+		)
+	end
+
+	p_dev12
 end
 
 # ╔═╡ 8bd6926d-dbec-4858-9c72-5e0904bc71d7
@@ -932,7 +978,7 @@ end
 # ╟─75e020f4-5682-46f3-8dff-7abeba257818
 # ╠═c7ae5c52-72ca-4449-bfa6-18fb36003ace
 # ╠═fb725626-e5eb-4dfc-93e7-4946af668652
-# ╠═dadb8821-1384-4748-ab98-32e23e64f7f8
+# ╠═fec6f503-cd04-4a43-9b69-fdd1136ef981
 # ╠═5cca44db-4f10-4f9b-9c0a-6e6e1a983720
 # ╟─95746d99-132a-4f7c-8075-5da357841e1f
 # ╟─33a0e17b-cf1e-4fb0-b9c4-1e2498f285a4
@@ -948,11 +994,13 @@ end
 # ╟─42a8a50a-6c62-4056-ad93-96e228a9e1d8
 # ╟─c20c3541-d935-423c-a07f-77d8e0679d8d
 # ╟─c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
-# ╠═ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
+# ╟─ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
 # ╟─36ff4668-62aa-4cb1-b732-2bc278d723e2
 # ╟─239d91b7-1a08-48aa-9e86-93e4c006bc06
-# ╠═7ccef59f-ae73-4480-a80a-5129ed7d3d61
+# ╟─7ccef59f-ae73-4480-a80a-5129ed7d3d61
 # ╟─c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
+# ╟─fcb3dd19-8c34-4870-9cdb-05aa140da88a
+# ╟─5359ee63-8b88-4215-b216-58dd5af0c2b0
 # ╟─8bd6926d-dbec-4858-9c72-5e0904bc71d7
 # ╟─123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
 # ╟─9f5e3a30-0104-45f8-b3f5-eaa4b73dce32

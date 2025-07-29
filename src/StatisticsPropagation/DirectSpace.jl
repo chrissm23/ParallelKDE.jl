@@ -732,35 +732,28 @@ function identify_convergence!(
   vmr_prev2::AbstractArray{<:Real,N},
   dlogt::Real,
   tol::Real,
-  average_factor::Real,
-  normalization1::AbstractArray{<:Real,N},
-  normalization2::AbstractArray{<:Real,N},
+  current_minima::AbstractArray{<:Real,N},
   stable_counters::AbstractArray{<:Integer,N},
   stable_duration::Real,
 ) where {N}
   @inbounds @simd for i in eachindex(vmr_current)
-    if !isnan(density[i])
-      results = find_stability(
-        vmr_current[i],
-        vmr_prev1[i],
-        vmr_prev2[i],
-        normalization1[i],
-        normalization2[i],
-        stable_counters[i],
-        dlogt,
-        tol,
-        average_factor,
-        stable_duration,
-      )
-      normalization1[i] = results.norm1
-      normalization2[i] = results.norm2
-      stable_counters[i] = results.counter
+    results = find_stability(
+      vmr_current[i],
+      vmr_prev1[i],
+      vmr_prev2[i],
+      stable_counters[i],
+      dlogt,
+      tol,
+      current_minima[i],
+      stable_duration,
+    )
+    stable_counters[i] = results.counter
 
-      if results.is_stable
-        density[i] = means[i]
-      end
-
+    if results.more_stable
+      current_minima[i] = results.new_minimum
+      density[i] = means[i]
     end
+
   end
 
   return nothing
@@ -774,36 +767,28 @@ function identify_convergence!(
   vmr_prev2::AbstractArray{<:Real,N},
   dlogt::Real,
   tol::Real,
-  average_factor::Real,
-  normalization1::AbstractArray{<:Real,N},
-  normalization2::AbstractArray{<:Real,N},
+  current_minima::AbstractArray{<:Real,N},
   stable_counters::AbstractArray{<:Integer,N},
   stable_duration::Integer,
 ) where {N}
   Threads.@threads for i in eachindex(vmr_current)
-    if !isnan(density[i])
-      results = find_stability(
-        vmr_current[i],
-        vmr_prev1[i],
-        vmr_prev2[i],
-        normalization1[i],
-        normalization2[i],
-        stable_counters[i],
-        dlogt,
-        tol,
-        average_factor,
-        stable_duration,
-      )
+    results = find_stability(
+      vmr_current[i],
+      vmr_prev1[i],
+      vmr_prev2[i],
+      stable_counters[i],
+      dlogt,
+      tol,
+      current_minima[i],
+      stable_duration,
+    )
+    stable_counters[i] = results.counter
 
-      normalization1[i] = results.norm1
-      normalization2[i] = results.norm2
-      stable_counters[i] = results.counter
-
-      if results.is_stable
-        density[i] = means[i]
-      end
-
+    if results.more_stable
+      current_minima[i] = results.new_minimum
+      density[i] = means[i]
     end
+
   end
 
   return nothing
@@ -817,9 +802,7 @@ function identify_convergence!(
   vmr_prev2::AnyCuArray{<:Real,N},
   dlogt::Real,
   tol::Real,
-  average_factor::Real,
-  normalization1::AnyCuArray{<:Real,N},
-  normalization2::AnyCuArray{<:Real,N},
+  current_minima::AnyCuArray{<:Real,N},
   stable_counters::AnyCuArray{<:Integer,N},
   stable_duration::Integer,
 ) where {N}
@@ -827,16 +810,15 @@ function identify_convergence!(
 
   # Stability detection
   stability_parms = CuArray{Float32}(
-    [tol, average_factor, dlogt, stable_duration]
+    [dlogt, tol, stable_duration]
   )
   kernel = @cuda launch = false kernel_stable!(
     vmr_current,
     vmr_prev1,
     vmr_prev2,
-    normalization1,
-    normalization2,
     means,
     density,
+    current_minima,
     stable_counters,
     stability_parms,
   )
@@ -849,10 +831,9 @@ function identify_convergence!(
       vmr_current,
       vmr_prev1,
       vmr_prev2,
-      normalization1,
-      normalization2,
       means,
       density,
+      current_minima,
       stable_counters,
       stability_parms;
       threads,
@@ -867,43 +848,47 @@ end
   vmr_current::Real,
   vmr_prev1::Real,
   vmr_prev2::Real,
-  normalization1::Real,
-  normalization2::Real,
   stability_counter::Integer,
   dlogt::Real,
   tol::Real,
-  average_factor::Real,
+  current_minimum::Real,
   stability_duration::Integer,
 )
   first_derivative = first_difference(vmr_current, vmr_prev1, dlogt)
-  normalization1 = average_factor * normalization1 + (1 - average_factor) * first_derivative
   second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dlogt)
-  normalization2 = average_factor * normalization2 + (1 - average_factor) * second_derivative
 
-  indicator = sqrt((first_derivative / normalization1)^2 + (second_derivative / normalization2)^2)
+  indicator = first_derivative + second_derivative
 
-  is_stable = false
+  more_stable = false
+  new_minimum = NaN
   if indicator < tol
+    stability_counter += one(stability_counter)
+
     if stability_counter >= stability_duration
-      is_stable = true
-    else
-      stability_counter += one(stability_counter)
+      if (indicator < current_minimum) || isnan(current_minimum)
+        more_stable = true
+        new_minimum = indicator
+      end
     end
+
   else
     stability_counter = zero(stability_counter)
   end
 
-  return (is_stable=is_stable, norm1=normalization1, norm2=normalization2, counter=stability_counter)
+  if isnan(new_minimum)
+    new_minimum = current_minimum
+  end
+
+  return (more_stable=more_stable, new_minimum=new_minimum, counter=stability_counter)
 end
 
 function kernel_stable!(
   vmr_current::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   vmr_prev1::CuDeviceArray{T,N},
   vmr_prev2::CuDeviceArray{T,N},
-  normalization1::CuDeviceArray{T,N},
-  normalization2::CuDeviceArray{T,N},
   means::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   density::CuDeviceArray{T,N},
+  current_minima::CuDeviceArray{T,N},
   stability_counter::CuDeviceArray{Z,N},
   parms::CuDeviceArray{Float32,1},
 ) where {T<:Real,N,Z<:Integer}
@@ -911,39 +896,36 @@ function kernel_stable!(
 
   if idx > length(vmr_current)
     return
-  elseif !isnan(density[idx])
-    return
   end
 
-  tol = parms[1]
-  average_factor = parms[2]
-  dlogt = parms[3]
-  stable_duration = Z(parms[4])
+  dlogt = parms[1]
+  tol = parms[2]
+  stable_duration = Z(parms[3])
 
   vmr_i = vmr_current[idx]
   vmr_im1 = vmr_prev1[idx]
   vmr_im2 = vmr_prev2[idx]
 
   first_derivative = log(abs(vmr_i - vmr_im1) / (2i32 * dlogt))
-  norm1 = average_factor * normalization1[idx] + (1 - average_factor) * first_derivative
   second_derivative = log(abs(vmr_i - 2i32 * vmr_im1 + vmr_im2) / dlogt^2i32)
-  norm2 = average_factor * normalization2[idx] + (1 - average_factor) * second_derivative
+  indicator = first_derivative + second_derivative
 
-  indicator = sqrt((first_derivative / norm1)^2 + (second_derivative / norm2)^2)
   counter = stability_counter[idx]
 
   if indicator < tol
+    counter += one(Z)
+
     if counter >= stable_duration
-      density[idx] = means[idx]
-    else
-      counter += one(Z)
+      if indicator < current_minima[idx]
+        current_minima[idx] = indicator
+        density[idx] = means[idx]
+      end
     end
+
   else
     counter = zero(Z)
   end
 
-  normalization1[idx] = norm1
-  normalization2[idx] = norm2
   stability_counter[idx] = counter
 
   return

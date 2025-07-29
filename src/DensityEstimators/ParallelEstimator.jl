@@ -512,12 +512,10 @@ abstract type AbstractDensityState{N,T} end
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   eps::T
-  alpha::T
   stable_duration::UInt16
 
   # State
-  norm1::Array{T,N}
-  norm2::Array{T,N}
+  indicator_minima::Array{T,N}
   stable_counters::Array{UInt16,N}
 
   # Buffers
@@ -528,8 +526,7 @@ function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
   stable_duration::Integer,
-  eps::Real=-1.0,
-  alpha::Real=0.9,
+  eps::Real=-5.0,
   kwargs...,
 ) where {N}
   DensityState{N,T}(;
@@ -537,7 +534,7 @@ function DensityState(
     f_prev2=fill(T(NaN), dims),
     stable_counters=zeros(UInt16, dims),
     eps=T(eps),
-    alpha=T(alpha),
+    indicator_minima=fill(T(NaN), dims),
     stable_duration=UInt16(stable_duration),
   )
 end
@@ -545,12 +542,10 @@ end
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   eps::T
-  alpha::T
   stable_duration::Int32
 
   # State
-  norm1::CuArray{T,N}
-  norm2::CuArray{T,N}
+  indicator_minima::CuArray{T,N}
   stable_counters::CuArray{UInt16,N}
 
   # Buffers
@@ -561,16 +556,15 @@ function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
   stable_duration::Integer,
-  eps1::Real=-1.0f0,
-  alpha::Real=0.9f0,
+  eps::Real=-1.0f0,
   kwargs...
 ) where {N}
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
     stable_counters=CUDA.zeros(UInt16, dims),
-    eps=T(eps1),
-    alpha=T(alpha),
+    eps=T(eps),
+    indicator_minima=CUDA.fill(T(NaN), dims),
     stable_duration=Int32(stable_duration),
   )
 end
@@ -594,9 +588,7 @@ function update_state!(
     density_state.f_prev2,
     dlogt,
     density_state.eps,
-    density_state.alpha,
-    density_state.norm1,
-    density_state.norm2,
+    density_state.indicator_minima,
     density_state.stable_counters,
     density_state.stable_duration,
   )
@@ -711,7 +703,7 @@ function initialize_estimator_propagation(
   stable_duration = calculate_duration_steps(times[end], dt; fraction=stable_duration_fraction)
 
   density_state = DensityState(
-    size(grid); T=T, dt=prod(dt .^ 2), stable_duration, kwargs_dict...
+    size(grid); T=T, stable_duration, kwargs_dict...
   )
 
   return ParallelEstimator(
@@ -753,7 +745,7 @@ function initialize_estimator_propagation(
   stable_duration = calculate_duration_steps(times[:, end], dt; fraction=stable_duration_fraction)
 
   density_state = CuDensityState(
-    size(grid); T=typeof(kde).parameters[2], dt=prod(dt .^ 2), stable_duration, kwargs_dict...
+    size(grid); T=typeof(kde).parameters[2], stable_duration, kwargs_dict...
   )
 
   return CuParallelEstimator(
