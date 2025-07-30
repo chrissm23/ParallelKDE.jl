@@ -254,10 +254,8 @@ begin
 		density_estimation,
 		:parallelEstimator,
 		# time_step=0.00001,
-		# smoothness_duration=0.005,
 		# stable_duration=0.01,
-		# eps1=1.5,
-		# eps2=0.1,
+		eps=-5.0,
 		# n_bootstraps=1000,
 	)
 
