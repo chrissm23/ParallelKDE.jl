@@ -864,7 +864,7 @@ end
   if indicator < tol
     stability_counter += one(stability_counter)
 
-    if stability_counter >= stability_duration
+    if stability_counter > stability_duration
       if (indicator < current_minimum) || isnan(current_minimum)
         more_stable = true
         new_minimum = indicator
@@ -906,8 +906,10 @@ function kernel_stable!(
   vmr_im1 = vmr_prev1[idx]
   vmr_im2 = vmr_prev2[idx]
 
-  first_derivative = log(abs(vmr_i - vmr_im1) / (2i32 * dlogt))
-  second_derivative = log(abs(vmr_i - 2i32 * vmr_im1 + vmr_im2) / dlogt^2i32)
+  diff1 = vmr_i - vmr_im1
+  diff2 = vmr_im1 - vmr_im2
+  first_derivative = log(abs(diff1)) - log(2i32 * dlogt)
+  second_derivative = log(abs(diff1 - diff2)) - log(dlogt^2i32)
   indicator = first_derivative + second_derivative
 
   counter = stability_counter[idx]
@@ -916,7 +918,7 @@ function kernel_stable!(
     counter += one(Z)
 
     if counter >= stable_duration
-      if indicator < current_minima[idx]
+      if indicator < current_minima[idx] || isnan(current_minima[idx])
         current_minima[idx] = indicator
         density[idx] = means[idx]
       end

@@ -556,7 +556,7 @@ function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
   stable_duration::Integer,
-  eps::Real=-1.0f0,
+  eps::Real=-5.0f0,
   kwargs...
 ) where {N}
   CuDensityState{N,T}(;
@@ -828,8 +828,9 @@ function get_time(
     n_dims = length(time_final)
   end
 
+  time_final = CuArray{Float32}(time_final)
   if n_steps !== nothing
-    dt = CuArray{Float32}(time_final ./ n_steps)
+    dt = time_final ./ n_steps
     times = mapreduce(i -> dt .* i, hcat, 0:n_steps)
 
     return times, dt
