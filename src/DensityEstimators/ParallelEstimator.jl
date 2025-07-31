@@ -525,8 +525,8 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  stable_duration::Integer,
   eps::Real=-5.0,
+  stable_duration::Integer,
 ) where {N}
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
@@ -554,8 +554,8 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  stable_duration::Integer,
   eps::Real=-5.0f0,
+  stable_duration::Integer,
 ) where {N}
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
@@ -693,7 +693,7 @@ function initialize_estimator_propagation(
   stable_duration_steps = calculate_duration_steps(times[end], dt; fraction=stable_duration)
 
   density_state = DensityState(
-    size(grid); T=T, stable_duration_steps, kwargs...
+    size(grid); T=T, stable_duration=stable_duration_steps, kwargs...
   )
 
   return ParallelEstimator(
@@ -733,7 +733,7 @@ function initialize_estimator_propagation(
   stable_duration_steps = calculate_duration_steps(times[:, end], dt; fraction=stable_duration)
 
   density_state = CuDensityState(
-    size(grid); T=typeof(kde).parameters[2], stable_duration_steps, kwargs...
+    size(grid); T=typeof(kde).parameters[2], stable_duration=stable_duration_steps, kwargs...
   )
 
   return CuParallelEstimator(
