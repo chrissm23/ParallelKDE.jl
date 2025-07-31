@@ -527,7 +527,6 @@ function DensityState(
   T::Type{<:Real}=Float64,
   stable_duration::Integer,
   eps::Real=-5.0,
-  kwargs...,
 ) where {N}
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
@@ -557,7 +556,6 @@ function CuDensityState(
   T::Type{<:Real}=Float32,
   stable_duration::Integer,
   eps::Real=-5.0f0,
-  kwargs...
 ) where {N}
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
@@ -633,23 +631,17 @@ function initialize_estimator(
   ::Type{<:AbstractParallelEstimator},
   kde::AbstractKDE;
   method::Symbol,
-  kwargs...
+  grid::Union{AbstractGrid,Nothing}=nothing,
+  n_bootstraps::Integer=100,
+  time_step::Union{Nothing,Real}=nothing,
+  n_steps::Union{Nothing,Integer}=nothing,
+  kwargs...,
 )
   device = get_device(kde)
 
-  if !haskey(kwargs, :grid)
-    throw(ArgumentError("Missing required keyword argument: 'grid'"))
-  end
-
-  kwargs_dict = Dict(kwargs)
-  grid = pop!(kwargs_dict, :grid)
   if get_device(grid) != device
     throw(ArgumentError("KDE device $device does not match Grid device $(get_device(grid))"))
   end
-
-  n_bootstraps = pop!(kwargs_dict, :n_bootstraps, 100)
-  time_step = pop!(kwargs_dict, :dt, nothing)
-  n_steps = pop!(kwargs_dict, :n_steps, nothing)
 
   means_bootstraps, vars_bootstraps = initialize_kernels(
     device, kde, grid; n_bootstraps=n_bootstraps, include_var=true, method=method
@@ -667,7 +659,7 @@ function initialize_estimator(
     grid;
     time_step,
     n_steps,
-    kwargs_dict...
+    kwargs...,
   )
 
 end
@@ -685,10 +677,9 @@ function initialize_estimator_propagation(
   time_step::Union{Nothing,Real}=nothing,
   time_final::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
+  stable_duration::Real=0.01,
   kwargs...
 ) where {N,T<:Real,M}
-  kwargs_dict = Dict(kwargs)
-
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
@@ -699,11 +690,10 @@ function initialize_estimator_propagation(
   end
   times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-  stable_duration_fraction = pop!(kwargs_dict, :stable_duration, 0.01)
-  stable_duration = calculate_duration_steps(times[end], dt; fraction=stable_duration_fraction)
+  stable_duration_steps = calculate_duration_steps(times[end], dt; fraction=stable_duration)
 
   density_state = DensityState(
-    size(grid); T=T, stable_duration, kwargs_dict...
+    size(grid); T=T, stable_duration_steps, kwargs...
   )
 
   return ParallelEstimator(
@@ -727,10 +717,9 @@ function initialize_estimator_propagation(
   time_step=nothing,
   time_final=nothing,
   n_steps=nothing,
+  stable_duration::Real=0.01f0,
   kwargs...
 ) where {N,T<:Real,M}
-  kwargs_dict = Dict(kwargs)
-
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = CuKernelPropagation(means_bootstraps, vars_bootstraps)
@@ -741,11 +730,10 @@ function initialize_estimator_propagation(
   end
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
-  stable_duration_fraction = pop!(kwargs_dict, :stable_duration, 0.01)
-  stable_duration = calculate_duration_steps(times[:, end], dt; fraction=stable_duration_fraction)
+  stable_duration_steps = calculate_duration_steps(times[:, end], dt; fraction=stable_duration)
 
   density_state = CuDensityState(
-    size(grid); T=typeof(kde).parameters[2], stable_duration, kwargs_dict...
+    size(grid); T=typeof(kde).parameters[2], stable_duration_steps, kwargs...
   )
 
   return CuParallelEstimator(

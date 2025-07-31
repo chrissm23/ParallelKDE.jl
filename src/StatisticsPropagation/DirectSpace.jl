@@ -727,15 +727,15 @@ function identify_convergence!(
   ::Val{:serial},
   density::AbstractArray{<:Real,N},
   means::AbstractArray{<:Real,N},
-  vmr_current::AbstractArray{<:Real,N},
-  vmr_prev1::AbstractArray{<:Real,N},
-  vmr_prev2::AbstractArray{<:Real,N},
+  vmr_current::AbstractArray{T,N},
+  vmr_prev1::AbstractArray{T,N},
+  vmr_prev2::AbstractArray{T,N},
   dlogt::Real,
   tol::Real,
-  current_minima::AbstractArray{<:Real,N},
+  current_minima::AbstractArray{T,N},
   stable_counters::AbstractArray{<:Integer,N},
-  stable_duration::Real,
-) where {N}
+  stable_duration::Integer,
+) where {T<:Real,N}
   @inbounds @simd for i in eachindex(vmr_current)
     results = find_stability(
       vmr_current[i],
@@ -762,15 +762,15 @@ function identify_convergence!(
   ::Val{:threaded},
   density::AbstractArray{<:Real,N},
   means::AbstractArray{<:Real,N},
-  vmr_current::AbstractArray{<:Real,N},
-  vmr_prev1::AbstractArray{<:Real,N},
-  vmr_prev2::AbstractArray{<:Real,N},
+  vmr_current::AbstractArray{T,N},
+  vmr_prev1::AbstractArray{T,N},
+  vmr_prev2::AbstractArray{T,N},
   dlogt::Real,
   tol::Real,
-  current_minima::AbstractArray{<:Real,N},
+  current_minima::AbstractArray{T,N},
   stable_counters::AbstractArray{<:Integer,N},
   stable_duration::Integer,
-) where {N}
+) where {T<:Real,N}
   Threads.@threads for i in eachindex(vmr_current)
     results = find_stability(
       vmr_current[i],
@@ -797,15 +797,15 @@ function identify_convergence!(
   ::Val{:cuda},
   density::AnyCuArray{<:Real,N},
   means::AnyCuArray{<:Real,N},
-  vmr_current::AnyCuArray{<:Real,N},
-  vmr_prev1::AnyCuArray{<:Real,N},
-  vmr_prev2::AnyCuArray{<:Real,N},
+  vmr_current::AnyCuArray{T,N},
+  vmr_prev1::AnyCuArray{T,N},
+  vmr_prev2::AnyCuArray{T,N},
   dlogt::Real,
   tol::Real,
-  current_minima::AnyCuArray{<:Real,N},
+  current_minima::AnyCuArray{T,N},
   stable_counters::AnyCuArray{<:Integer,N},
   stable_duration::Integer,
-) where {N}
+) where {T<:Real,N}
   n_points = length(vmr_current)
 
   # Stability detection
