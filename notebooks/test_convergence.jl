@@ -64,14 +64,27 @@ function define_distro(::Val{:normal})
 	return Normal(μ, σ)
 end;
 
-# ╔═╡ c22aeb1d-85b8-43d7-b938-d6ee5cf9d3e3
-function define_distro(::Val{:bimodal})
+# ╔═╡ 3524b6e7-c3f7-4a0c-85d9-25340ac8d5d7
+function define_distro(::Val{:bimodal1})
 	μ1 = 6
 	σ1 = 1
 	w1 = 0.4
 
-	μ2 = 10
+	μ2 = 11
 	σ2 = 2
+	w2 = 1 - w1
+
+	return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
+end;
+
+# ╔═╡ c22aeb1d-85b8-43d7-b938-d6ee5cf9d3e3
+function define_distro(::Val{:bimodal2})
+	μ1 = 4
+	σ1 = 0.3
+	w1 = 0.3
+
+	μ2 = 12
+	σ2 = 1.5
 	w2 = 1 - w1
 
 	return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
@@ -89,7 +102,9 @@ end;
 md"Distribution (`distro_name`)"
 
 # ╔═╡ ba9f88bc-a309-4ed7-a08b-822ed48f19c1
-@bind distro_name Select([:normal, :bimodal, :noncentral_χ2])
+@bind distro_name Select(
+	[:normal, :bimodal1, :bimodal2, :noncentral_χ2], default=:bimodal2
+)
 
 # ╔═╡ fe3cd654-ed53-415d-9429-beea88bedace
 md"Number of samples (`n_samples`)"
@@ -227,9 +242,10 @@ let
 	estimate_density!(
 		density_estimation,
 		:parallelEstimator,
-		# time_step=0.00001,
-		# stable_duration=0.01,
-		# eps=-5.0,
+		# time_step=0.0005,
+		# stable_duration=0.001,
+		# eps=-2.5,
+		# alpha=0.75,
 		# time_final=0.5,
 		# n_bootstraps=1000,
 	)
@@ -286,10 +302,11 @@ begin
 		kde;
 		method,
 		grid=grid_support,
-		# time_step=0.001,
-		eps=-5.0,
-		# stable_duration=0.01,
-		time_final=0.5
+		# time_step=0.00005,
+		# eps=-2.5,
+		# alpha=0.75,
+		# stable_duration=0.001,
+		# time_final=2.0
 	)
 
 	times = parallel_estimator.times
@@ -309,6 +326,8 @@ begin
 	density_assigned_time = falses(n_gridpoints, n_times)
 
 	dlogts = fill(NaN, n_times)
+	alpha_parm = parallel_estimator.density_state.alpha
+	eps_parm = parallel_estimator.density_state.eps
 end;
 
 # ╔═╡ fb725626-e5eb-4dfc-93e7-4946af668652
@@ -395,17 +414,18 @@ sum(count(density_assigned_time, dims=1))
 
 # ╔═╡ 5cca44db-4f10-4f9b-9c0a-6e6e1a983720
 begin
-	derivatives1[:, begin+1:end] .= log.(
+	derivatives1[:, begin+1:end] .= alpha_parm .* log.(
 		abs.(
 			diff(vmr_time, dims=2) ./ reshape(2 .* dlogts[begin+1:end],1,:)
 		)
 	)
-	derivatives2[:, begin+2:end] .= log.(
+	derivatives2[:, begin+2:end] .= (1-alpha_parm) .* log.(
 		abs.(
 			diff(diff(vmr_time, dims=2), dims=2) ./ reshape(dlogts[begin+2:end] .^2 ,1,:)
 		)
 	)
-	indicator = derivatives1[:, begin+2:end] .+ derivatives2[:, begin+2:end]
+
+	indicator = derivatives1 .+ derivatives2
 	
 	optimal_times = times_range[
 		argmin.(eachrow(abs.(means_time .- reshape(distro_pdf, n_gridpoints, 1))))
@@ -502,56 +522,10 @@ begin
 end
 
 # ╔═╡ d132f438-3764-4844-9634-7416f2e062b7
-vmr_bounds = (0, 10);
-
-# ╔═╡ 6ec06af2-1b94-4986-94e2-6b629c3b6205
-md"#### Finding smooth regime"
-
-# ╔═╡ 62ea2943-0007-4278-8e70-e93e243ef1eb
-begin
-	p_smooth = plot(
-		times_range,
-		eachrow(vmr_time)[test_indices],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=vmr_bounds,
-		xlims=extrema(times_range),
-		# yaxis=:log
-	)
-
-	vline!(p_smooth, [propagation_time], c=:forestgreen, label="Propagation time")
-
-	for (i, test_idx) in enumerate(test_indices)
-		vline!(
-			p_smooth,
-			[
-				let
-					try
-						times_range[findfirst(is_smooth_time[test_idx, :])]
-					catch
-						NaN
-					end
-				end
-			],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dash,
-		)
-	end
-
-	# Manual label
-	plot!(
-		p_smooth, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
-	)
-	plot!(
-		p_smooth, [-10; -20], lw=2, lc=:black, ls=:dash, label="Smoothness found"
-	)
-end
+vmr_bounds = (0, 45);
 
 # ╔═╡ 7f9cf2ba-2085-4b80-a98a-9feb7fe0c4de
-md"#### Finding decrease point"
+md"#### VMR"
 
 # ╔═╡ 097c40b2-2b34-442d-8cb9-4c63b60abfc4
 begin
@@ -595,9 +569,6 @@ begin
 		p_decrease, [-10; -20], lw=2, lc=:black, ls=:dash, label="Decrease found"
 	)
 end
-
-# ╔═╡ 42a8a50a-6c62-4056-ad93-96e228a9e1d8
-md"#### Finding stable regime"
 
 # ╔═╡ c20c3541-d935-423c-a07f-77d8e0679d8d
 begin
@@ -646,15 +617,6 @@ end
 # ╔═╡ c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
 md"#### First derivative"
 
-# ╔═╡ ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
-begin
-	threshold1_range = range(-10, 0, length=100)
-	@bind threshold_1 Slider(
-		threshold1_range,
-		default=threshold1_range[argmin(abs.(threshold1_range .- 1.5))]
-	)
-end
-
 # ╔═╡ 36ff4668-62aa-4cb1-b732-2bc278d723e2
 begin
 	p_dev1 = plot(
@@ -663,15 +625,14 @@ begin
 		label=false,
 		palette=test_palette,
 		lw=2,
-		ylims=(-15,10),
+		ylims=(-10,5),
 		xlims=extrema(times_range[begin+1:end]),
 		# xlims=(0,0.25),
 		# yaxis=:log,
 		# xaxis=:log
 	)
 
-	# vline!(p_dev1, [propagation_time], c=:forestgreen, label="Propagation time")
-	hline!(p_dev1, [threshold_1], c=:red, label="Threshold: $threshold_1")
+	vline!(p_dev1, [propagation_time], c=:forestgreen, label="Propagation time")
 
 	for (i, val) in enumerate(distro_pdf[test_indices])
 		vline!(
@@ -706,24 +667,15 @@ end
 # ╔═╡ 239d91b7-1a08-48aa-9e86-93e4c006bc06
 md"#### Second derivative"
 
-# ╔═╡ 7ccef59f-ae73-4480-a80a-5129ed7d3d61
-begin
-	threshold2_range = range(-5, 5, length=100)
-	@bind threshold_2 Slider(
-		threshold2_range,
-		default=threshold2_range[argmin(abs.(threshold2_range .- 0.75))]
-	)
-end
-
 # ╔═╡ c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
 begin
-	p_dev2 =plot(
+	p_dev2 = plot(
 		times_range[begin+1:end],
 		eachrow(derivatives2[:, begin+1:end])[test_indices],
 		label=false,
 		palette=test_palette,
 		lw=2,
-		ylims=(-15,10),
+		ylims=(-10,5),
 		xlims=extrema(times_range[begin+1:end]),
 		# xlims=(0,0.25),
 		# yaxis=:log,
@@ -731,8 +683,7 @@ begin
 		dpi=500,
 	)
 
-	# vline!(p_dev2, [propagation_time], c=:forestgreen, label="Propagation time")
-	hline!(p_dev2, [threshold_2], c=:red, label="Threshold: $threshold_2")
+	vline!(p_dev2, [propagation_time], c=:forestgreen, label="Propagation time")
 
 	for (i, val) in enumerate(distro_pdf[test_indices])
 		vline!(
@@ -771,17 +722,24 @@ end
 # ╔═╡ fcb3dd19-8c34-4870-9cdb-05aa140da88a
 md"#### Combined derivative indicator"
 
+# ╔═╡ adcc7ec7-f8cb-4c62-a6c8-10b2396c3fb3
+begin
+	threshold_range = range(-10, 0, length=100)
+	@bind threshold Slider(
+		threshold_range,
+		default=threshold_range[argmin(abs.(threshold_range .- eps_parm))]
+	)
+end
+
 # ╔═╡ 5359ee63-8b88-4215-b216-58dd5af0c2b0
 begin
-	p_dev12 =plot(
+	p_dev12 = plot(
 		times_range[begin+1:end],
-		eachrow(
-			derivatives2[:, begin+1:end] .+ derivatives1[:,begin+1:end]
-		)[test_indices],
+		eachrow(indicator[:, begin+1:end])[test_indices],
 		label=false,
 		palette=test_palette,
 		lw=2,
-		ylims=(-15,10),
+		ylims=(-10,5),
 		xlims=extrema(times_range[begin+1:end]),
 		# xlims=(0,0.25),
 		# yaxis=:log,
@@ -789,6 +747,10 @@ begin
 		dpi=500,
 	)
 
+	hline!(p_dev12, [threshold], c=:red, label="Threshold: $threshold")
+	vline!(p_dev12, [propagation_time], c=:forestgreen, label="Propagation time")
+
+	
 	for (i, val) in enumerate(distro_pdf[test_indices])
 		vline!(
 			p_dev12,
@@ -819,15 +781,15 @@ md"#### Final stopping point"
 # ╔═╡ 123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
 begin
 	p_optimal = plot(
-		times_range,
-		eachrow(vmr_time)[test_indices],
+		times_range[begin+1:end],
+		eachrow(vmr_time[:, begin+1:end])[test_indices],
 		label=false,
 		palette=test_palette,
 		lw=2,
 		ylims=vmr_bounds,
-		xlims=extrema(times_range),
+		xlims=extrema(times_range[begin+1:end]),
 		# yaxis=:log,
-		dpi=500,
+		xaxis=:log
 	)
 
 	vline!(p_optimal, [propagation_time], c=:forestgreen, label="Propagation time")
@@ -949,6 +911,7 @@ end
 # ╟─534f3f9e-bce8-47d4-a9a7-303e21cfb0ef
 # ╟─24267c16-0b02-445d-8d96-4aecd17bb52e
 # ╟─ab810aa5-916c-4491-a346-ba098b052e15
+# ╟─3524b6e7-c3f7-4a0c-85d9-25340ac8d5d7
 # ╟─c22aeb1d-85b8-43d7-b938-d6ee5cf9d3e3
 # ╟─7f588fa0-525d-471a-9b3d-af73f4e083f5
 # ╟─7e79580a-4b79-48b6-984e-1b9cb351611a
@@ -987,19 +950,15 @@ end
 # ╟─9d33bbd6-2f00-4633-8500-ef1fd18dead9
 # ╟─b62dc21c-c3a5-482e-9ad4-97f0e161d3dc
 # ╠═d132f438-3764-4844-9634-7416f2e062b7
-# ╟─6ec06af2-1b94-4986-94e2-6b629c3b6205
-# ╟─62ea2943-0007-4278-8e70-e93e243ef1eb
 # ╟─7f9cf2ba-2085-4b80-a98a-9feb7fe0c4de
 # ╟─097c40b2-2b34-442d-8cb9-4c63b60abfc4
-# ╟─42a8a50a-6c62-4056-ad93-96e228a9e1d8
 # ╟─c20c3541-d935-423c-a07f-77d8e0679d8d
 # ╟─c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
-# ╟─ccaa659e-eecc-49a1-96cb-6ba4e3d65a65
 # ╟─36ff4668-62aa-4cb1-b732-2bc278d723e2
 # ╟─239d91b7-1a08-48aa-9e86-93e4c006bc06
-# ╟─7ccef59f-ae73-4480-a80a-5129ed7d3d61
 # ╟─c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
 # ╟─fcb3dd19-8c34-4870-9cdb-05aa140da88a
+# ╟─adcc7ec7-f8cb-4c62-a6c8-10b2396c3fb3
 # ╟─5359ee63-8b88-4215-b216-58dd5af0c2b0
 # ╟─8bd6926d-dbec-4858-9c72-5e0904bc71d7
 # ╟─123376cd-d638-41e9-a6bf-8ff9fcbe4b6b

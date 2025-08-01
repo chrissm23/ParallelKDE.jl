@@ -732,20 +732,22 @@ function identify_convergence!(
   vmr_prev2::AbstractArray{T,N},
   dlogt::Real,
   tol::Real,
+  alpha::Real,
+  stable_duration::Integer,
   current_minima::AbstractArray{T,N},
   stable_counters::AbstractArray{<:Integer,N},
-  stable_duration::Integer,
 ) where {T<:Real,N}
   @inbounds @simd for i in eachindex(vmr_current)
     results = find_stability(
       vmr_current[i],
       vmr_prev1[i],
       vmr_prev2[i],
-      stable_counters[i],
       dlogt,
       tol,
-      current_minima[i],
+      alpha,
       stable_duration,
+      current_minima[i],
+      stable_counters[i],
     )
     stable_counters[i] = results.counter
 
@@ -767,20 +769,22 @@ function identify_convergence!(
   vmr_prev2::AbstractArray{T,N},
   dlogt::Real,
   tol::Real,
+  alpha::Real,
+  stable_duration::Integer,
   current_minima::AbstractArray{T,N},
   stable_counters::AbstractArray{<:Integer,N},
-  stable_duration::Integer,
 ) where {T<:Real,N}
   Threads.@threads for i in eachindex(vmr_current)
     results = find_stability(
       vmr_current[i],
       vmr_prev1[i],
       vmr_prev2[i],
-      stable_counters[i],
       dlogt,
       tol,
-      current_minima[i],
+      alpha,
       stable_duration,
+      current_minima[i],
+      stable_counters[i],
     )
     stable_counters[i] = results.counter
 
@@ -802,15 +806,16 @@ function identify_convergence!(
   vmr_prev2::AnyCuArray{T,N},
   dlogt::Real,
   tol::Real,
+  alpha::Real,
+  stable_duration::Integer,
   current_minima::AnyCuArray{T,N},
   stable_counters::AnyCuArray{<:Integer,N},
-  stable_duration::Integer,
 ) where {T<:Real,N}
   n_points = length(vmr_current)
 
   # Stability detection
   stability_parms = CuArray{Float32}(
-    [dlogt, tol, stable_duration]
+    [dlogt, tol, alpha, stable_duration]
   )
   kernel = @cuda launch = false kernel_stable!(
     vmr_current,
@@ -844,20 +849,21 @@ function identify_convergence!(
   return nothing
 end
 
-@inline function find_stability(
+function find_stability(
   vmr_current::Real,
   vmr_prev1::Real,
   vmr_prev2::Real,
-  stability_counter::Integer,
   dlogt::Real,
   tol::Real,
-  current_minimum::Real,
+  alpha::Real,
   stability_duration::Integer,
+  current_minimum::Real,
+  stability_counter::Integer,
 )
   first_derivative = first_difference(vmr_current, vmr_prev1, dlogt)
   second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dlogt)
 
-  indicator = first_derivative + second_derivative
+  indicator = alpha * first_derivative + (1 - alpha) * second_derivative
 
   more_stable = false
   new_minimum = NaN
@@ -879,7 +885,11 @@ end
     new_minimum = current_minimum
   end
 
-  return (more_stable=more_stable, new_minimum=new_minimum, counter=stability_counter)
+  return (
+    more_stable=more_stable,
+    new_minimum=new_minimum,
+    counter=stability_counter,
+  )
 end
 
 function kernel_stable!(
@@ -900,6 +910,7 @@ function kernel_stable!(
 
   dlogt = parms[1]
   tol = parms[2]
+  alpha = parms[3]
   stable_duration = Z(parms[3])
 
   vmr_i = vmr_current[idx]
@@ -910,7 +921,7 @@ function kernel_stable!(
   diff2 = vmr_im1 - vmr_im2
   first_derivative = log(abs(diff1)) - log(2i32 * dlogt)
   second_derivative = log(abs(diff1 - diff2)) - log(dlogt^2i32)
-  indicator = first_derivative + second_derivative
+  indicator = alpha * first_derivative + (1.0f0 - alpha) * second_derivative
 
   counter = stability_counter[idx]
 

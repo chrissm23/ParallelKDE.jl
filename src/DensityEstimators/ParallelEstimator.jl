@@ -512,6 +512,7 @@ abstract type AbstractDensityState{N,T} end
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   eps::T
+  alpha::T
   stable_duration::UInt16
 
   # State
@@ -525,22 +526,29 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps::Real=-5.0,
+  eps::Real=-2.5,
+  alpha::Real=0.75,
   stable_duration::Integer,
 ) where {N}
+  if alpha < 0 || alpha > 1
+    throw(ArgumentError("alpha must be in the range [0, 1]"))
+  end
+
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
-    stable_counters=zeros(UInt16, dims),
     eps=T(eps),
-    indicator_minima=fill(T(NaN), dims),
+    alpha=T(alpha),
     stable_duration=UInt16(stable_duration),
+    indicator_minima=fill(T(NaN), dims),
+    stable_counters=zeros(UInt16, dims),
   )
 end
 
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   eps::T
+  alpha::T
   stable_duration::Int32
 
   # State
@@ -554,16 +562,22 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps::Real=-5.0f0,
+  eps::Real=-2.5f0,
+  alpha::Real=0.75f0,
   stable_duration::Integer,
 ) where {N}
+  if alpha < 0 || alpha > 1
+    throw(ArgumentError("alpha must be in the range [0, 1]"))
+  end
+
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
-    stable_counters=CUDA.zeros(UInt16, dims),
     eps=T(eps),
-    indicator_minima=CUDA.fill(T(NaN), dims),
+    alpha=T(alpha),
     stable_duration=Int32(stable_duration),
+    indicator_minima=CUDA.fill(T(NaN), dims),
+    stable_counters=CUDA.zeros(UInt16, dims),
   )
 end
 
@@ -586,9 +600,10 @@ function update_state!(
     density_state.f_prev2,
     dlogt,
     density_state.eps,
+    density_state.alpha,
+    density_state.stable_duration,
     density_state.indicator_minima,
     density_state.stable_counters,
-    density_state.stable_duration,
   )
 
   density_state.f_prev2 .= density_state.f_prev1
@@ -845,7 +860,7 @@ end
 function calculate_duration_steps(time_max, dt; fraction)
   if fraction === nothing
     fraction = 0.01
-  elseif fraction <= 0 || fraction > 1
+  elseif fraction < 0 || fraction > 1
     throw(ArgumentError("Fraction must be in the range [0, 1]"))
   end
   duration_steps = fraction .* time_max ./ dt
