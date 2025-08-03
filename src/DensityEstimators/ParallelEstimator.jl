@@ -513,11 +513,12 @@ abstract type AbstractDensityState{N,T} end
   # Parameters
   eps::T
   alpha::T
-  stable_duration::UInt16
+  threshold_crossing_steps::UInt16
 
   # State
   indicator_minima::Array{T,N}
-  stable_counters::Array{UInt16,N}
+  threshold_counter::Array{UInt16,N}
+  low_density_flags::Array{Bool,N}
 
   # Buffers
   f_prev1::Array{T,N}
@@ -526,12 +527,15 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps::Real=-2.5,
-  alpha::Real=0.75,
-  stable_duration::Integer,
+  eps::Real=2.5,
+  alpha::Real=0.5,
+  threshold_crossing_steps::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
+  end
+  if eps < 0
+    throw(ArgumentError("eps must be non-negative"))
   end
 
   DensityState{N,T}(;
@@ -539,9 +543,10 @@ function DensityState(
     f_prev2=fill(T(NaN), dims),
     eps=T(eps),
     alpha=T(alpha),
-    stable_duration=UInt16(stable_duration),
+    threshold_crossing_steps=UInt16(threshold_crossing_steps),
     indicator_minima=fill(T(NaN), dims),
-    stable_counters=zeros(UInt16, dims),
+    threshold_counter=zeros(UInt16, dims),
+    low_density_flags=fill(false, dims),
   )
 end
 
@@ -549,11 +554,12 @@ end
   # Parameters
   eps::T
   alpha::T
-  stable_duration::Int32
+  threshold_crossing_steps::Int32
 
   # State
   indicator_minima::CuArray{T,N}
-  stable_counters::CuArray{UInt16,N}
+  threshold_counter::CuArray{UInt16,N}
+  low_density_flags::CuArray{Bool,N}
 
   # Buffers
   f_prev1::CuArray{T,N}
@@ -562,12 +568,15 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps::Real=-2.5f0,
-  alpha::Real=0.75f0,
-  stable_duration::Integer,
+  eps::Real=2.5f0,
+  alpha::Real=0.5f0,
+  threshold_crossing_steps::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
+  end
+  if eps < 0
+    throw(ArgumentError("eps must be non-negative"))
   end
 
   CuDensityState{N,T}(;
@@ -575,9 +584,10 @@ function CuDensityState(
     f_prev2=CUDA.fill(T(NaN), dims),
     eps=T(eps),
     alpha=T(alpha),
-    stable_duration=Int32(stable_duration),
+    threshold_crossing_steps=Int32(threshold_crossing_steps),
     indicator_minima=CUDA.fill(T(NaN), dims),
-    stable_counters=CUDA.zeros(UInt16, dims),
+    threshold_counter=CUDA.zeros(UInt16, dims),
+    low_density_flags=CUDA.fill(false, dims),
   )
 end
 
@@ -601,9 +611,10 @@ function update_state!(
     dlogt,
     density_state.eps,
     density_state.alpha,
-    density_state.stable_duration,
+    density_state.threshold_crossing_steps,
     density_state.indicator_minima,
-    density_state.stable_counters,
+    density_state.threshold_counter,
+    density_state.low_density_flags,
   )
 
   density_state.f_prev2 .= density_state.f_prev1
@@ -692,7 +703,7 @@ function initialize_estimator_propagation(
   time_step::Union{Nothing,Real}=nothing,
   time_final::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
-  stable_duration::Real=0.01,
+  threshold_crossing_percentage::Real=0.01,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
@@ -705,10 +716,10 @@ function initialize_estimator_propagation(
   end
   times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-  stable_duration_steps = calculate_duration_steps(times[end], dt; fraction=stable_duration)
+  threshold_crossing_steps = calculate_duration_steps(times[end], dt; fraction=threshold_crossing_percentage)
 
   density_state = DensityState(
-    size(grid); T=T, stable_duration=stable_duration_steps, kwargs...
+    size(grid); T=T, threshold_crossing_steps=threshold_crossing_steps, kwargs...
   )
 
   return ParallelEstimator(

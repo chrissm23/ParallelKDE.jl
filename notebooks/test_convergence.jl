@@ -243,9 +243,9 @@ let
 		density_estimation,
 		:parallelEstimator,
 		# time_step=0.0005,
-		# stable_duration=0.001,
-		# eps=-2.5,
-		# alpha=0.75,
+		# threshold_crossing_percentage=0.05,
+		# eps=-2.0,
+		# alpha=0.5,
 		# time_final=0.5,
 		# n_bootstraps=1000,
 	)
@@ -304,7 +304,7 @@ begin
 		grid=grid_support,
 		# time_step=0.00005,
 		# eps=-2.5,
-		# alpha=0.75,
+		# alpha=0.5,
 		# stable_duration=0.001,
 		# time_final=2.0
 	)
@@ -724,7 +724,7 @@ md"#### Combined derivative indicator"
 
 # ╔═╡ adcc7ec7-f8cb-4c62-a6c8-10b2396c3fb3
 begin
-	threshold_range = range(-10, 0, length=100)
+	threshold_range = range(-5, 5, length=100)
 	@bind threshold Slider(
 		threshold_range,
 		default=threshold_range[argmin(abs.(threshold_range .- eps_parm))]

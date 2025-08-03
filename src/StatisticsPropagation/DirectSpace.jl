@@ -733,9 +733,10 @@ function identify_convergence!(
   dlogt::Real,
   tol::Real,
   alpha::Real,
-  stable_duration::Integer,
+  threshold_crossing_steps::Integer,
   current_minima::AbstractArray{T,N},
-  stable_counters::AbstractArray{<:Integer,N},
+  threshold_counter::AbstractArray{<:Integer,N},
+  low_density_flags::AbstractArray{Bool,N},
 ) where {T<:Real,N}
   @inbounds @simd for i in eachindex(vmr_current)
     results = find_stability(
@@ -745,11 +746,13 @@ function identify_convergence!(
       dlogt,
       tol,
       alpha,
-      stable_duration,
+      threshold_crossing_steps,
       current_minima[i],
-      stable_counters[i],
+      threshold_counter[i],
+      low_density_flags[i],
     )
-    stable_counters[i] = results.counter
+    threshold_counter[i] = results.counter
+    low_density_flags[i] = results.low_density
 
     if results.more_stable
       current_minima[i] = results.new_minimum
@@ -770,9 +773,10 @@ function identify_convergence!(
   dlogt::Real,
   tol::Real,
   alpha::Real,
-  stable_duration::Integer,
+  threshold_crossing_steps::Integer,
   current_minima::AbstractArray{T,N},
-  stable_counters::AbstractArray{<:Integer,N},
+  below_threshold_counter::AbstractArray{<:Integer,N},
+  above_threshold_counter::AbstractArray{<:Integer,N},
 ) where {T<:Real,N}
   Threads.@threads for i in eachindex(vmr_current)
     results = find_stability(
@@ -782,11 +786,13 @@ function identify_convergence!(
       dlogt,
       tol,
       alpha,
-      stable_duration,
+      threshold_crossing_steps,
       current_minima[i],
-      stable_counters[i],
+      below_threshold_counter[i],
+      above_threshold_counter[i],
     )
-    stable_counters[i] = results.counter
+    below_threshold_counter[i] = results.below_counter
+    above_threshold_counter[i] = results.above_counter
 
     if results.more_stable
       current_minima[i] = results.new_minimum
@@ -856,29 +862,53 @@ function find_stability(
   dlogt::Real,
   tol::Real,
   alpha::Real,
-  stability_duration::Integer,
+  threshold_crossing_steps::Integer,
   current_minimum::Real,
-  stability_counter::Integer,
+  threshold_counter::Integer,
+  low_denisty_flag::Integer,
 )
+  tol_low = -tol
+  tol_high = tol
+
   first_derivative = first_difference(vmr_current, vmr_prev1, dlogt)
   second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dlogt)
-
   indicator = alpha * first_derivative + (1 - alpha) * second_derivative
 
   more_stable = false
   new_minimum = NaN
-  if indicator < tol
-    stability_counter += one(stability_counter)
 
-    if stability_counter > stability_duration
-      if (indicator < current_minimum) || isnan(current_minimum)
-        more_stable = true
-        new_minimum = indicator
+  if !low_denisty_flag
+    if indicator > tol_high
+      # Look for a sustained run above tol_high to switch on
+      threshold_counter += one(threshold_counter)
+      if threshold_counter > threshold_crossing_steps
+        low_denisty_flag = true
+        threshold_counter = zero(threshold_counter)
       end
+    elseif indicator < tol_low
+      # Look for a sustained run below tol_low to save minimum
+      threshold_counter += one(threshold_counter)
+      if threshold_counter > threshold_crossing_steps
+        if (indicator < current_minimum) || isnan(current_minimum)
+          more_stable = true
+          new_minimum = indicator
+        end
+      end
+    else
+      threshold_counter = zero(threshold_counter)
     end
-
   else
-    stability_counter = zero(stability_counter)
+    if indicator < 0
+      threshold_counter += one(threshold_counter)
+      if threshold_counter > threshold_crossing_steps
+        if isnan(current_minimum)
+          more_stable = true
+          new_minimum = indicator
+        end
+      end
+    else
+      threshold_counter = zero(threshold_counter)
+    end
   end
 
   if isnan(new_minimum)
@@ -888,7 +918,8 @@ function find_stability(
   return (
     more_stable=more_stable,
     new_minimum=new_minimum,
-    counter=stability_counter,
+    counter=threshold_counter,
+    low_density=low_denisty_flag,
   )
 end
 
