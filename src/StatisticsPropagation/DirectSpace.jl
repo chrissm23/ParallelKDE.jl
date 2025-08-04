@@ -792,7 +792,7 @@ function identify_convergence!(
       low_density_flags[i],
     )
     threshold_counter[i] = results.counter
-    low_density_flags[i] = results.low_denisty
+    low_density_flags[i] = results.low_density
 
     if results.more_stable
       current_minima[i] = results.new_minimum

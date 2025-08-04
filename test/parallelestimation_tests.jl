@@ -126,15 +126,15 @@
 
     @testset "Density state tests" begin
       density_state = ParallelKDE.DensityEstimators.DensityState(
-        size(grid), stable_duration=10
+        size(grid), threshold_crossing_steps=10
       )
 
       # Parameter tests
       @test isfinite(density_state.eps)
-      @test isfinite(density_state.stable_duration)
+      @test isfinite(density_state.threshold_crossing_steps)
       # State arrays test
       @test density_state.indicator_minima isa Array{Float64,n_dims}
-      @test density_state.stable_counters isa Array{UInt16,n_dims}
+      @test density_state.threshold_counters isa Array{UInt16,n_dims}
       # Buffers tests
       @test all(isnan.(density_state.f_prev1))
       @test all(isnan.(density_state.f_prev2))
@@ -188,7 +188,7 @@
       grid_fourier = fftgrid(grid)
 
       density_state = ParallelKDE.DensityEstimators.DensityState(
-        size(grid), stable_duration=10
+        size(grid), threshold_crossing_steps=10
       )
 
       dt = @SVector fill(0.2, n_dims)
@@ -368,15 +368,15 @@ if CUDA.functional()
 
     @testset "Density state tests" begin
       density_state = ParallelKDE.DensityEstimators.CuDensityState(
-        size(grid), stable_duration=10
+        size(grid), threshold_crossing_steps=10
       )
 
       # Parameter tests
       @test isfinite(density_state.eps)
-      @test isfinite(density_state.stable_duration)
+      @test isfinite(density_state.threshold_crossing_steps)
       # State arrays test
       @test density_state.indicator_minima isa CuArray{Float32,n_dims}
-      @test density_state.stable_counters isa CuArray{UInt16,n_dims}
+      @test density_state.threshold_counters isa CuArray{UInt16,n_dims}
       # Buffers tests
       @test all(isnan.(density_state.f_prev1))
       @test all(isnan.(density_state.f_prev2))
@@ -430,7 +430,7 @@ if CUDA.functional()
       grid_fourier = fftgrid(grid)
 
       density_state = ParallelKDE.DensityEstimators.CuDensityState(
-        size(grid), stable_duration=10
+        size(grid), threshold_crossing_steps=10
       )
 
       dt = CUDA.fill(0.2f0, n_dims)

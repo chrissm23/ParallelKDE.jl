@@ -517,7 +517,7 @@ abstract type AbstractDensityState{N,T} end
 
   # State
   indicator_minima::Array{T,N}
-  threshold_counter::Array{UInt16,N}
+  threshold_counters::Array{UInt16,N}
   low_density_flags::Array{Bool,N}
 
   # Buffers
@@ -545,7 +545,7 @@ function DensityState(
     alpha=T(alpha),
     threshold_crossing_steps=UInt16(threshold_crossing_steps),
     indicator_minima=fill(T(NaN), dims),
-    threshold_counter=zeros(UInt16, dims),
+    threshold_counters=zeros(UInt16, dims),
     low_density_flags=fill(false, dims),
   )
 end
@@ -558,7 +558,7 @@ end
 
   # State
   indicator_minima::CuArray{T,N}
-  threshold_counter::CuArray{UInt16,N}
+  threshold_counters::CuArray{UInt16,N}
   low_density_flags::CuArray{Bool,N}
 
   # Buffers
@@ -586,7 +586,7 @@ function CuDensityState(
     alpha=T(alpha),
     threshold_crossing_steps=Int32(threshold_crossing_steps),
     indicator_minima=CUDA.fill(T(NaN), dims),
-    threshold_counter=CUDA.zeros(UInt16, dims),
+    threshold_counters=CUDA.zeros(UInt16, dims),
     low_density_flags=CUDA.fill(false, dims),
   )
 end
@@ -613,7 +613,7 @@ function update_state!(
     density_state.alpha,
     density_state.threshold_crossing_steps,
     density_state.indicator_minima,
-    density_state.threshold_counter,
+    density_state.threshold_counters,
     density_state.low_density_flags,
   )
 
