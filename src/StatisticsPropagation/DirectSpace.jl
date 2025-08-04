@@ -775,8 +775,8 @@ function identify_convergence!(
   alpha::Real,
   threshold_crossing_steps::Integer,
   current_minima::AbstractArray{T,N},
-  below_threshold_counter::AbstractArray{<:Integer,N},
-  above_threshold_counter::AbstractArray{<:Integer,N},
+  threshold_counter::AbstractArray{<:Integer,N},
+  low_density_flags::AbstractArray{Bool,N},
 ) where {T<:Real,N}
   Threads.@threads for i in eachindex(vmr_current)
     results = find_stability(
@@ -788,11 +788,11 @@ function identify_convergence!(
       alpha,
       threshold_crossing_steps,
       current_minima[i],
-      below_threshold_counter[i],
-      above_threshold_counter[i],
+      threshold_counter[i],
+      low_density_flags[i],
     )
-    below_threshold_counter[i] = results.below_counter
-    above_threshold_counter[i] = results.above_counter
+    threshold_counter[i] = results.counter
+    low_density_flags[i] = results.low_denisty
 
     if results.more_stable
       current_minima[i] = results.new_minimum
@@ -813,15 +813,16 @@ function identify_convergence!(
   dlogt::Real,
   tol::Real,
   alpha::Real,
-  stable_duration::Integer,
+  threshold_crossing_steps::Integer,
   current_minima::AnyCuArray{T,N},
-  stable_counters::AnyCuArray{<:Integer,N},
+  threshold_counter::AnyCuArray{<:Integer,N},
+  low_density_flags::AnyCuArray{Bool,N}
 ) where {T<:Real,N}
   n_points = length(vmr_current)
 
   # Stability detection
   stability_parms = CuArray{Float32}(
-    [dlogt, tol, alpha, stable_duration]
+    [dlogt, tol, alpha, threshold_crossing_steps]
   )
   kernel = @cuda launch = false kernel_stable!(
     vmr_current,
@@ -830,7 +831,8 @@ function identify_convergence!(
     means,
     density,
     current_minima,
-    stable_counters,
+    threshold_counter,
+    low_density_flags,
     stability_parms,
   )
   config = launch_configuration(kernel.fun)
@@ -845,7 +847,8 @@ function identify_convergence!(
       means,
       density,
       current_minima,
-      stable_counters,
+      threshold_counter,
+      low_density_flags,
       stability_parms;
       threads,
       blocks
@@ -867,9 +870,6 @@ function find_stability(
   threshold_counter::Integer,
   low_denisty_flag::Integer,
 )
-  tol_low = -tol
-  tol_high = tol
-
   first_derivative = first_difference(vmr_current, vmr_prev1, dlogt)
   second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dlogt)
   indicator = alpha * first_derivative + (1 - alpha) * second_derivative
@@ -878,14 +878,14 @@ function find_stability(
   new_minimum = NaN
 
   if !low_denisty_flag
-    if indicator > tol_high
+    if indicator > tol
       # Look for a sustained run above tol_high to switch on
       threshold_counter += one(threshold_counter)
       if threshold_counter > threshold_crossing_steps
         low_denisty_flag = true
         threshold_counter = zero(threshold_counter)
       end
-    elseif indicator < tol_low
+    elseif indicator < -tol
       # Look for a sustained run below tol_low to save minimum
       threshold_counter += one(threshold_counter)
       if threshold_counter > threshold_crossing_steps
@@ -898,13 +898,11 @@ function find_stability(
       threshold_counter = zero(threshold_counter)
     end
   else
-    if indicator < 0
+    if indicator < tol / 4
       threshold_counter += one(threshold_counter)
-      if threshold_counter > threshold_crossing_steps
-        if isnan(current_minimum)
-          more_stable = true
-          new_minimum = indicator
-        end
+      if (threshold_counter > threshold_crossing_steps) && isnan(current_minimum)
+        more_stable = true
+        new_minimum = indicator
       end
     else
       threshold_counter = zero(threshold_counter)
@@ -930,7 +928,8 @@ function kernel_stable!(
   means::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   density::CuDeviceArray{T,N},
   current_minima::CuDeviceArray{T,N},
-  stability_counter::CuDeviceArray{Z,N},
+  threshold_counter::CuDeviceArray{Z,N},
+  low_density_flags::CuDeviceArray{Bool,N},
   parms::CuDeviceArray{Float32,1},
 ) where {T<:Real,N,Z<:Integer}
   idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
@@ -942,7 +941,7 @@ function kernel_stable!(
   dlogt = parms[1]
   tol = parms[2]
   alpha = parms[3]
-  stable_duration = Z(parms[3])
+  threshold_crossing_steps = Z(parms[4])
 
   vmr_i = vmr_current[idx]
   vmr_im1 = vmr_prev1[idx]
@@ -954,23 +953,41 @@ function kernel_stable!(
   second_derivative = log(abs(diff1 - diff2)) - log(dlogt^2i32)
   indicator = alpha * first_derivative + (1.0f0 - alpha) * second_derivative
 
-  counter = stability_counter[idx]
+  counter = threshold_counter[idx]
 
-  if indicator < tol
-    counter += one(Z)
-
-    if counter >= stable_duration
-      if indicator < current_minima[idx] || isnan(current_minima[idx])
-        current_minima[idx] = indicator
-        density[idx] = means[idx]
+  if !low_density_flags[idx]
+    if indicator > tol
+      # Look for a sustained run above tol_high to switch on
+      counter += one(counter)
+      if counter > threshold_crossing_steps
+        low_density_flags[idx] = true
+        counter = zero(counter)
       end
+    elseif indicator < -tol
+      # Look for a sustained run below tol_low to save minimum
+      counter += one(counter)
+      if counter > threshold_crossing_steps
+        if (indicator < current_minima[idx]) || isnan(current_minima[idx])
+          density[idx] = means[idx]
+          current_minima[idx] = indicator
+        end
+      end
+    else
+      counter = zero(counter)
     end
-
   else
-    counter = zero(Z)
+    if indicator < 0.0f0
+      counter += one(counter)
+      if (counter > threshold_crossing_steps) && isnan(current_minima[idx])
+        density[idx] = means[idx]
+        current_minima[idx] = indicator
+      end
+    else
+      counter = zero(counter)
+    end
   end
 
-  stability_counter[idx] = counter
+  threshold_counter[idx] = counter
 
   return
 end

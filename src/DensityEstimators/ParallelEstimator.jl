@@ -527,8 +527,8 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps::Real=2.5,
-  alpha::Real=0.5,
+  eps::Real=2.0,
+  alpha::Real=0.75,
   threshold_crossing_steps::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
@@ -568,8 +568,8 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps::Real=2.5f0,
-  alpha::Real=0.5f0,
+  eps::Real=2.0f0,
+  alpha::Real=0.75f0,
   threshold_crossing_steps::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
@@ -719,7 +719,7 @@ function initialize_estimator_propagation(
   threshold_crossing_steps = calculate_duration_steps(times[end], dt; fraction=threshold_crossing_percentage)
 
   density_state = DensityState(
-    size(grid); T=T, threshold_crossing_steps=threshold_crossing_steps, kwargs...
+    size(grid); T=T, threshold_crossing_steps, kwargs...
   )
 
   return ParallelEstimator(
@@ -743,7 +743,7 @@ function initialize_estimator_propagation(
   time_step=nothing,
   time_final=nothing,
   n_steps=nothing,
-  stable_duration::Real=0.01f0,
+  threshold_crossing_percentage::Real=0.01f0,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
@@ -756,10 +756,10 @@ function initialize_estimator_propagation(
   end
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
-  stable_duration_steps = calculate_duration_steps(times[:, end], dt; fraction=stable_duration)
+  threshold_crossing_steps = calculate_duration_steps(times[:, end], dt; fraction=threshold_crossing_percentage)
 
   density_state = CuDensityState(
-    size(grid); T=typeof(kde).parameters[2], stable_duration=stable_duration_steps, kwargs...
+    size(grid); T=typeof(kde).parameters[2], threshold_crossing_steps, kwargs...
   )
 
   return CuParallelEstimator(

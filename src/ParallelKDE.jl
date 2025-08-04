@@ -121,7 +121,19 @@ end
 has_grid(density_estimation::DensityEstimation) = density_estimation.grid !== nothing
 get_grid(density_estimation::DensityEstimation) = density_estimation.grid
 
-KDEs.get_density(density_estimation::DensityEstimation) = get_density(density_estimation.kde)
+function KDEs.get_density(density_estimation::DensityEstimation; normalize=false, dx=nothing)
+  density = get_density(density_estimation.kde)
+  if normalize && has_grid(density_estimation)
+    grid = density_estimation.grid
+    density ./= sum(density) * prod(spacings(grid))
+  elseif normalize && dx !== nothing
+    density ./= sum(density) * dx
+  elseif normalize
+    throw(ArgumentError("Normalization requires a grid or dx to be specified."))
+  end
+
+  return density
+end
 
 function estimate_density!(
   density_estimation::DensityEstimation,

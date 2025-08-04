@@ -237,20 +237,27 @@ let
 	density_estimation = initialize_estimation(
 		data_filtered,
 		grid=true,
-		grid_ranges=distro_support
+		grid_ranges=distro_support,
+		# device=:cuda,
 	)
 	estimate_density!(
 		density_estimation,
 		:parallelEstimator,
 		# time_step=0.0005,
-		# threshold_crossing_percentage=0.05,
-		# eps=-2.0,
-		# alpha=0.5,
+		threshold_crossing_percentage=0.01,
+		eps=2.0,
+		alpha=0.75,
 		# time_final=0.5,
 		# n_bootstraps=1000,
 	)
-	
+
 	density_estimated = get_density(density_estimation)
+	# density_estimated_d = get_density(density_estimation)
+	# density_estimated = Array(density_estimated_d)
+
+	dx = prod(spacings(get_grid(density_estimation)))
+	norm = sum(density_estimated) * dx
+	density_estimated .= density_estimated / norm
 
 	p_estimate = plot(
 		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
@@ -275,7 +282,6 @@ let
 	
 	println("NaNs: ", findall(isnan, density_estimated))
 
-	dx = prod(spacings(get_grid(density_estimation)))
 	mise = calculate_mise(density_estimated, distro_pdf, dx)
 	println("MISE: ", mise)
 
@@ -303,7 +309,7 @@ begin
 		method,
 		grid=grid_support,
 		# time_step=0.00005,
-		# eps=-2.5,
+		eps=2.0,
 		# alpha=0.5,
 		# stable_duration=0.001,
 		# time_final=2.0
