@@ -666,7 +666,7 @@ function initialize_estimator(
   device = get_device(kde)
 
   if get_device(grid) != device
-    throw(ArgumentError("KDE device $device does not match Grid device $(get_device(grid))"))
+    throw(ArgumentError("KDE device $device does not match Grid device $(get_device(grid))."))
   end
 
   means_bootstraps, vars_bootstraps = initialize_kernels(

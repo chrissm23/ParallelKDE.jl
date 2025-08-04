@@ -77,5 +77,6 @@ function estimate!(
 end
 
 include("ParallelEstimator.jl")
+include("RoTEstimator.jl")
 
 end
