@@ -1,10 +1,14 @@
 abstract type AbstractRoT end
 
-function propagation_time(::AbstractRoT)
+function initialize_rot(::Val{S}, args...; kwargs...) where {S<:Symbol}
+  throw(ArgumentError("Rule of thumb $S not implemented."))
+end
+
+function propagation_time(::AbstractRoT, args...; kwargs...)
   throw(ArgumentError("Propagation time not defined for this rule of thumb."))
 end
 
-struct SilvermanRoT{N,T<:Real} <: AbstractRoT
+struct SilvermanRoT <: AbstractRoT
   n_dims::Int
   n_samples::Int
 end
@@ -23,7 +27,7 @@ function propagation_time(rot::SilvermanRoT, data::AbstractMatrix{T}) where {T<:
   return factor .* sqrt.(diag(cov_matrix))
 end
 
-struct ScottRoT{N,T<:Real} <: AbstractRoT
+struct ScottRoT <: AbstractRoT
   n_dims::Int
   n_samples::Int
 end
@@ -46,15 +50,15 @@ abstract type AbstractRoTEstimator <: AbstractEstimator end
 
 struct RoTEstimator{N,R<:AbstractRoT,T<:Real,M,P<:Real,S<:Real} <: AbstractRoTEstimator
   rule_of_thumb::R
-  fourier_density::AbstractArray{T,N}
+  fourier_density::AbstractArray{Complex{T},M}
   grid_direct::Grid{N,P,M}
   grid_fourier::Grid{N,P,M}
   time_propagated::SVector{N,S}
 end
 function RoTEstimator(
   rule_of_thumb::AbstractRoT,
-  data::AbstractMatrix{N,S},
-  fourier_density::AbstractArray{Complex{T},N},
+  data::AbstractMatrix{S},
+  fourier_density::AbstractArray{Complex{T},M},
   grid_direct::Grid{N,P,M},
 ) where {N,T<:Real,M,P<:Real,S<:Real}
   grid_fourier = fftgrid(grid_direct)
@@ -73,7 +77,7 @@ end
 
 struct CuRoTEstimator{N,R<:AbstractRoT,T<:Real,M,P<:Real,S<:Real} <: AbstractRoTEstimator
   rule_of_thumb::R
-  fourier_density::CuArray{Complex{T},N}
+  fourier_density::CuArray{Complex{T},M}
   grid_direct::CuGrid{N,P,M}
   grid_fourier::CuGrid{N,P,M}
   time_propagated::CuVector{N,S}
@@ -81,7 +85,7 @@ end
 function CuRoTEstimator(
   rule_of_thumb::AbstractRoT,
   data::CuMatrix{N,S},
-  fourier_density::CuArray{T,N},
+  fourier_density::CuArray{Complex{T},M},
   grid_direct::CuGrid{N,P,M},
 ) where {N,T<:Real,M,P<:Real,S<:Real}
   grid_fourier = fftgrid(grid_direct)
@@ -116,7 +120,7 @@ function initialize_estimator(
 
   n_samples = get_nsamples(kde)
   n_dims = ndims(grid)
-  rot = initialize_rot(rule_of_thumb, n_dims, n_samples, kwargs...)
+  rot = initialize_rot(Val(rule_of_thumb), n_dims, n_samples, kwargs...)
 
   initial_density = initialize_density(device, kde, grid; method)
 
@@ -124,7 +128,7 @@ function initialize_estimator(
 end
 
 function estimate!(
-  estimator::RoTEstimator,
+  estimator::AbstractRoTEstimator,
   kde::AbstractKDE;
   method::Symbol,
   kwargs...
@@ -142,7 +146,7 @@ function initialize_density(
   grid::AbstractGrid{N,<:Real,M};
   method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M}
-  initial_density = initialize_dirac_sequence(Val(method), kde.data, grid, nothing, T=T)
+  initial_density = initialize_dirac_sequence(kde.data; grid, method)
 
   plan = plan_fft!(selectdim(initial_density, ndims(initial_density), 1))
   fourier_statistics!(Val(method), initial_density, plan)
@@ -155,7 +159,7 @@ function initialize_density(
   grid::CuGrid{N,<:Real,M};
   method=Devices.GPU_CUDA,
 ) where {N,T<:Real,M}
-  initial_density = initialize_dirac_sequence(Val(method), kde.data, grid, nothing, T=T)
+  initial_density = initialize_dirac_sequence(kde.data; grid, device=:cuda, method)
 
   plan = plan_fft!(initial_density, ntuple(i -> i, N))
   fourier_statistics!(Val(method), initial_density, plan)
@@ -170,9 +174,7 @@ function propagate_kernels!(
 ) where {N,T<:Real}
   initial_density = estimator.fourier_density
   time_propagated = estimator.time_propagated
-  grid = estimator.grid_fourier
-
-  grid_array = get_coordinates(grid)
+  grid_array = get_coordinates(estimator.grid_fourier)
 
   propagate_statistics!(
     Val(method),
@@ -188,7 +190,7 @@ function ifft_density!(
   kde::AbstractKDE;
   method=Devices.CPU_SERIAL,
 ) where {N,T<:Real}
-  ifft_plan = plan_ifft!(selectdim(propagated_kernels, ndims(propagated_kernels), 1))
+  ifft_plan = plan_ifft!(selectdim(propagated_kernels, N, 1))
   ifourier_statistics!(Val(method), propagated_kernels, ifft_plan)
 
   copy_density!(Val(method), kde.density, propagated_kernels)
@@ -200,10 +202,47 @@ function ifft_density!(
   kde::CuKDE;
   method=Devices.GPU_CUDA,
 ) where {N,T<:Real}
-  ifft_plan = plan_ifft!(propagated_kernels, ntuple(i -> i, N))
+  ifft_plan = plan_ifft!(propagated_kernels, ntuple(i -> i, N - 1))
   ifourier_statistics!(Val(method), propagated_kernels, ifft_plan)
 
   copy_density!(Val(method), kde.density, propagated_kernels)
+
+  return nothing
+end
+
+function copy_density!(
+  ::Val{Devices.CPU_SERIAL},
+  density::AbstractArray{T,N},
+  propagated_kernels::AbstractArray{Complex{T},M},
+) where {N,T<:Real,M}
+  density_fourier = selectdim(propagated_kernels, M, 1)
+  @inbounds @simd for i in eachindex(density)
+    density_fourier_i = density_fourier[i]
+    density[i] = abs(density_fourier_i)
+  end
+
+  return nothing
+end
+function copy_density!(
+  ::Val{Devices.CPU_THREADED},
+  density::AbstractArray{T,N},
+  propagated_kernels::AbstractArray{Complex{T},M},
+) where {N,T<:Real,M}
+  density_fourier = selectdim(propagated_kernels, M, 1)
+  @inbounds Threads.@threads for i in eachindex(density)
+    density_fourier_i = density_fourier[i]
+    density[i] = abs(density_fourier_i)
+  end
+
+  return nothing
+end
+function copy_density!(
+  ::Val{Devices.GPU_CUDA},
+  density::AnyCuArray{T,N},
+  propagated_kernels::AnyCuArray{Complex{T},M},
+) where {N,T<:Real,M}
+  density_fourier = selectdim(propagated_kernels, M, 1)
+  @. density = abs(density_fourier)
 
   return nothing
 end

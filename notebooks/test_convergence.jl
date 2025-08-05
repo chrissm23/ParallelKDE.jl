@@ -227,6 +227,68 @@ function calculate_mise(
 	return sum((f1 .- f2) .^ 2) * dx / n_points
 end
 
+# ╔═╡ cc7df97b-0138-4289-843d-8b5046dea0d9
+let
+	data_filtered = data[
+		(data .>= minimum(distro_support)) .& (data .<= maximum(distro_support))
+	]
+	data_filtered = reshape(data_filtered, 1, length(data_filtered))
+	Random.seed!(random_seed)
+	density_estimation = initialize_estimation(
+		data_filtered,
+		grid=true,
+		grid_ranges=distro_support,
+		# device=:cuda,
+	)
+	estimate_density!(
+		density_estimation,
+		:rotEstimator,
+		rule_of_thumb=:silverman,
+		# time_step=0.0005,
+		# threshold_crossing_percentage=0.01,
+		# eps=2.0,
+		# alpha=0.75,
+		# time_final=0.5,
+		# n_bootstraps=1000,
+	)
+
+	density_estimated = get_density(density_estimation)
+	# density_estimated_d = get_density(density_estimation)
+	# density_estimated = Array(density_estimated_d)
+
+	dx = prod(spacings(get_grid(density_estimation)))
+	norm = sum(density_estimated) * dx
+	density_estimated .= density_estimated / norm
+
+	p_estimate = plot(
+		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
+	)
+	plot!(
+		p_estimate,
+		distro_support,
+		density_estimated,
+		label="Estimation",
+		lw=2,
+		lc=:forestgreen
+	)
+
+	for (i, point) in enumerate(test_points)
+		vline!(
+			p_estimate,
+			[point],
+			label=false,
+			c=test_palette[i],
+		)
+	end
+	
+	println("NaNs: ", findall(isnan, density_estimated))
+
+	mise = calculate_mise(density_estimated, distro_pdf, dx)
+	println("MISE: ", mise)
+
+	p_estimate
+end
+
 # ╔═╡ bbbd2e78-3a28-4783-9601-c883cf99d185
 let
 	data_filtered = data[
@@ -244,9 +306,9 @@ let
 		density_estimation,
 		:parallelEstimator,
 		# time_step=0.0005,
-		threshold_crossing_percentage=0.01,
-		eps=2.0,
-		alpha=0.75,
+		# threshold_crossing_percentage=0.01,
+		# eps=2.0,
+		# alpha=0.75,
 		# time_final=0.5,
 		# n_bootstraps=1000,
 	)
@@ -943,6 +1005,7 @@ end
 # ╟─d048004b-ecbf-4455-944b-4a7ea105a50e
 # ╟─23b14634-08bf-4a96-8c5c-361392fa4ad2
 # ╟─1200e59e-388b-4c62-b2a8-084098311922
+# ╠═cc7df97b-0138-4289-843d-8b5046dea0d9
 # ╠═bbbd2e78-3a28-4783-9601-c883cf99d185
 # ╟─75e020f4-5682-46f3-8dff-7abeba257818
 # ╠═c7ae5c52-72ca-4449-bfa6-18fb36003ace
