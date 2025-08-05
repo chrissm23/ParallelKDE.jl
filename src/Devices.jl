@@ -44,6 +44,11 @@ const DEFAULT_IMPLEMENTATIONS = Dict(
   IsCUDA() => GPU_CUDA,
 )
 
+"""
+    get_device(device::AbstractDevice)
+
+Obtain the device object for a given device type.
+"""
 get_device(::Any) = DeviceNotSpecified()
 get_device(::IsCPU) = IsCPU()
 get_device(::IsCUDA) = IsCUDA()
@@ -63,9 +68,21 @@ function get_available_memory(::IsCUDA)
   return CUDA.memory_info()[1] / 1024^2
 end
 
+"""
+    is_valid_implementation(device::AbstractDevice, implementation::Symbol)
+
+Check if the given implementation is valid for the specified device.
+"""
 is_valid_implementation(device::AbstractDevice, implementation::Symbol) =
   implementation in get(DEVICE_IMPLEMENTATIONS, device, Set())
 
+"""
+    ensure_valid_implementation(device::AbstractDevice, implementation::Symbol)
+
+Ensure that the specified implementation is valid for the given device.
+
+If the implementation is not valid, an `ArgumentError` is thrown.
+"""
 function ensure_valid_implementation(device::AbstractDevice, implementation::Symbol)
   if !is_valid_implementation(device, implementation)
     throw(ArgumentError("Invalid implementation $implementation for device $device"))
@@ -76,6 +93,11 @@ end
 ensure_valid_implementation(device::Symbol, implementation::Symbol) =
   ensure_valid_implementation(get_device(device), implementation)
 
+"""
+    convert32(x)
+
+Converts into a 32-bit representation if `x` is a `Float64`, `CuArray{Float64}`, or `Array{Float64}`.
+"""
 function convert32(x)
   if x isa Float64
     return Float32(x)
@@ -87,6 +109,12 @@ function convert32(x)
     return x
   end
 end
+"""
+    convert32(args...; kwargs...)
+
+If multiple arguments are provided, converts each argument to a 32-bit representation if applicable,
+and returns a tuple of the converted arguments and a dictionary of converted keyword arguments.
+"""
 function convert32(args...; kwargs...)
   kwargs_32 = (; (k => convert32(v) for (k, v) in kwargs)...)
   args_32 = (convert32(arg) for arg in args)

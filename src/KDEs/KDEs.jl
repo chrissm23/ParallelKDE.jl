@@ -16,21 +16,49 @@ export AbstractKDE,
   get_nsamples,
   bootstrap_indices
 
+"""
+    AbstractKDE{N,T,S}
+
+Supertype for kernel density estimation (KDEs) with `N` dimensions, `T` type for density values,
+and `S` type for data points.
+"""
 abstract type AbstractKDE{N,T,S} end
 
+"""
+    KDE{N,T<:Real,S<:Real}
+
+CPU object for kernel density estimation (KDE) with `N` dimensions, `T` type for density values,
+and `S` type for data points.
+"""
 struct KDE{N,T<:Real,S<:Real} <: AbstractKDE{N,T,S}
   data::Vector{SVector{N,S}}
   density::Array{T,N}
 end
 
+"""
+    CuKDE{N,T<:Real,S<:Real}
+
+CUDA object for kernel density estimation (KDE) with `N` dimensions, `T` type for density values,
+and
+"""
 struct CuKDE{N,T<:Real,S<:Real} <: AbstractKDE{N,T,S}
   data::CuMatrix{S}
   density::CuArray{T,N}
 end
 
+"""
+    get_device(kde::AbstractKDE)
+
+Identify the device type used by the kernel density estimation (KDE) object.
+"""
 Devices.get_device(::KDE) = IsCPU()
 Devices.get_device(::CuKDE) = IsCUDA()
 
+"""
+    initialize_kde(data, dims...; device=:cpu)
+
+Create a kernel density estimation (KDE) object with the given data and dimensions.
+"""
 initialize_kde(data, dims::Vararg{Integer}; device=:cpu) = initialize_kde(data, dims; device)
 function initialize_kde(
   data::Union{AbstractVector{<:AbstractVector{T}},AbstractMatrix{T}},
@@ -45,7 +73,6 @@ function initialize_kde(
 
   return initialize_kde(device_type, data, dims)
 end
-
 function initialize_kde(
   ::IsCPU,
   data::Union{AbstractVector{<:AbstractVector{<:Real}},AbstractMatrix{<:Real}},
@@ -83,6 +110,11 @@ function initialize_kde(
   return CuKDE(data_reinterpreted, density)
 end
 
+"""
+    get_data(kde::AbstractKDE)
+
+Return a view of the data stored in the kernel density estimation (KDE) object.
+"""
 function get_data(kde::KDE{N,T,S}) where {N,T<:Real,S<:Real}
   if N == 1
     return reshape(reinterpret(reshape, S, kde.data), 1, :)
@@ -92,12 +124,27 @@ function get_data(kde::KDE{N,T,S}) where {N,T<:Real,S<:Real}
 end
 get_data(kde::CuKDE) = kde.data
 
+"""
+    get_density(kde::AbstractKDE)
+
+Return the density values stored in the kernel density estimation (KDE) object.
+"""
 get_density(kde::KDE) = kde.density
 get_density(kde::CuKDE) = kde.density
 
+"""
+    get_nsamples(kde::AbstractKDE)
+
+Return the number of samples in the kernel density estimation (KDE) object.
+"""
 get_nsamples(kde::KDE) = length(kde.data)
 get_nsamples(kde::CuKDE) = size(kde.data, 2)
 
+"""
+    set_density!(kde::AbstractKDE, density::AbstractArray)
+
+Set the density values in the kernel density estimation (KDE) object to the provided array.
+"""
 function set_density!(kde::KDE{N,T,<:Real}, density::AbstractArray{T,N}) where {N,T<:Real}
   kde.density .= density
   return nothing
@@ -107,6 +154,11 @@ function set_density!(kde::CuKDE{N,T,<:Real}, density::AbstractArray{T,N}) where
   return nothing
 end
 
+"""
+    set_nan_density!(kde::AbstractKDE)
+
+Set the density values in the kernel density estimation (KDE) object to NaN.
+"""
 function set_nan_density!(kde::KDE{N,T,<:Real}) where {N,T<:Real}
   fill!(kde.density, T(NaN))
   return nothing
@@ -116,6 +168,14 @@ function set_nan_density!(kde::CuKDE{N,T,<:Real}) where {N,T<:Real}
   return nothing
 end
 
+"""
+    bootstrap_indices(kde::AbstractKDE, n_bootstraps)
+
+Obtain a matrix of bootstrap indices for the kernel density estimation (KDE) object.
+
+The matrix has `n_samples` rows and `n_bootstraps` columns, where each column contains
+indices sampled with replacement from the range `1:n_samples`.
+"""
 function bootstrap_indices(kde::KDE, n_bootstraps::Integer)
   n_samples = get_nsamples(kde)
   if n_bootstraps == 0

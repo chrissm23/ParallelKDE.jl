@@ -12,6 +12,16 @@ export fourier_statistics!,
   ifourier_statistics!,
   propagate_statistics!
 
+"""
+    fourier_statistics!(device, sk, s2k, plan)
+    fourier_statistics!(device, sk, plan)
+
+Calculate the Fourier transform of kernel first and second moments and its bootstrap samples.
+
+`device` specifies the device type, which can be `:serial`, `:threaded`, or `:cuda`.
+`sk` and `s2k` are the complex arrays containing the first and second moments of the kernels.
+`plan` is the FFTW plan for the Fourier transform.
+"""
 function fourier_statistics!(
   ::Val{:serial},
   sk::AbstractArray{<:Complex,M},
@@ -89,6 +99,22 @@ function fourier_statistics!(
   return nothing
 end
 
+"""
+    propagate_statistics!(device, means_t, variances_t, means_0, variances_0, time_propagated, time_initial, grid_array)
+    propagate_statistics!(device, means_t, means_0, time_propagated, grid_array)
+
+Propagate the first and second moments of the kernels to larger bandwidths.
+
+# Arguments
+- `Val(device)`: Specifies the device type, which can be `:serial`, `:threaded`, or `:cuda`.
+- `means_t`: The complex array where the propagated first moments of the kernels will be stored.
+- `means_0`: The complex array containing the initial first moments of the kernels.
+- `variances_t`: The complex array where the propagated second moments of the kernels will be stored.
+- `variances_0`: The complex array containing the initial second moments of the kernels.
+- `time_propagated`: A vector of real numbers representing the time points at which the kernels are propagated.
+- `time_initial`: A vector of real numbers representing the initial time points of the kernels.
+- `grid_array`: An array of real numbers representing the grid points in the Fourier space.
+"""
 function propagate_statistics!(
   ::Val{:serial},
   means_t::AbstractArray{<:Complex,M},
@@ -402,6 +428,12 @@ function propagate_time_cuda!(
   return
 end
 
+"""
+    ifourier_statistics!(device, sk, s2k, ifft_plan)
+    ifourier_statistics!(device, sk, ifft_plan)
+
+Calculate the inverse Fourier transform of kernel first and second moments and its bootstrap samples.
+"""
 function ifourier_statistics!(
   ::Val{:serial},
   sk::AbstractArray{<:Complex,M},

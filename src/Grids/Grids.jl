@@ -19,8 +19,21 @@ export AbstractGrid,
   fftgrid,
   find_grid
 
-abstract type AbstractGrid{N,T<:Real,M} end
+"""
+    initialize_grid(ranges; device=:cpu, b32=true)
+    initialize_grid(ranges...; device=:cpu, b32=true)
 
+Create a grid object based on the provided ranges of coordinates for each dimension.
+
+`device` specifies the device type (default is `:cpu` but `:cuda` is also implemented),
+and, if a GPU is used, `b32` determines whether to use `Float32` or `Float64`
+for the grid coordinates.
+
+# Examples
+```julia-repl
+julia> initialize_grid(0.0:0.1:1.0, 0.0:0.1:1.0, device=:cuda, b32=true)
+```
+"""
 initialize_grid(ranges::AbstractVector{<:AbstractVector}; kwargs...) = initialize_grid(Tuple(ranges); kwargs...)
 initialize_grid(ranges::Vararg{AbstractVector}; kwargs...) = initialize_grid(ranges; kwargs...)
 function initialize_grid(ranges::NTuple{N,<:AbstractVector{T}}; device=:cpu, kwargs...) where {N,T<:Real}
@@ -32,10 +45,24 @@ function initialize_grid(ranges::NTuple{N,<:AbstractVector{T}}; device=:cpu, kwa
 
   return initialize_grid(device_type, ranges; kwargs...)
 end
-
 initialize_grid(::IsCPU, ranges) = Grid(ranges)
 initialize_grid(::IsCUDA, ranges; b32=true) = CuGrid(ranges; b32)
 
+"""
+    AbstractGrid{N,T<:Real,M}
+
+Supertype for all grid types, where `N` is the number of dimensions, `T` is the type of the
+coordinates (usually `Float64` or `Float32`), and `M` is the number of dimensions in the
+underlying array (usually `N + 1`).
+"""
+abstract type AbstractGrid{N,T<:Real,M} end
+
+"""
+    Grid{N,T<:Real,M}
+
+CPU object for a grid with `N` dimensions, `T` type for coordinates, and `M=N+1` dimensions
+for the underlying array.
+"""
 struct Grid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   coordinates::SVector{N,Union{StepRangeLen,Frequencies}}
   spacings::SVector{N,T}
@@ -58,6 +85,12 @@ struct Grid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   end
 end
 
+"""
+    CuGrid{N,T<:Real,M}
+
+CUDA object for a grid with `N` dimensions, `T` type for coordinates, and `M=N+1` dimensions
+for the underlying array.
+"""
 struct CuGrid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   coordinates::CuArray{T,M}
   spacings::CuVector{T}
@@ -99,12 +132,27 @@ struct CuGrid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   end
 end
 
+"""
+    size(grid::AbstractGrid)
+
+Return the size of the grid, which is a tuple containing the number of points in each dimension.
+"""
 Base.size(grid::Grid{N,T,M}) where {N,T<:Real,M} = ntuple(i -> length(grid.coordinates[i]), Val(N))
 Base.size(grid::CuGrid) = size(grid.coordinates)[2:end]
 
+"""
+    ndims(grid::AbstractGrid)
+
+Return the number of dimensions of the grid.
+"""
 Base.ndims(::Grid{N,T,M}) where {N,T<:Real,M} = N
 Base.ndims(::CuGrid{N,T,M}) where {N,T<:Real,M} = N
 
+"""
+    get_coordinates(grid::AbstractGrid)
+
+Return a view of the coordinates of the grid as an array.
+"""
 function get_coordinates(grid::Grid{N,T,M}) where {N,T<:Real,M}
   complete_array = reinterpret(
     reshape,
@@ -124,15 +172,55 @@ end
 
 Base.broadcastable(grid::AbstractGrid) = get_coordinates(grid)
 
+"""
+    get_device(grid::AbstractGrid)
+
+Identify the device type of the grid, returning `IsCPU` for CPU grids and `IsCUDA` for CUDA grids.
+"""
 Devices.get_device(::Grid) = IsCPU()
 Devices.get_device(::CuGrid) = IsCUDA()
 
+"""
+    spacings(grid::AbstractGrid)
+
+Return the spacings of the grid, which is a vector containing the spacing between points in each dimension.
+"""
 spacings(grid::AbstractGrid) = grid.spacings
+
+"""
+    bounds(grid::AbstractGrid)
+
+Return the bounds of the grid, which is a 2xN matrix containing the minimum and maximum values for each dimension.
+"""
 bounds(grid::AbstractGrid) = grid.bounds
+
+"""
+    low_bounds(grid::AbstractGrid)
+
+Return the lower bounds of the grid, which is a vector containing the minimum values for each dimension.
+"""
 low_bounds(grid::AbstractGrid) = grid.bounds[1, :]
+
+"""
+    high_bounds(grid::AbstractGrid)
+
+Return the upper bounds of the grid, which is a vector containing the maximum values for each dimension.
+"""
 high_bounds(grid::AbstractGrid) = grid.bounds[2, :]
+
+"""
+    initial_bandwidth(grid::AbstractGrid)
+
+Return the initial bandwidth for the grid, which is half of the spacings in each dimension.
+"""
 initial_bandwidth(grid::AbstractGrid) = spacings(grid) ./ 2
 
+"""
+    fftgrid(grid::AbstractGrid)
+
+Calculate the Fourier grid based on the spacings of the input grid.
+The Fourier grid contains frequencies corresponding to the grid points in each dimension.
+"""
 function fftgrid(grid::Grid{N,T,M}) where {N,T<:Real,M}
   n_points = size(grid)
   spacing = spacings(grid)
@@ -148,6 +236,18 @@ function fftgrid(grid::CuGrid{N,T,M}) where {N,T<:Real,M}
   return CuGrid(Tuple(fourier_coordinates))
 end
 
+"""
+    find_grid(data; kwargs...)
+
+Find a grid based on the provided data, which can be a matrix or a vector of vectors.
+
+# Arguments
+- `data`: The input data, which can be an `AbstractMatrix` or an `AbstractVector` of vectors.
+- `grid_bounds`: Optional bounds for the grid. If not provided, bounds are calculated from the data.
+- `grid_dims`: Optional dimensions for the grid. If not provided, defaults to 300 points in each dimension.
+- `grid_steps`: Optional spacing steps for the grid to be used instead of dimensions. `grid_dims` takes precedence.
+- `grid_padding`: Optional padding for the grid bounds. If not provided, defaults to 10% of the range.
+"""
 function find_grid(
   data::Union{AbstractVector{<:AbstractVector{<:Real}},AbstractMatrix{<:Real}};
   grid_bounds=nothing,

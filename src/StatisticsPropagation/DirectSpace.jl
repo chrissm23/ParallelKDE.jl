@@ -22,6 +22,20 @@ export silverman_rule,
 
 include("../CuStatistics/CuStatistics.jl")
 
+"""
+    initialize_dirac_sequence(data; kwargs...)
+
+Create a Dirac sequence based on the provided data points.
+
+# Arguments
+- `data`: A matrix or vector of data points, where each column represents a sample.
+- `grid`: (optional) A grid object defining the grid on which the Dirac sequence is initialized.
+- `bootstrap_idxs`: (optional) A matrix of indices for bootstrap resampling.
+- `device`: (optional) The device type to use for computation, default is `:cpu`.
+- `method`: (optional) The method to use for computation, default is determined by the device.
+- `include_var`: (optional) If `true`, includes variance in the Dirac sequence, default is `false`.
+- `T`: (optional) The type of the elements in the Dirac sequence, default is `Float64` for CPU and `Float32` for CUDA.
+"""
 function initialize_dirac_sequence(
   data::Union{AbstractMatrix{<:Real},AbstractVector{<:AbstractVector{<:Real}}};
   grid::Union{AbstractGrid{N,<:Real,M},Nothing}=nothing,
@@ -501,6 +515,18 @@ function check_data(data::CuMatrix{<:Real}, grid::CuGrid{N,<:Real,M}) where {N,M
   return nothing
 end
 
+"""
+    calculate_scaled_vmr!(
+      method::Val{device},
+      sk::AbstractArray{Complex{T},M},
+      s2k::AbstractArray{Complex{T},M},
+      time::AbstractVector{<:Real},
+      time_initial::AbstractVector{<:Real},
+      n_samples::Integer
+    )
+
+Calculate the scaled variance-to-mean ratio (VMR) for an array of kernel means and kernel variances.
+"""
 function calculate_scaled_vmr!(
   ::Val{:serial},
   sk::AbstractArray{Complex{T},M},
@@ -670,6 +696,11 @@ function calculate_scaled_vmr!(
   return nothing
 end
 
+"""
+    calculate_full_means!(method::Val{Symbol}, sk::AbstractArray{Complex{T},N}, n_samples::Integer)
+
+Calculate the means of the kernels of the full sample set.
+"""
 function calculate_full_means!(
   ::Val{:serial},
   sk::AbstractArray{Complex{T},N},
@@ -728,6 +759,27 @@ function calculate_full_means!(::Val{:cuda}, sk::AnyCuArray, n_samples::Integer)
   return nothing
 end
 
+"""
+    identify_convergence!
+
+Identify the points in the grid that have converged based on the variance-to-mean ratio (VMR)
+and update the density accordingly.
+
+# Arguments
+- `Val(Symbol)`: The method type, e.g., `:serial`, `:threaded`, or `:cuda`.
+- `density`: The density array to be updated.
+- `means`: The means array corresponding to the density.
+- `vmr_current`: The current VMR values.
+- `vmr_prev1`: The previous VMR values.
+- `vmr_prev2`: The VMR values from two steps back.
+- `dlogt`: The logarithmic time step.
+- `tol`: The tolerance for convergence.
+- `alpha`: The weighting factor for the first and second derivatives.
+- `threshold_crossing_steps`: The number of steps to consider for threshold crossing.
+- `current_minima`: The current minima array to be updated.
+- `threshold_counter`: The counter for threshold crossings.
+- `low_density_flags`: Flags indicating low density regions.
+"""
 function identify_convergence!(
   ::Val{:serial},
   density::AbstractArray{<:Real,N},
