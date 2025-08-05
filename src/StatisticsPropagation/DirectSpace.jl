@@ -29,7 +29,7 @@ function initialize_dirac_sequence(
   device=:cpu,
   method=nothing,
   include_var=false,
-  T=Float64,
+  T=nothing,
 ) where {N,M}
   if method === nothing
     method = Devices.DEFAULT_IMPLEMENTATIONS[get_device(device)]
@@ -37,6 +37,11 @@ function initialize_dirac_sequence(
   ensure_valid_implementation(device, method)
   if grid === nothing
     grid = find_grid(data; device)
+  end
+  if T === nothing
+    element_type = ifelse(device == :cpu, Float64, Float32)
+  else
+    element_type = T
   end
 
   if (get_device(device) isa IsCUDA) && !CUDA.functional()
@@ -46,9 +51,9 @@ function initialize_dirac_sequence(
 
   if get_device(device) isa IsCPU
     if data isa AbstractMatrix
-      data = Vector{SVector{N,T}}(eachcol(data))
+      data = Vector{SVector{N,element_type}}(eachcol(data))
     else
-      data = Vector{SVector{N,T}}(data)
+      data = Vector{SVector{N,element_type}}(data)
     end
     n_samples = length(data)
   else
@@ -74,7 +79,7 @@ function initialize_dirac_sequence(
     grid,
     bootstrap_idxs;
     include_var=include_var,
-    T=T,
+    T=element_type,
   )
 end
 function initialize_dirac_sequence(

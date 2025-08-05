@@ -43,8 +43,12 @@ include("test_utils.jl")
     include("densityestimation_tests.jl")
   end
 
-  @testset "Interface tests (ParallelEstimation)" begin
+  @testset "Parallel Estimation tests" begin
     include("parallelestimation_tests.jl")
+  end
+
+  @testset "Rules of Thumb tests" begin
+    include("rulesofthumb_tests.jl")
   end
 
   @testset "API tests" begin

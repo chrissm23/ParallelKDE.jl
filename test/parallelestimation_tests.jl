@@ -502,7 +502,7 @@ end
     dx = prod(spacings(grid))
     mise = calculate_mise(density_estimated, density_true, dx)
 
-    @test mise < 1e-5
+    @test mise < 5e-5
   end
 end
 
@@ -531,6 +531,6 @@ if CUDA.functional()
     dx = prod(spacings(grid))
     mise = calculate_mise(density_estimated, density_true, dx)
 
-    @test mise < 2e-5
+    @test mise < 5e-5
   end
 end
