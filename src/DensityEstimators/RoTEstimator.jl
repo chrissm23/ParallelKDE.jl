@@ -40,7 +40,7 @@ function initialize_rot(
 end
 
 function propagation_time(rot::ScottRoT, data::AbstractMatrix{T}) where {T<:Real}
-  factor = rot.n_samples^(1 / (rot.n_dims + 4))
+  factor = rot.n_samples^(-1 / (rot.n_dims + 4))
   cov_matrix = cov(data, dims=2)
 
   return factor .* sqrt.(diag(cov_matrix))
@@ -80,11 +80,11 @@ struct CuRoTEstimator{N,R<:AbstractRoT,T<:Real,M,P<:Real,S<:Real} <: AbstractRoT
   fourier_density::CuArray{Complex{T},M}
   grid_direct::CuGrid{N,P,M}
   grid_fourier::CuGrid{N,P,M}
-  time_propagated::CuVector{N,S}
+  time_propagated::CuVector{S}
 end
 function CuRoTEstimator(
   rule_of_thumb::AbstractRoT,
-  data::CuMatrix{N,S},
+  data::CuMatrix{S},
   fourier_density::CuArray{Complex{T},M},
   grid_direct::CuGrid{N,P,M},
 ) where {N,T<:Real,M,P<:Real,S<:Real}
@@ -101,6 +101,8 @@ function CuRoTEstimator(
     time_propagated,
   )
 end
+Devices.get_device(::RoTEstimator) = IsCPU()
+Devices.get_device(::CuRoTEstimator) = IsCUDA()
 
 add_estimator!(:rotEstimator, AbstractRoTEstimator)
 
@@ -124,7 +126,22 @@ function initialize_estimator(
 
   initial_density = initialize_density(device, kde, grid; method)
 
-  return RoTEstimator(rot, get_data(kde), initial_density, grid)
+  return initialize_estimator(rot, get_data(kde), initial_density, grid; device)
+end
+function initialize_estimator(
+  rot::AbstractRoT,
+  data::AbstractMatrix{S},
+  fourier_density::AbstractArray{Complex{T},M},
+  grid_direct::AbstractGrid{N,P,M};
+  device::AbstractDevice,
+) where {N,T<:Real,M,P<:Real,S<:Real}
+  if device isa IsCPU
+    return RoTEstimator(rot, data, fourier_density, grid_direct)
+  elseif device isa IsCUDA
+    return CuRoTEstimator(rot, data, CuArray{ComplexF32}(fourier_density), grid_direct)
+  else
+    throw(ArgumentError("Unsupported device type: $device"))
+  end
 end
 
 function estimate!(
