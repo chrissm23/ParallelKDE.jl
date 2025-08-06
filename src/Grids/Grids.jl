@@ -30,8 +30,8 @@ and, if a GPU is used, `b32` determines whether to use `Float32` or `Float64`
 for the grid coordinates.
 
 # Examples
-```julia-repl
-julia> initialize_grid(0.0:0.1:1.0, 0.0:0.1:1.0, device=:cuda, b32=true)
+```julia
+initialize_grid(0.0:0.1:1.0, 0.0:0.1:1.0, device=:cuda, b32=true)
 ```
 """
 initialize_grid(ranges::AbstractVector{<:AbstractVector}; kwargs...) = initialize_grid(Tuple(ranges); kwargs...)

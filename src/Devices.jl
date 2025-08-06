@@ -18,12 +18,39 @@ export
   ensure_valid_implementation,
   convert32
 
+"""
+    AbstractDevice
+
+Supertype for all device types.
+"""
 abstract type AbstractDevice end
 
+"""
+    IsCPU <: AbstractDevice
+
+Type representing a CPU device.
+"""
 struct IsCPU <: AbstractDevice end
+
+"""
+    IsCUDA <: AbstractDevice
+
+Type representing a CUDA-enabled GPU device.
+"""
 struct IsCUDA <: AbstractDevice end
+
+"""
+    DeviceNotSpecified <: AbstractDevice
+
+Type representing a device that has not been specified or is unsupported.
+"""
 struct DeviceNotSpecified <: AbstractDevice end
 
+"""
+    AVAILABLE_DEVICES
+
+Relate a `Symbol` to the corresponding device type.
+"""
 const AVAILABLE_DEVICES = Dict(
   :cpu => IsCPU(),
   :cuda => IsCUDA(),
@@ -33,21 +60,33 @@ const CPU_SERIAL = :serial
 const CPU_THREADED = :threaded
 const GPU_CUDA = :cuda
 
+"""
+    DEVICE_IMPLEMENTATIONS
+
+Relate the device types to their available implementations.
+"""
 const DEVICE_IMPLEMENTATIONS = Dict(
   IsCPU() => Set([CPU_SERIAL, CPU_THREADED]),
   IsCUDA() => Set([GPU_CUDA]),
   DeviceNotSpecified() => Set()
 )
 
+"""
+    DEFAULT_IMPLEMENTATIONS
+
+Relate the device types to their default implementations.
+"""
 const DEFAULT_IMPLEMENTATIONS = Dict(
   IsCPU() => CPU_SERIAL,
   IsCUDA() => GPU_CUDA,
 )
 
 """
-    get_device(device::AbstractDevice)
+    get_device(device::Any)
 
 Obtain the device object for a given device type.
+
+If the method is called with an unsupported type, it returns a `DeviceNotSpecified` object.
 """
 get_device(::Any) = DeviceNotSpecified()
 get_device(::IsCPU) = IsCPU()

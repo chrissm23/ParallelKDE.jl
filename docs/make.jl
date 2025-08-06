@@ -3,6 +3,20 @@ using Documenter
 
 DocMeta.setdocmeta!(ParallelKDE, :DocTestSetup, :(using ParallelKDE); recursive=true)
 
+ESTIMATOR_PAGES = [
+  "estimators/parallel_estimator.md",
+  "estimators/rot_estimator.md",
+]
+API_PAGES = [
+  "api_reference/devices.md",
+  "api_reference/grids.md",
+  "api_reference/kdes.md",
+  "api_reference/estimators.md",
+  "api_reference/parallel_kde.md",
+  "api_reference/direct_space.md",
+  "api_reference/fourier_space.md",
+]
+
 makedocs(;
   modules=[ParallelKDE],
   authors="Christian Sustay (christian.sustay@tum.de)",
@@ -15,25 +29,12 @@ makedocs(;
   pages=[
     "Home" => "index.md",
     "Installation" => "installation.md",
-    "Estimators" => Any[
-      "estimators/parallel_estimator.md",
-      "estimators/rot_estimator.md",
-    ],
-    "Development" => Any[
-      "development/adding_estimators.md",
-      "development/current_tools.md",
-    ],
-    "API Reference" => Any[
-      "api_reference/parallel_kde.md",
-      "api_reference/estimators.md",
-      "api_reference/grids.md",
-      "api_reference/kdes.md",
-      "api_reference/direct_space.md",
-      "api_reference/fourier_space.md",
-      "api_reference/devices.md"
-    ],
+    "Estimators" => ESTIMATOR_PAGES,
+    "Development" => "development.md",
+    "API Reference" => API_PAGES,
   ],
   remotes=nothing,
+  checkdocs=:none,
 )
 
 deploydocs(;

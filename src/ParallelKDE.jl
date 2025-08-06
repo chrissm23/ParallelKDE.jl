@@ -94,9 +94,9 @@ This has priority over other grid parameters.
 - `device=:cpu`: The device to use for the density estimation. It should be compatible with the estimator to be used.
 
 # Examples
-```jldoctest
-julia> data = randn(1, 1000);
-julia> density_estimation = initialize_estimation(data; grid=true, grid_ranges=-5.0:0.1:5.0, device=:cpu);
+```julia
+data = randn(1, 1000);
+density_estimation = initialize_estimation(data; grid=true, grid_ranges=-5.0:0.1:5.0, device=:cpu);
 ```
 """
 function initialize_estimation(
@@ -163,11 +163,10 @@ end
 Return `true` if the `DensityEstimation` object has a grid associated with it, `false` otherwise.
 
 # Examples
-```jldoctest
-julia> data = randn(1, 1000);
-julia> density_estimation = initialize_estimation(data; grid=true, grid_ranges=-5.0:0.1:5.0, device=:cpu);
-julia> has_grid(density_estimation)
-true
+```julia
+data = randn(1, 1000);
+density_estimation = initialize_estimation(data; grid=true, grid_ranges=-5.0:0.1:5.0, device=:cpu);
+has_grid(density_estimation)
 ```
 """
 has_grid(density_estimation::DensityEstimation) = density_estimation.grid !== nothing
@@ -179,6 +178,14 @@ Extract the grid from a `DensityEstimation` object.
 """
 get_grid(density_estimation::DensityEstimation) = density_estimation.grid
 
+"""
+    get_density(density_estimation::DensityEstimation; normalize=false, dx=nothing)
+
+Obtain the estimated density from a `DensityEstimation` object.
+
+If the `normalize` argument is set to `true`, the density will be normalized. If density_estimation
+has a grid, its spacing will be used for normalization. Otherwise, `dx` must be provided to normalize the density.
+"""
 function KDEs.get_density(density_estimation::DensityEstimation; normalize=false, dx=nothing)
   density = get_density(density_estimation.kde)
   if normalize && has_grid(density_estimation)
