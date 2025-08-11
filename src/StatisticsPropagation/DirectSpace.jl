@@ -774,7 +774,9 @@ and update the density accordingly.
 - `vmr_prev1`: The previous VMR values.
 - `vmr_prev2`: The VMR values from two steps back.
 - `dlogt`: The logarithmic time step.
-- `tol`: The tolerance for convergence.
+- `tol_high`: The tolerance for convergence of high density regions.
+- `tol_low_id`: The tolerance to identify low density regions.
+- `tol_low`: The tolerance for convergence of low density regions.
 - `alpha`: The weighting factor for the first and second derivatives.
 - `threshold_crossing_steps`: The number of steps to consider for threshold crossing.
 - `current_minima`: The current minima array to be updated.
@@ -790,8 +792,8 @@ function identify_convergence!(
   vmr_prev2::AbstractArray{T,N},
   dlogt::Real,
   tol_high::Real,
+  tol_low_id::Real,
   tol_low::Real,
-  tol_low_over::Real,
   alpha::Real,
   threshold_crossing_steps::Integer,
   current_minima::AbstractArray{T,N},
@@ -805,8 +807,8 @@ function identify_convergence!(
       vmr_prev2[i],
       dlogt,
       tol_high,
+      tol_low_id,
       tol_low,
-      tol_low_over,
       alpha,
       threshold_crossing_steps,
       current_minima[i],
@@ -834,8 +836,8 @@ function identify_convergence!(
   vmr_prev2::AbstractArray{T,N},
   dlogt::Real,
   tol_high::Real,
+  tol_low_id::Real,
   tol_low::Real,
-  tol_low_over::Real,
   alpha::Real,
   threshold_crossing_steps::Integer,
   current_minima::AbstractArray{T,N},
@@ -849,8 +851,8 @@ function identify_convergence!(
       vmr_prev2[i],
       dlogt,
       tol_high,
+      tol_low_id,
       tol_low,
-      tol_low_over,
       alpha,
       threshold_crossing_steps,
       current_minima[i],
@@ -878,8 +880,8 @@ function identify_convergence!(
   vmr_prev2::AnyCuArray{T,N},
   dlogt::Real,
   tol_high::Real,
+  tol_low_id::Real,
   tol_low::Real,
-  tol_low_over::Real,
   alpha::Real,
   threshold_crossing_steps::Integer,
   current_minima::AnyCuArray{T,N},
@@ -890,7 +892,7 @@ function identify_convergence!(
 
   # Stability detection
   stability_parms = CuArray{Float32}(
-    [dlogt, tol_high, tol_low, tol_low_over, alpha, threshold_crossing_steps]
+    [dlogt, tol_high, tol_low_id, tol_low, alpha, threshold_crossing_steps]
   )
   kernel = @cuda launch = false kernel_stable!(
     vmr_current,
@@ -932,8 +934,8 @@ function find_stability(
   vmr_prev2::Real,
   dlogt::Real,
   tol_high::Real,
+  tol_low_id::Real,
   tol_low::Real,
-  tol_low_over::Real,
   alpha::Real,
   threshold_crossing_steps::Integer,
   current_minimum::Real,
@@ -948,7 +950,7 @@ function find_stability(
   new_minimum = NaN
 
   if !low_denisty_flag
-    if indicator > tol_low
+    if indicator > tol_low_id
       # Look for a sustained run above tol_low to switch on
       threshold_counter += one(threshold_counter)
       if threshold_counter > threshold_crossing_steps
@@ -968,7 +970,7 @@ function find_stability(
       threshold_counter = zero(threshold_counter)
     end
   else
-    if vmr_current < tol_low_over
+    if vmr_current < tol_low
       threshold_counter += one(threshold_counter)
       if (threshold_counter > threshold_crossing_steps) && isnan(current_minimum)
         more_stable = true
@@ -1010,8 +1012,8 @@ function kernel_stable!(
 
   dlogt = parms[1]
   tol_high = parms[2]
-  tol_low = parms[3]
-  tol_low_over = parms[4]
+  tol_low_id = parms[3]
+  tol_low = parms[4]
   alpha = parms[5]
   threshold_crossing_steps = Z(parms[6])
 
@@ -1028,7 +1030,7 @@ function kernel_stable!(
   counter = threshold_counter[idx]
 
   if !low_density_flags[idx]
-    if indicator > tol_low
+    if indicator > tol_low_id
       # Look for a sustained run above tol_high to switch on
       counter += one(counter)
       if counter > threshold_crossing_steps
@@ -1048,7 +1050,7 @@ function kernel_stable!(
       counter = zero(counter)
     end
   else
-    if vmr_i < tol_low_over
+    if vmr_i < tol_low
       counter += one(counter)
       if (counter > threshold_crossing_steps) && isnan(current_minima[idx])
         density[idx] = means[idx]

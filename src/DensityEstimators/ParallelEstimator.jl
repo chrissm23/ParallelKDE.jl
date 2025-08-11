@@ -512,8 +512,8 @@ abstract type AbstractDensityState{N,T} end
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   eps_high::T
+  eps_low_id::T
   eps_low::T
-  eps_low_over::T
   alpha::T
   threshold_crossing_steps::UInt16
 
@@ -530,15 +530,15 @@ function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
   eps_high::Real=-2.5,
-  eps_low::Real=2.5,
-  eps_low_over::Real=10.0,
+  eps_low_id::Real=2.5,
+  eps_low::Real=10.0,
   alpha::Real=0.75,
   threshold_crossing_steps::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
   end
-  if eps_low < 0
+  if eps_low_id < 0
     throw(ArgumentError("eps_low must be non-negative"))
   end
   if eps_high > 0
@@ -549,8 +549,8 @@ function DensityState(
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
     eps_high=T(eps_high),
+    eps_low_id=T(eps_low_id),
     eps_low=T(eps_low),
-    eps_low_over=T(eps_low_over),
     alpha=T(alpha),
     threshold_crossing_steps=UInt16(threshold_crossing_steps),
     indicator_minima=fill(T(NaN), dims),
@@ -562,8 +562,8 @@ end
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
   eps_high::T
+  eps_low_id::T
   eps_low::T
-  eps_low_over::T
   alpha::T
   threshold_crossing_steps::Int32
 
@@ -580,15 +580,15 @@ function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
   eps_high::Real=-2.5f0,
-  eps_low::Real=2.5f0,
-  eps_low_over::Real=10.0f0,
+  eps_low_id::Real=2.5f0,
+  eps_low::Real=10.0f0,
   alpha::Real=0.75f0,
   threshold_crossing_steps::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
   end
-  if eps_low < 0
+  if eps_low_id < 0
     throw(ArgumentError("eps_low must be non-negative"))
   end
   if eps_high > 0
@@ -599,8 +599,8 @@ function CuDensityState(
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
     eps_high=T(eps_high),
+    eps_low_id=T(eps_low_id),
     eps_low=T(eps_low),
-    eps_low_over=T(eps_low_over),
     alpha=T(alpha),
     threshold_crossing_steps=Int32(threshold_crossing_steps),
     indicator_minima=CUDA.fill(T(NaN), dims),
@@ -628,8 +628,8 @@ function update_state!(
     density_state.f_prev2,
     dlogt,
     density_state.eps_high,
+    density_state.eps_low_id,
     density_state.eps_low,
-    density_state.eps_low_over,
     density_state.alpha,
     density_state.threshold_crossing_steps,
     density_state.indicator_minima,
