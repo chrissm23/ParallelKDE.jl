@@ -635,7 +635,7 @@ function update_state!(
     dlogt,
     density_state.eps_high,
     density_state.eps_low_id,
-    density_state.eps_lowr,
+    density_state.eps_low,
     density_state.alpha,
     density_state.threshold_crossing_steps,
     density_state.indicator_minima,
