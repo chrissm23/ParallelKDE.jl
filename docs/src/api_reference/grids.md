@@ -18,7 +18,7 @@ Grid
 CuGrid
 ```
 
-There is a set of information that can be extracted from grid objects. This is done by the following methods:
+There is a set of features that can be extracted from grid objects. This is done by the following methods:
 
 ```@docs
 size(::AbstractGrid)
@@ -29,7 +29,7 @@ spacings
 bounds
 low_bounds
 high_bounds
-initial_bandwdith
+initial_bandwidth
 ```
 
 It is possible to create a grid with the desired ranges with

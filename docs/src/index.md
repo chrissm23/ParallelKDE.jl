@@ -19,7 +19,7 @@ For example, to estimate a density on a CPU with a default grid using the [Paral
 ```@example 1
 using ParallelKDE
 
-data = randn(1, 1000) # 1-dimensional sample of 1000 points
+data = randn(1, 10000) # 1-dimensional sample of 10000 points
 
 density_estimation = initialize_estimation(
   data,

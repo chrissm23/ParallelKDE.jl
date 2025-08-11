@@ -23,7 +23,7 @@ Supertype for all density estimation estimators.
 This is the base for all object that are intended to provide a method for estimating the
 density. They store all the necessary parameters and data for the estimation process.
 
-See also [`AbstractDensityEstimation`](@ref) for the base type where the estimated density
+See also [`ParallelKDE.AbstractDensityEstimation`](@ref) for the base type where the estimated density
 is stored.
 """
 abstract type AbstractEstimator end

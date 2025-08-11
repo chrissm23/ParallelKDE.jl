@@ -129,6 +129,9 @@ get_data(kde::CuKDE) = kde.data
 
 Return the density values stored in the kernel density estimation (KDE) object.
 """
+function get_density(kde::AbstractKDE)
+  throw(ArgumentError("get_density is not implemented for $(typeof(kde))"))
+end
 get_density(kde::KDE) = kde.density
 get_density(kde::CuKDE) = kde.density
 
