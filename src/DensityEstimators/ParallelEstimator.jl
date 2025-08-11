@@ -538,11 +538,14 @@ function DensityState(
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
   end
-  if eps_low_id < 0
-    throw(ArgumentError("eps_low must be non-negative"))
-  end
   if eps_high > 0
     throw(ArgumentError("eps_high must be non-positive"))
+  end
+  if eps_low < 0
+    throw(ArgumentError("eps_high must be non-negative"))
+  end
+  if eps_low_id < 0
+    throw(ArgumentError("eps_low_id must be non-negative"))
   end
 
   DensityState{N,T}(;
@@ -588,11 +591,14 @@ function CuDensityState(
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
   end
-  if eps_low_id < 0
-    throw(ArgumentError("eps_low must be non-negative"))
-  end
   if eps_high > 0
     throw(ArgumentError("eps_high must be non-positive"))
+  end
+  if eps_low < 0
+    throw(ArgumentError("eps_high must be non-negative"))
+  end
+  if eps_low_id < 0
+    throw(ArgumentError("eps_low_id must be non-negative"))
   end
 
   CuDensityState{N,T}(;
@@ -629,7 +635,7 @@ function update_state!(
     dlogt,
     density_state.eps_high,
     density_state.eps_low_id,
-    density_state.eps_low,
+    density_state.eps_lowr,
     density_state.alpha,
     density_state.threshold_crossing_steps,
     density_state.indicator_minima,
