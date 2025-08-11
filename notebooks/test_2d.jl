@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.10
+# v0.20.13
 
 using Markdown
 using InteractiveUtils
@@ -255,7 +255,7 @@ begin
 		:parallelEstimator,
 		# time_step=0.00001,
 		# stable_duration=0.01,
-		eps=-5.0,
+		# eps=-5.0,
 		# n_bootstraps=1000,
 	)
 
@@ -348,10 +348,12 @@ begin
 		# stable_duration=0.01,
 	)
 
-	time_step = parallel_estimator.density_state.dt
 	times = parallel_estimator.times
 	n_times = length(times)
 	times_reinterpreted = reinterpret(reshape, Float64, times)
+	times_range = range(
+		minimum(times_reinterpreted), maximum(times_reinterpreted), length=n_times
+	)
 
 	grid_dims = size(kde.density)
 	previous_density = fill(NaN, grid_dims)
@@ -361,9 +363,6 @@ begin
 
 	vmr_time = fill(NaN, grid_dims..., n_times)
 	means_time = fill(NaN, grid_dims..., n_times)
-	is_smooth_time = falses(grid_dims..., n_times)
-	has_decreased_time = falses(grid_dims..., n_times)
-	is_stable_time = falses(grid_dims..., n_times)
 	density_assigned_time = falses(grid_dims..., n_times)
 end;
   ╠═╡ =#

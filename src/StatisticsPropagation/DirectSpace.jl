@@ -691,7 +691,8 @@ function calculate_scaled_vmr!(
   vmr .= dropdims(var(s2k, dims=M), dims=M)
   vmr .*= scaling_factor
 
-  @. vmr = ifelse(isfinite(vmr), log(vmr), NaN32)
+  n_dims = M - 1
+  @. vmr = ifelse(isfinite(vmr), log(vmr) + (n_dims - 1) * 2 * log(π), NaN32)
 
   return nothing
 end
@@ -788,7 +789,9 @@ function identify_convergence!(
   vmr_prev1::AbstractArray{T,N},
   vmr_prev2::AbstractArray{T,N},
   dlogt::Real,
-  tol::Real,
+  tol_high::Real,
+  tol_low::Real,
+  tol_low_over::Real,
   alpha::Real,
   threshold_crossing_steps::Integer,
   current_minima::AbstractArray{T,N},
@@ -801,7 +804,9 @@ function identify_convergence!(
       vmr_prev1[i],
       vmr_prev2[i],
       dlogt,
-      tol,
+      tol_high,
+      tol_low,
+      tol_low_over,
       alpha,
       threshold_crossing_steps,
       current_minima[i],
@@ -828,7 +833,9 @@ function identify_convergence!(
   vmr_prev1::AbstractArray{T,N},
   vmr_prev2::AbstractArray{T,N},
   dlogt::Real,
-  tol::Real,
+  tol_high::Real,
+  tol_low::Real,
+  tol_low_over::Real,
   alpha::Real,
   threshold_crossing_steps::Integer,
   current_minima::AbstractArray{T,N},
@@ -841,7 +848,9 @@ function identify_convergence!(
       vmr_prev1[i],
       vmr_prev2[i],
       dlogt,
-      tol,
+      tol_high,
+      tol_low,
+      tol_low_over,
       alpha,
       threshold_crossing_steps,
       current_minima[i],
@@ -868,7 +877,9 @@ function identify_convergence!(
   vmr_prev1::AnyCuArray{T,N},
   vmr_prev2::AnyCuArray{T,N},
   dlogt::Real,
-  tol::Real,
+  tol_high::Real,
+  tol_low::Real,
+  tol_low_over::Real,
   alpha::Real,
   threshold_crossing_steps::Integer,
   current_minima::AnyCuArray{T,N},
@@ -879,7 +890,7 @@ function identify_convergence!(
 
   # Stability detection
   stability_parms = CuArray{Float32}(
-    [dlogt, tol, alpha, threshold_crossing_steps]
+    [dlogt, tol_high, tol_low, tol_low_over, alpha, threshold_crossing_steps]
   )
   kernel = @cuda launch = false kernel_stable!(
     vmr_current,
@@ -920,7 +931,9 @@ function find_stability(
   vmr_prev1::Real,
   vmr_prev2::Real,
   dlogt::Real,
-  tol::Real,
+  tol_high::Real,
+  tol_low::Real,
+  tol_low_over::Real,
   alpha::Real,
   threshold_crossing_steps::Integer,
   current_minimum::Real,
@@ -929,21 +942,21 @@ function find_stability(
 )
   first_derivative = first_difference(vmr_current, vmr_prev1, dlogt)
   second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dlogt)
-  indicator = alpha * first_derivative + (1 - alpha) * second_derivative
+  indicator = alpha * log(abs(first_derivative)) + (1 - alpha) * log(abs(second_derivative))
 
   more_stable = false
   new_minimum = NaN
 
   if !low_denisty_flag
-    if indicator > tol
-      # Look for a sustained run above tol_high to switch on
+    if indicator > tol_low
+      # Look for a sustained run above tol_low to switch on
       threshold_counter += one(threshold_counter)
       if threshold_counter > threshold_crossing_steps
         low_denisty_flag = true
         threshold_counter = zero(threshold_counter)
       end
-    elseif indicator < -tol
-      # Look for a sustained run below tol_low to save minimum
+    elseif indicator < tol_high
+      # Look for a sustained run below tol_high to save minimum
       threshold_counter += one(threshold_counter)
       if threshold_counter > threshold_crossing_steps
         if (indicator < current_minimum) || isnan(current_minimum)
@@ -955,7 +968,7 @@ function find_stability(
       threshold_counter = zero(threshold_counter)
     end
   else
-    if indicator < tol / 4
+    if vmr_current < tol_low_over
       threshold_counter += one(threshold_counter)
       if (threshold_counter > threshold_crossing_steps) && isnan(current_minimum)
         more_stable = true
@@ -996,9 +1009,11 @@ function kernel_stable!(
   end
 
   dlogt = parms[1]
-  tol = parms[2]
-  alpha = parms[3]
-  threshold_crossing_steps = Z(parms[4])
+  tol_high = parms[2]
+  tol_low = parms[3]
+  tol_low_over = parms[4]
+  alpha = parms[5]
+  threshold_crossing_steps = Z(parms[6])
 
   vmr_i = vmr_current[idx]
   vmr_im1 = vmr_prev1[idx]
@@ -1013,14 +1028,14 @@ function kernel_stable!(
   counter = threshold_counter[idx]
 
   if !low_density_flags[idx]
-    if indicator > tol
+    if indicator > tol_low
       # Look for a sustained run above tol_high to switch on
       counter += one(counter)
       if counter > threshold_crossing_steps
         low_density_flags[idx] = true
         counter = zero(counter)
       end
-    elseif indicator < -tol
+    elseif indicator < tol_high
       # Look for a sustained run below tol_low to save minimum
       counter += one(counter)
       if counter > threshold_crossing_steps
@@ -1033,7 +1048,7 @@ function kernel_stable!(
       counter = zero(counter)
     end
   else
-    if indicator < 0.0f0
+    if vmr_i < tol_low_over
       counter += one(counter)
       if (counter > threshold_crossing_steps) && isnan(current_minima[idx])
         density[idx] = means[idx]
@@ -1050,11 +1065,11 @@ function kernel_stable!(
 end
 
 @inline function first_difference(f::Real, f_prev::Real, dt::Real)
-  return log(abs((f - f_prev) / (2dt)))
+  return (f - f_prev) / (2dt)
 end
 
 @inline function second_difference(f::Real, f_prev1::Real, f_prev2::Real, dt::Real)
-  return log(abs((f - 2f_prev1 + f_prev2) / dt^2))
+  return (f - 2f_prev1 + f_prev2) / dt^2
 end
 
 function silverman_rule(data::AbstractMatrix)

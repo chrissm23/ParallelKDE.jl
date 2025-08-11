@@ -511,7 +511,9 @@ abstract type AbstractDensityState{N,T} end
 
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  eps::T
+  eps_high::T
+  eps_low::T
+  eps_low_over::T
   alpha::T
   threshold_crossing_steps::UInt16
 
@@ -527,21 +529,28 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps::Real=2.0,
+  eps_high::Real=-2.5,
+  eps_low::Real=2.5,
+  eps_low_over::Real=10.0,
   alpha::Real=0.75,
   threshold_crossing_steps::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
   end
-  if eps < 0
-    throw(ArgumentError("eps must be non-negative"))
+  if eps_low < 0
+    throw(ArgumentError("eps_low must be non-negative"))
+  end
+  if eps_high > 0
+    throw(ArgumentError("eps_high must be non-positive"))
   end
 
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
-    eps=T(eps),
+    eps_high=T(eps_high),
+    eps_low=T(eps_low),
+    eps_low_over=T(eps_low_over),
     alpha=T(alpha),
     threshold_crossing_steps=UInt16(threshold_crossing_steps),
     indicator_minima=fill(T(NaN), dims),
@@ -552,7 +561,9 @@ end
 
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  eps::T
+  eps_high::T
+  eps_low::T
+  eps_low_over::T
   alpha::T
   threshold_crossing_steps::Int32
 
@@ -568,21 +579,28 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps::Real=2.0f0,
+  eps_high::Real=-2.5f0,
+  eps_low::Real=2.5f0,
+  eps_low_over::Real=10.0f0,
   alpha::Real=0.75f0,
   threshold_crossing_steps::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
   end
-  if eps < 0
-    throw(ArgumentError("eps must be non-negative"))
+  if eps_low < 0
+    throw(ArgumentError("eps_low must be non-negative"))
+  end
+  if eps_high > 0
+    throw(ArgumentError("eps_high must be non-positive"))
   end
 
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
-    eps=T(eps),
+    eps_high=T(eps_high),
+    eps_low=T(eps_low),
+    eps_low_over=T(eps_low_over),
     alpha=T(alpha),
     threshold_crossing_steps=Int32(threshold_crossing_steps),
     indicator_minima=CUDA.fill(T(NaN), dims),
@@ -609,7 +627,9 @@ function update_state!(
     density_state.f_prev1,
     density_state.f_prev2,
     dlogt,
-    density_state.eps,
+    density_state.eps_high,
+    density_state.eps_low,
+    density_state.eps_low_over,
     density_state.alpha,
     density_state.threshold_crossing_steps,
     density_state.indicator_minima,
@@ -690,7 +710,7 @@ function initialize_estimator(
 
 end
 
-function initialize_estimator_propagation(device::AbstractDevice, args...)
+function initialize_estimator_propagation(device::AbstractDevice, args...; kwargs...)
   throw(ArgumentError("Propagation not implemented for device: $(typeof(device))"))
 end
 function initialize_estimator_propagation(
@@ -703,7 +723,7 @@ function initialize_estimator_propagation(
   time_step::Union{Nothing,Real}=nothing,
   time_final::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
-  threshold_crossing_percentage::Real=0.01,
+  threshold_crossing_percentage::Real=0.005,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
@@ -743,7 +763,7 @@ function initialize_estimator_propagation(
   time_step=nothing,
   time_final=nothing,
   n_steps=nothing,
-  threshold_crossing_percentage::Real=0.01f0,
+  threshold_crossing_percentage::Real=0.005f0,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)

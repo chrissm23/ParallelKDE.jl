@@ -300,22 +300,24 @@ let
 		data_filtered,
 		grid=true,
 		grid_ranges=distro_support,
-		# device=:cuda,
+		device=:cuda,
 	)
 	estimate_density!(
 		density_estimation,
 		:parallelEstimator,
 		# time_step=0.0005,
-		# threshold_crossing_percentage=0.01,
-		# eps=2.0,
-		# alpha=0.75,
+		threshold_crossing_percentage=0.005,
+		eps_high=-2.5,
+		eps_low=2.5,
+		eps_low_over=10.0,
+		alpha=0.75,
 		# time_final=0.5,
 		# n_bootstraps=1000,
 	)
 
-	density_estimated = get_density(density_estimation)
-	# density_estimated_d = get_density(density_estimation)
-	# density_estimated = Array(density_estimated_d)
+	# density_estimated = get_density(density_estimation)
+	density_estimated_d = get_density(density_estimation)
+	density_estimated = Array(density_estimated_d)
 
 	dx = prod(spacings(get_grid(density_estimation)))
 	norm = sum(density_estimated) * dx
@@ -370,10 +372,12 @@ begin
 		kde;
 		method,
 		grid=grid_support,
-		# time_step=0.00005,
-		eps=2.0,
+		# time_step=0.0005,
+		threshold_crossing_percentage=0.005,
+		# eps_high=-2.0,
+		# eps_low=2.0,
+		# eps_low_over=10.0,
 		# alpha=0.5,
-		# stable_duration=0.001,
 		# time_final=2.0
 	)
 
@@ -395,7 +399,9 @@ begin
 
 	dlogts = fill(NaN, n_times)
 	alpha_parm = parallel_estimator.density_state.alpha
-	eps_parm = parallel_estimator.density_state.eps
+	eps_high = parallel_estimator.density_state.eps_high
+	eps_low = parallel_estimator.density_state.eps_low
+	eps_low_over = parallel_estimator.density_state.eps_low_over
 end;
 
 # ╔═╡ fb725626-e5eb-4dfc-93e7-4946af668652
@@ -795,7 +801,7 @@ begin
 	threshold_range = range(-5, 5, length=100)
 	@bind threshold Slider(
 		threshold_range,
-		default=threshold_range[argmin(abs.(threshold_range .- eps_parm))]
+		default=threshold_range[argmin(abs.(threshold_range .- eps_high))]
 	)
 end
 
