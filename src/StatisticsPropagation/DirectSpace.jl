@@ -692,7 +692,7 @@ function calculate_scaled_vmr!(
   vmr .*= scaling_factor
 
   n_dims = M - 1
-  @. vmr = ifelse(isfinite(vmr), log(vmr) + (n_dims - 1) * 2 * log(π), NaN32)
+  @. vmr = ifelse(isfinite(vmr), log(vmr), NaN32)
 
   return nothing
 end

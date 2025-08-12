@@ -210,7 +210,9 @@ end
 
     @testset "Indentify convergence tests. $(n_dims)D" for n_dims in 1:3
       dlogt = 0.01
-      tol = 2.5
+      tol_high = -2.5
+      tol_low_id = 2.5
+      tol_low = 10.0
       alpha = 0.75
       threshold_crossing_steps = 3
 
@@ -228,7 +230,9 @@ end
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol,
+        tol_high,
+        tol_low_id,
+        tol_low,
         alpha,
         threshold_crossing_steps,
         snap.current_minima,
@@ -254,7 +258,9 @@ end
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol,
+        tol_high,
+        tol_low_id,
+        tol_low,
         alpha,
         threshold_crossing_steps,
         snap.current_minima,
@@ -280,7 +286,9 @@ end
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol,
+        tol_high,
+        tol_low_id,
+        tol_low,
         alpha,
         threshold_crossing_steps,
         snap.current_minima,
@@ -358,7 +366,9 @@ if CUDA.functional()
 
     @testset "Indentify convergence tests. $(n_dims)D" for n_dims in 1:3
       dlogt = 0.01f0
-      tol = -2.5f0
+      tol_high = -2.5f0
+      tol_low_id = 2.5f0
+      tol_low = 10.0f0
       alpha = 0.75f0
       threshold_crossing_steps = Int32(3)
 
@@ -376,7 +386,9 @@ if CUDA.functional()
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol,
+        tol_high,
+        tol_low_id,
+        tol_low,
         alpha,
         threshold_crossing_steps,
         snap.current_minima,
@@ -402,7 +414,9 @@ if CUDA.functional()
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol,
+        tol_high,
+        tol_low_id,
+        tol_low,
         alpha,
         threshold_crossing_steps,
         snap.current_minima,
@@ -428,7 +442,9 @@ if CUDA.functional()
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol,
+        tol_high,
+        tol_low_id,
+        tol_low,
         alpha,
         threshold_crossing_steps,
         snap.current_minima,

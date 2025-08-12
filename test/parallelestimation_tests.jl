@@ -130,7 +130,9 @@
       )
 
       # Parameter tests
-      @test isfinite(density_state.eps)
+      @test isfinite(density_state.eps_high)
+      @test isfinite(density_state.eps_low_id)
+      @test isfinite(density_state.eps_low)
       @test isfinite(density_state.threshold_crossing_steps)
       # State arrays test
       @test density_state.indicator_minima isa Array{Float64,n_dims}
@@ -372,7 +374,9 @@ if CUDA.functional()
       )
 
       # Parameter tests
-      @test isfinite(density_state.eps)
+      @test isfinite(density_state.eps_high)
+      @test isfinite(density_state.eps_low_id)
+      @test isfinite(density_state.eps_low)
       @test isfinite(density_state.threshold_crossing_steps)
       # State arrays test
       @test density_state.indicator_minima isa CuArray{Float32,n_dims}
