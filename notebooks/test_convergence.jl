@@ -306,11 +306,11 @@ let
 		density_estimation,
 		:parallelEstimator,
 		# time_step=0.0005,
-		threshold_crossing_percentage=0.005,
-		eps_high=-2.5,
-		eps_low=2.5,
-		eps_low_over=10.0,
-		alpha=0.75,
+		# threshold_crossing_percentage=0.005,
+		# eps_high=-2.5,
+		# eps_low=2.5,
+		# eps_low_over=10.0,
+		# alpha=0.75,
 		# time_final=0.5,
 		# n_bootstraps=1000,
 	)
@@ -400,8 +400,8 @@ begin
 	dlogts = fill(NaN, n_times)
 	alpha_parm = parallel_estimator.density_state.alpha
 	eps_high = parallel_estimator.density_state.eps_high
-	eps_low = parallel_estimator.density_state.eps_low
-	eps_low_over = parallel_estimator.density_state.eps_low_over
+	eps_low = parallel_estimator.density_state.eps_low_id
+	eps_low_over = parallel_estimator.density_state.eps_low
 end;
 
 # ╔═╡ fb725626-e5eb-4dfc-93e7-4946af668652
