@@ -72,7 +72,7 @@ estimate_density!
 Finally, the estimated density can be accessed using
 
 ```@docs; canonical=false
-get_density
+get_density(density_estimation::DensityEstimation; normalize, dx)
 ```
 
 More details regarding the currently implemented estimators as well as further information about the package can be found throughout the documentation.
