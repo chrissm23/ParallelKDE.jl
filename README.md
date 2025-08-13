@@ -11,7 +11,7 @@ High performance implementation in Julia of a parallel kernel density estimation
 
 - 📑 Docs: [stable](https://chrissm23.github.io/ParallelKDE.jl/stable/) | [dev](https://chrissm23.github.io/ParallelKDE.jl/dev/)
 - 📇 [Citing](#citing)
-- ![PyPI](https://img.shields.io/pypi/v/ParallelKDEpy?label=pypi%20package) Python wrapper: [ParallelKDEpy](https://github.com/chrissm23/ParallelKDEpy)
+- ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) Python wrapper: [ParallelKDEpy](https://github.com/chrissm23/ParallelKDEpy)
 
 ### Why this project?
 - ParallelKDE provides a framework to perform kernel density estimation (KDE) using parallel algorithms.
