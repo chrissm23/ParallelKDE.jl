@@ -64,4 +64,4 @@ For integration with Python-based workflows, a Python wrapper is available via t
 
 ## Citing
 
-Please cite the following papers when using ParallelKDE in your work:
+Please cite the following papers when using ParallelKDE.jl in your work:
