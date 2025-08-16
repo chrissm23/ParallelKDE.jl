@@ -565,7 +565,7 @@ function calculate_scaled_vmr!(
   perm = (M, 1:M-1...)
   permutedims!(vmrs_transposed, vmrs, perm)
 
-  scaling_factor = prod(time .^ 2 .+ time_initial .^ 2)^(3 / 2) * n_samples^4
+  scaling_factor = prod(time .^ 2 .+ time_initial .^ 2)^(3 / 2) * n_samples^3
 
   vmr_var = reshape(view(s2k_raw, 1:n_points), grid_dims)
   @inbounds for j in 1:n_points
@@ -647,7 +647,7 @@ function calculate_scaled_vmr!(
   end
 
   # Calculate the variance of the vmrs
-  scaling_factor = prod(time .^ 2 + time_initial .^ 2)^(3 / 2) * n_samples^4
+  scaling_factor = prod(time .^ 2 + time_initial .^ 2)^(3 / 2) * n_samples^3
 
   vmr_var = reshape(view(s2k_raw, 1:n_points), grid_dims)
 
@@ -681,7 +681,7 @@ function calculate_scaled_vmr!(
   time_initial::AnyCuVector{<:Real},
   n_samples::Integer,
 ) where {M}
-  scaling_factor = prod(time .^ 2i32 .+ time_initial .^ 2i32)^(1.5f0) * n_samples^4i32
+  scaling_factor = prod(time .^ 2i32 .+ time_initial .^ 2i32)^(1.5f0) * n_samples^3i32
 
   @. sk = abs(sk) / n_samples
   @. s2k = abs(s2k) / n_samples - sk^2
