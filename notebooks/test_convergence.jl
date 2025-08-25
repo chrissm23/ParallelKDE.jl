@@ -373,7 +373,7 @@ begin
 		method,
 		grid=grid_support,
 		# time_step=0.0005,
-		threshold_crossing_percentage=0.005,
+		# threshold_crossing_percentage=0.005,
 		# eps_high=-2.0,
 		# eps_low=2.0,
 		# eps_low_over=10.0,

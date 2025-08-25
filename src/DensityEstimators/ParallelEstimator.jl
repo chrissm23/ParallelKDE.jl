@@ -530,7 +530,7 @@ function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
   eps_high::Real=-2.5,
-  eps_low_id::Real=2.5,
+  eps_low_id::Real=0.0,
   eps_low::Real=10.0,
   alpha::Real=0.75,
   threshold_crossing_steps::Integer,
@@ -555,9 +555,9 @@ function DensityState(
     eps_low_id=T(eps_low_id),
     eps_low=T(eps_low),
     alpha=T(alpha),
-    threshold_crossing_steps=UInt16(threshold_crossing_steps),
+    threshold_crossing_steps=Int(threshold_crossing_steps),
     indicator_minima=fill(T(NaN), dims),
-    threshold_counters=zeros(UInt16, dims),
+    threshold_counters=zeros(Int16, dims),
     low_density_flags=fill(false, dims),
   )
 end
@@ -583,7 +583,7 @@ function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
   eps_high::Real=-2.5f0,
-  eps_low_id::Real=2.5f0,
+  eps_low_id::Real=0.0f0,
   eps_low::Real=10.0f0,
   alpha::Real=0.75f0,
   threshold_crossing_steps::Integer,
@@ -610,7 +610,7 @@ function CuDensityState(
     alpha=T(alpha),
     threshold_crossing_steps=Int32(threshold_crossing_steps),
     indicator_minima=CUDA.fill(T(NaN), dims),
-    threshold_counters=CUDA.zeros(UInt16, dims),
+    threshold_counters=CUDA.zeros(Int16, dims),
     low_density_flags=CUDA.fill(false, dims),
   )
 end
