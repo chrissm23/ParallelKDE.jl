@@ -946,6 +946,9 @@ function find_stability(
   second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dlogt)
   indicator = alpha * log(abs(first_derivative)) + (1 - alpha) * log(abs(second_derivative))
 
+  factor_negative = -20
+  threshold_crossing_negative = factor_negative * threshold_crossing_steps
+
   more_stable = false
   new_minimum = NaN
 
@@ -957,17 +960,31 @@ function find_stability(
         low_denisty_flag = true
         threshold_counter = zero(threshold_counter)
       end
+
     elseif indicator < tol_high
-      # Look for a sustained run below tol_high to save minimum
-      threshold_counter += one(threshold_counter)
-      if threshold_counter > threshold_crossing_steps
-        if (indicator < current_minimum) || isnan(current_minimum)
-          more_stable = true
-          new_minimum = indicator
+      if (threshold_crossing_negative < threshold_counter < zero(threshold_counter)) && !isnan(current_minimum)
+        threshold_counter = zero(threshold_counter)
+      elseif (threshold_counter < zero(threshold_counter)) && isnan(current_minimum)
+        threshold_counter = zero(threshold_counter)
+
+      elseif threshold_counter >= zero(threshold_counter)
+        # Look for a sustained run below tol_high to save minimum
+        threshold_counter += one(threshold_counter)
+        if threshold_counter > threshold_crossing_steps
+          if (indicator < current_minimum) || isnan(current_minimum)
+            more_stable = true
+            new_minimum = indicator
+          end
         end
+
       end
+
     else
-      threshold_counter = zero(threshold_counter)
+      if threshold_counter <= zero(threshold_counter)
+        threshold_counter -= one(threshold_counter)
+      else
+        threshold_counter = zero(threshold_counter)
+      end
     end
   else
     if vmr_current < tol_low
