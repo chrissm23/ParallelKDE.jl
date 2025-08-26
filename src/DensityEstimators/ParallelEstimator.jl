@@ -513,13 +513,14 @@ abstract type AbstractDensityState{N,T} end
   # Parameters
   eps_high::T
   eps_low_id::T
-  eps_low::T
   alpha::T
-  threshold_crossing_steps::UInt16
+
+  steps_buffer::UInt16
+  steps_stopping::UInt16
 
   # State
   indicator_minima::Array{T,N}
-  threshold_counters::Array{UInt16,N}
+  threshold_counters::Array{Int16,N}
   low_density_flags::Array{Bool,N}
 
   # Buffers
@@ -529,20 +530,17 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps_high::Real=-2.5,
+  eps_high::Real=0.0,
   eps_low_id::Real=0.0,
-  eps_low::Real=10.0,
   alpha::Real=0.75,
-  threshold_crossing_steps::Integer,
+  steps_buffer::Integer,
+  steps_stopping::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
   end
   if eps_high > 0
     throw(ArgumentError("eps_high must be non-positive"))
-  end
-  if eps_low < 0
-    throw(ArgumentError("eps_high must be non-negative"))
   end
   if eps_low_id < 0
     throw(ArgumentError("eps_low_id must be non-negative"))
@@ -553,9 +551,9 @@ function DensityState(
     f_prev2=fill(T(NaN), dims),
     eps_high=T(eps_high),
     eps_low_id=T(eps_low_id),
-    eps_low=T(eps_low),
     alpha=T(alpha),
-    threshold_crossing_steps=Int(threshold_crossing_steps),
+    steps_buffer=Int(steps_buffer),
+    steps_stopping=Int(steps_stopping),
     indicator_minima=fill(T(NaN), dims),
     threshold_counters=zeros(Int16, dims),
     low_density_flags=fill(false, dims),
@@ -566,13 +564,14 @@ end
   # Parameters
   eps_high::T
   eps_low_id::T
-  eps_low::T
   alpha::T
-  threshold_crossing_steps::Int32
+
+  steps_buffer::Int32
+  steps_stopping::Int32
 
   # State
   indicator_minima::CuArray{T,N}
-  threshold_counters::CuArray{UInt16,N}
+  threshold_counters::CuArray{Int16,N}
   low_density_flags::CuArray{Bool,N}
 
   # Buffers
@@ -582,20 +581,17 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps_high::Real=-2.5f0,
+  eps_high::Real=0.0f0,
   eps_low_id::Real=0.0f0,
-  eps_low::Real=10.0f0,
   alpha::Real=0.75f0,
-  threshold_crossing_steps::Integer,
+  steps_buffer::Integer,
+  steps_stopping::Integer,
 ) where {N}
   if alpha < 0 || alpha > 1
     throw(ArgumentError("alpha must be in the range [0, 1]"))
   end
   if eps_high > 0
     throw(ArgumentError("eps_high must be non-positive"))
-  end
-  if eps_low < 0
-    throw(ArgumentError("eps_high must be non-negative"))
   end
   if eps_low_id < 0
     throw(ArgumentError("eps_low_id must be non-negative"))
@@ -606,9 +602,9 @@ function CuDensityState(
     f_prev2=CUDA.fill(T(NaN), dims),
     eps_high=T(eps_high),
     eps_low_id=T(eps_low_id),
-    eps_low=T(eps_low),
     alpha=T(alpha),
-    threshold_crossing_steps=Int32(threshold_crossing_steps),
+    steps_buffer=Int32(steps_buffer),
+    steps_stopping=Int32(steps_stopping),
     indicator_minima=CUDA.fill(T(NaN), dims),
     threshold_counters=CUDA.zeros(Int16, dims),
     low_density_flags=CUDA.fill(false, dims),
@@ -635,9 +631,9 @@ function update_state!(
     dlogt,
     density_state.eps_high,
     density_state.eps_low_id,
-    density_state.eps_low,
     density_state.alpha,
-    density_state.threshold_crossing_steps,
+    density_state.steps_buffer,
+    density_state.steps_stopping,
     density_state.indicator_minima,
     density_state.threshold_counters,
     density_state.low_density_flags,
@@ -729,7 +725,8 @@ function initialize_estimator_propagation(
   time_step::Union{Nothing,Real}=nothing,
   time_final::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
-  threshold_crossing_percentage::Real=0.005,
+  fraction_buffer::Real=0.02,
+  fraction_stopping::Real=0.3,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
@@ -742,10 +739,12 @@ function initialize_estimator_propagation(
   end
   times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-  threshold_crossing_steps = calculate_duration_steps(times[end], dt; fraction=threshold_crossing_percentage)
+  steps_buffer, steps_stopping = calculate_duration_steps(
+    times[end], dt; fraction_buffer, fraction_stopping
+  )
 
   density_state = DensityState(
-    size(grid); T=T, threshold_crossing_steps, kwargs...
+    size(grid); T=T, steps_buffer, steps_stopping, kwargs...
   )
 
   return ParallelEstimator(
@@ -769,7 +768,8 @@ function initialize_estimator_propagation(
   time_step=nothing,
   time_final=nothing,
   n_steps=nothing,
-  threshold_crossing_percentage::Real=0.005f0,
+  fraction_buffer::Real=0.02f0,
+  fraction_stopping::Real=0.3f0,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
@@ -782,10 +782,12 @@ function initialize_estimator_propagation(
   end
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
-  threshold_crossing_steps = calculate_duration_steps(times[:, end], dt; fraction=threshold_crossing_percentage)
+  steps_buffer, steps_stopping = calculate_duration_steps(
+    times[:, end], dt; fraction_buffer, fraction_stopping
+  )
 
   density_state = CuDensityState(
-    size(grid); T=typeof(kde).parameters[2], threshold_crossing_steps, kwargs...
+    size(grid); T=typeof(kde).parameters[2], steps_buffer, steps_stopping, kwargs...
   )
 
   return CuParallelEstimator(
@@ -842,7 +844,7 @@ function get_time(
     return times, dt
   else
 
-    return get_time(IsCPU(), time_final, n_steps=1000)
+    return get_time(IsCPU(), time_final, n_steps=250)
   end
 
 end
@@ -894,14 +896,18 @@ function get_time(
 
 end
 
-function calculate_duration_steps(time_max, dt; fraction)
-  if fraction === nothing
-    fraction = 0.01
-  elseif fraction < 0 || fraction > 1
+function calculate_duration_steps(time_max, dt; fraction_buffer=0.01, fraction_stopping=0.3)
+  if fraction_buffer < 0 || fraction_buffer > 1
     throw(ArgumentError("Fraction must be in the range [0, 1]"))
   end
-  duration_steps = fraction .* time_max ./ dt
-  return round(Int, mean(duration_steps))
+  if fraction_stopping < 0 || fraction_stopping > 1
+    throw(ArgumentError("Fraction must be in the range [0, 1]"))
+  end
+  n_steps = time_max ./ dt
+  steps_buffer = fraction_buffer .* n_steps
+  steps_stopping = fraction_stopping .* n_steps
+
+  return round.(Int, (mean(steps_buffer), mean(steps_stopping)))
 end
 
 function estimate!(

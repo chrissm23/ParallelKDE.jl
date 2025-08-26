@@ -935,9 +935,9 @@ function find_stability(
   dlogt::Real,
   tol_high::Real,
   tol_low_id::Real,
-  tol_low::Real,
   alpha::Real,
-  threshold_crossing_steps::Integer,
+  steps_buffer::Integer,
+  steps_stopping::Integer,
   current_minimum::Real,
   threshold_counter::Integer,
   low_denisty_flag::Integer,
@@ -946,9 +946,6 @@ function find_stability(
   second_derivative = second_difference(vmr_current, vmr_prev1, vmr_prev2, dlogt)
   indicator = alpha * log(abs(first_derivative)) + (1 - alpha) * log(abs(second_derivative))
 
-  factor_negative = -20
-  threshold_crossing_negative = factor_negative * threshold_crossing_steps
-
   more_stable = false
   new_minimum = NaN
 
@@ -956,21 +953,21 @@ function find_stability(
     if indicator > tol_low_id
       # Look for a sustained run above tol_low to switch on
       threshold_counter += one(threshold_counter)
-      if threshold_counter > threshold_crossing_steps
+      if threshold_counter > steps_buffer
         low_denisty_flag = true
         threshold_counter = zero(threshold_counter)
       end
 
     elseif indicator < tol_high
-      if (threshold_crossing_negative < threshold_counter < zero(threshold_counter)) && !isnan(current_minimum)
+      if (threshold_counter < zero(threshold_counter)) && isnan(current_minimum)
         threshold_counter = zero(threshold_counter)
-      elseif (threshold_counter < zero(threshold_counter)) && isnan(current_minimum)
+      elseif -steps_stopping < threshold_counter < zero(threshold_counter)
         threshold_counter = zero(threshold_counter)
 
       elseif threshold_counter >= zero(threshold_counter)
         # Look for a sustained run below tol_high to save minimum
         threshold_counter += one(threshold_counter)
-        if threshold_counter > threshold_crossing_steps
+        if threshold_counter > steps_buffer
           if (indicator < current_minimum) || isnan(current_minimum)
             more_stable = true
             new_minimum = indicator
@@ -987,9 +984,9 @@ function find_stability(
       end
     end
   else
-    if vmr_current < tol_low
+    if vmr_prev2 > vmr_prev1 > vmr_current
       threshold_counter += one(threshold_counter)
-      if (threshold_counter > threshold_crossing_steps) && isnan(current_minimum)
+      if (threshold_counter > steps_buffer) && isnan(current_minimum)
         more_stable = true
         new_minimum = indicator
       end
