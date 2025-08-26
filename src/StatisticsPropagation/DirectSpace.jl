@@ -798,6 +798,7 @@ function identify_convergence!(
   threshold_crossing_steps::Integer,
   current_minima::AbstractArray{T,N},
   threshold_counter::AbstractArray{<:Integer,N},
+  low_density_counter::AbstractArray{<:Integer,N},
   low_density_flags::AbstractArray{Bool,N},
 ) where {T<:Real,N}
   @inbounds @simd for i in eachindex(vmr_current)
@@ -813,9 +814,11 @@ function identify_convergence!(
       threshold_crossing_steps,
       current_minima[i],
       threshold_counter[i],
+      low_density_counter[i],
       low_density_flags[i],
     )
-    threshold_counter[i] = results.counter
+    threshold_counter[i] = results.counter_high
+    low_density_counter[i] = results.counter_low
     low_density_flags[i] = results.low_density
 
     if results.more_stable
@@ -842,6 +845,7 @@ function identify_convergence!(
   threshold_crossing_steps::Integer,
   current_minima::AbstractArray{T,N},
   threshold_counter::AbstractArray{<:Integer,N},
+  low_density_counter::AbstractArray{<:Integer,N},
   low_density_flags::AbstractArray{Bool,N},
 ) where {T<:Real,N}
   Threads.@threads for i in eachindex(vmr_current)
@@ -857,9 +861,11 @@ function identify_convergence!(
       threshold_crossing_steps,
       current_minima[i],
       threshold_counter[i],
+      low_density_counter[i],
       low_density_flags[i],
     )
-    threshold_counter[i] = results.counter
+    threshold_counter[i] = results.counter_high
+    low_density_counter[i] = results.counter_low
     low_density_flags[i] = results.low_density
 
     if results.more_stable
@@ -886,6 +892,7 @@ function identify_convergence!(
   threshold_crossing_steps::Integer,
   current_minima::AnyCuArray{T,N},
   threshold_counter::AnyCuArray{<:Integer,N},
+  low_density_counter::AnyCuArray{<:Integer,N},
   low_density_flags::AnyCuArray{Bool,N}
 ) where {T<:Real,N}
   n_points = length(vmr_current)
@@ -940,6 +947,7 @@ function find_stability(
   steps_stopping::Integer,
   current_minimum::Real,
   threshold_counter::Integer,
+  low_density_counter::Integer,
   low_denisty_flag::Integer,
 )
   first_derivative = first_difference(vmr_current, vmr_prev1, dlogt)
@@ -949,13 +957,14 @@ function find_stability(
   more_stable = false
   new_minimum = NaN
 
+  # FIX: Is there stopping point logic if we reach steps_stopping?
   if !low_denisty_flag
-    if indicator > tol_low_id
+    if (indicator > tol_low_id) && isnan(current_minimum)
+      low_density_counter += one(low_density_counter)
       # Look for a sustained run above tol_low to switch on
-      threshold_counter += one(threshold_counter)
-      if threshold_counter > steps_buffer
+      if low_density_counter > steps_buffer
         low_denisty_flag = true
-        threshold_counter = zero(threshold_counter)
+        low_density_counter = zero(low_density_counter)
       end
 
     elseif indicator < tol_high
@@ -984,14 +993,14 @@ function find_stability(
       end
     end
   else
-    if vmr_prev2 > vmr_prev1 > vmr_current
-      threshold_counter += one(threshold_counter)
-      if (threshold_counter > steps_buffer) && isnan(current_minimum)
+    if (vmr_prev2 < vmr_prev1 < vmr_current) && isnan(current_minimum)
+      low_density_counter += one(low_density_counter)
+      if low_density_counter > steps_buffer
         more_stable = true
         new_minimum = indicator
       end
     else
-      threshold_counter = zero(threshold_counter)
+      low_density_counter = zero(low_density_counter)
     end
   end
 
@@ -1002,7 +1011,8 @@ function find_stability(
   return (
     more_stable=more_stable,
     new_minimum=new_minimum,
-    counter=threshold_counter,
+    counter_high=threshold_counter,
+    counter_low=low_density_counter,
     low_density=low_denisty_flag,
   )
 end
