@@ -531,7 +531,7 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps_high::Real=0.0,
+  eps_high::Real=-2.5,
   eps_low_id::Real=0.0,
   alpha::Real=0.75,
   steps_buffer::Integer,
@@ -542,9 +542,6 @@ function DensityState(
   end
   if eps_high > 0
     throw(ArgumentError("eps_high must be non-positive"))
-  end
-  if eps_low_id < 0
-    throw(ArgumentError("eps_low_id must be non-negative"))
   end
 
   DensityState{N,T}(;
@@ -584,7 +581,7 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps_high::Real=0.0f0,
+  eps_high::Real=-2.5f0,
   eps_low_id::Real=0.0f0,
   alpha::Real=0.75f0,
   steps_buffer::Integer,
@@ -595,9 +592,6 @@ function CuDensityState(
   end
   if eps_high > 0
     throw(ArgumentError("eps_high must be non-positive"))
-  end
-  if eps_low_id < 0
-    throw(ArgumentError("eps_low_id must be non-negative"))
   end
 
   CuDensityState{N,T}(;
