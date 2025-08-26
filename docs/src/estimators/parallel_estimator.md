@@ -21,10 +21,11 @@ estimate_density!(density_estimation, :parallelEstimator; kwargs...)
 - `time_final`: Maximum bandwidth to iterate to. Default is given by Silverman's rule.
 - `time_step`: Size of the time step between iterations. Default is chosen for 1000 iterations.
 - `n_steps`: Number of iterations to perform. Default is 1000. This has precedence over `time_step`.
-- `threshold_crossing_percentage`: Percentage of the total time steps to require beyond the thresholds before entering the corresponding propagation regime. Default is 0.01 (1%).
+- `fraction_buffer`: Percentage of the total time steps of persistence beyond the thresholds before registering the crossing event. Default is 0.01 (1%).
+- `fraction_stopping`: Maximum percentage of the total time steps allowed above `eps_high`
+before halting the estimated density updates. Default is 0.3 (30%).
 - `eps_high`: Threshold for convergence of high density regions. Default is -2.5.
-- `eps_low_id`: Threshold for convergence of low density regions. Default is 2.5.
-- `eps_low`: Threshold for convergence of low density regions. Default is 10.0.
+- `eps_low_id`: Threshold for convergence of low density regions. Default is 0.
 - `alpha`: Weight given to the first derivative as indicator for stopping propagation over the second derivative. Default is 0.75.
 
 ## References
