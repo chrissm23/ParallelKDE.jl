@@ -513,15 +513,13 @@ abstract type AbstractDensityState{N,T} end
   # Parameters
   eps_high::T
   eps_low_id::T
-  alpha::T
 
-  steps_buffer::UInt16
-  steps_stopping::UInt16
+  steps_buffer::Int
+  steps_stopping::Int
 
   # State
   indicator_minima::Array{T,N}
   threshold_counters::Array{Int16,N}
-  low_density_counters::Array{UInt16,N}
   low_density_flags::Array{Bool,N}
 
   # Buffers
@@ -531,30 +529,20 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps_high::Real=-2.5,
-  eps_low_id::Real=0.0,
-  alpha::Real=0.75,
+  eps_high::Real=0.0,
+  eps_low_id::Real=2.0,
   steps_buffer::Integer,
   steps_stopping::Integer,
 ) where {N}
-  if alpha < 0 || alpha > 1
-    throw(ArgumentError("alpha must be in the range [0, 1]"))
-  end
-  if eps_high > 0
-    throw(ArgumentError("eps_high must be non-positive"))
-  end
-
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
     eps_high=T(eps_high),
     eps_low_id=T(eps_low_id),
-    alpha=T(alpha),
     steps_buffer=Int(steps_buffer),
     steps_stopping=Int(steps_stopping),
     indicator_minima=fill(T(NaN), dims),
     threshold_counters=zeros(Int16, dims),
-    low_density_counters=zeros(UInt16, dims),
     low_density_flags=fill(false, dims),
   )
 end
@@ -563,7 +551,6 @@ end
   # Parameters
   eps_high::T
   eps_low_id::T
-  alpha::T
 
   steps_buffer::Int32
   steps_stopping::Int32
@@ -571,7 +558,6 @@ end
   # State
   indicator_minima::CuArray{T,N}
   threshold_counters::CuArray{Int16,N}
-  low_density_counters::CuArray{UInt16,N}
   low_density_flags::CuArray{Bool,N}
 
   # Buffers
@@ -581,30 +567,20 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps_high::Real=-2.5f0,
-  eps_low_id::Real=0.0f0,
-  alpha::Real=0.75f0,
+  eps_high::Real=-1.0f0,
+  eps_low_id::Real=6.0f0,
   steps_buffer::Integer,
   steps_stopping::Integer,
 ) where {N}
-  if alpha < 0 || alpha > 1
-    throw(ArgumentError("alpha must be in the range [0, 1]"))
-  end
-  if eps_high > 0
-    throw(ArgumentError("eps_high must be non-positive"))
-  end
-
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
     eps_high=T(eps_high),
     eps_low_id=T(eps_low_id),
-    alpha=T(alpha),
     steps_buffer=Int32(steps_buffer),
     steps_stopping=Int32(steps_stopping),
     indicator_minima=CUDA.fill(T(NaN), dims),
     threshold_counters=CUDA.zeros(Int16, dims),
-    low_density_counters=CUDA.zeros(UInt16, dims),
     low_density_flags=CUDA.fill(false, dims),
   )
 end
@@ -629,12 +605,10 @@ function update_state!(
     dlogt,
     density_state.eps_high,
     density_state.eps_low_id,
-    density_state.alpha,
     density_state.steps_buffer,
     density_state.steps_stopping,
     density_state.indicator_minima,
     density_state.threshold_counters,
-    density_state.low_density_counters,
     density_state.low_density_flags,
   )
 
@@ -724,8 +698,8 @@ function initialize_estimator_propagation(
   time_step::Union{Nothing,Real}=nothing,
   time_final::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
-  fraction_buffer::Real=0.02,
-  fraction_stopping::Real=0.3,
+  fraction_buffer::Real=0.03,
+  fraction_stopping::Real=0.2,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
@@ -767,8 +741,8 @@ function initialize_estimator_propagation(
   time_step=nothing,
   time_final=nothing,
   n_steps=nothing,
-  fraction_buffer::Real=0.02f0,
-  fraction_stopping::Real=0.3f0,
+  fraction_buffer::Real=0.03f0,
+  fraction_stopping::Real=0.2f0,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)

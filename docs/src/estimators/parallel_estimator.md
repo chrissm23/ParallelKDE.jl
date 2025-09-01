@@ -22,11 +22,9 @@ estimate_density!(density_estimation, :parallelEstimator; kwargs...)
 - `time_step`: Size of the time step between iterations. Default is chosen for 1000 iterations.
 - `n_steps`: Number of iterations to perform. Default is 1000. This has precedence over `time_step`.
 - `fraction_buffer`: Percentage of the total time steps of persistence beyond the thresholds before registering the crossing event. Default is 0.01 (1%).
-- `fraction_stopping`: Maximum percentage of the total time steps allowed above `eps_high`
-before halting the estimated density updates. Default is 0.3 (30%).
-- `eps_high`: Threshold for convergence of high density regions. Default is -2.5.
-- `eps_low_id`: Threshold for convergence of low density regions. Default is 0.
-- `alpha`: Weight given to the first derivative as indicator for stopping propagation over the second derivative. Default is 0.75.
+- `fraction_stopping`: Maximum percentage of the total time steps allowed above `eps_high` before halting the estimated density updates. Default is 0.3 (30%).
+- `eps_high`: Threshold for convergence of high density regions. Default is 0.0 for CPU and -1.0 for GPU.
+- `eps_low_id`: Threshold for convergence of low density regions. Default is 2.0 for CPU and 6.0 for GPU.
 
 ## References
 
