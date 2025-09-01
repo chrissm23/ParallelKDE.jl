@@ -54,7 +54,7 @@ function calculate_test_vmr(test_mean, test_var; time_final=1.0, time_initial=0.
   times = fill(time_final, n_dims)
   times_initial = fill(time_initial, n_dims)
 
-  scaling_factor = prod(times .^ 2 .+ times_initial .^ 2)^(3 / 2) * n_samples^4
+  scaling_factor = prod(times .^ 2 .+ times_initial .^ 2)^(3 / 2) * n_samples^3
   vmr_v = scaling_factor .* dropdims(var(vmr, dims=n_dims + 1); dims=n_dims + 1)
 
   return @. ifelse(isfinite(vmr_v), log(vmr_v), NaN)
@@ -66,7 +66,7 @@ function calculate_test_means(test_mean)
   return means
 end
 
-function make_snapshot(::Val{:cpu}, n_dims, stage, stable_duration)
+function make_snapshot(::Val{:cpu}, n_dims, stage, steps_buffer)
   grid_size = ntuple(i -> 101, n_dims)
   if stage == :unstable
     vmr_current = fill(1.0, grid_size)
@@ -74,7 +74,7 @@ function make_snapshot(::Val{:cpu}, n_dims, stage, stable_duration)
     vmr_prev2 = fill(1.0, grid_size)
 
     current_minima = zeros(Float64, grid_size)
-    threshold_counters = zeros(UInt16, grid_size)
+    threshold_counters = zeros(Int16, grid_size)
     low_density_flags = fill(false, grid_size)
 
   elseif stage == :stable
@@ -83,7 +83,7 @@ function make_snapshot(::Val{:cpu}, n_dims, stage, stable_duration)
     vmr_prev2 = fill(1.00005, grid_size)
 
     current_minima = zeros(Float64, grid_size)
-    threshold_counters = fill(UInt16(stable_duration) + 1, grid_size)
+    threshold_counters = zeros(Int16, grid_size)
     low_density_flags = fill(false, grid_size)
 
   elseif stage == :update
@@ -92,7 +92,7 @@ function make_snapshot(::Val{:cpu}, n_dims, stage, stable_duration)
     vmr_prev2 = fill(1.00001, grid_size)
 
     current_minima = fill(-5.0, grid_size)
-    threshold_counters = fill(UInt16(stable_duration) + 2, grid_size)
+    threshold_counters = zeros(Int16, grid_size)
     low_density_flags = fill(false, grid_size)
 
   else
@@ -109,7 +109,7 @@ function make_snapshot(::Val{:cpu}, n_dims, stage, stable_duration)
   )
 
 end
-function make_snapshot(::Val{:cuda}, n_dims, stage, stable_duration)
+function make_snapshot(::Val{:cuda}, n_dims, stage, steps_buffer)
   grid_size = ntuple(i -> 101, n_dims)
   if stage == :unstable
     vmr_current = CUDA.fill(1.0f0, grid_size)
@@ -126,7 +126,7 @@ function make_snapshot(::Val{:cuda}, n_dims, stage, stable_duration)
     vmr_prev2 = CUDA.fill(1.00005f0, grid_size)
 
     current_minima = CUDA.zeros(Float32, grid_size)
-    threshold_counters = CUDA.fill(Int32(stable_duration) + 1, grid_size)
+    threshold_counters = CUDA.fill(Int32(steps_buffer) + 1, grid_size)
     low_density_flags = CUDA.fill(false, grid_size)
 
   elseif stage == :update
@@ -135,7 +135,7 @@ function make_snapshot(::Val{:cuda}, n_dims, stage, stable_duration)
     vmr_prev2 = CUDA.fill(1.00001f0, grid_size)
 
     current_minima = CUDA.fill(-5.0f0, grid_size)
-    threshold_counters = CUDA.fill(Int32(stable_duration) + 2, grid_size)
+    threshold_counters = CUDA.fill(Int32(steps_buffer) + 2, grid_size)
     low_density_flags = CUDA.fill(false, grid_size)
 
   else
@@ -210,14 +210,13 @@ end
 
     @testset "Indentify convergence tests. $(n_dims)D" for n_dims in 1:3
       dlogt = 0.01
-      tol_high = -2.5
-      tol_low_id = 2.5
-      tol_low = 10.0
-      alpha = 0.75
-      threshold_crossing_steps = 3
+      tol_high = 0.0
+      tol_low_id = 2.0
+      steps_buffer = 3
+      steps_stopping = 30
 
       # Test unstable VMR
-      snap = make_snapshot(Val(:cpu), n_dims, :unstable, threshold_crossing_steps)
+      snap = make_snapshot(Val(:cpu), n_dims, :unstable, steps_buffer)
 
       density = fill(NaN, size(snap.vmr_current))
       means = ones(Float64, size(snap.vmr_current))
@@ -232,20 +231,19 @@ end
         dlogt,
         tol_high,
         tol_low_id,
-        tol_low,
-        alpha,
-        threshold_crossing_steps,
+        steps_buffer,
+        steps_stopping,
         snap.current_minima,
         snap.threshold_counters,
         snap.low_density_flags,
       )
 
       @test all(isnan.(density))
-      @test all(snap.threshold_counters .== 1)
+      @test all(isone.(snap.threshold_counters))
       @test all(iszero.(snap.current_minima))
 
       # Test stable VMR
-      snap = make_snapshot(Val(:cpu), n_dims, :stable, threshold_crossing_steps)
+      snap = make_snapshot(Val(:cpu), n_dims, :stable, steps_buffer)
 
       density = fill(NaN, size(snap[1]))
       means = ones(Float64, size(snap[1]))
@@ -260,20 +258,19 @@ end
         dlogt,
         tol_high,
         tol_low_id,
-        tol_low,
-        alpha,
-        threshold_crossing_steps,
+        steps_buffer,
+        steps_stopping,
         snap.current_minima,
         snap.threshold_counters,
         snap.low_density_flags,
       )
 
       @test all(density .== 1.0)
-      @test all(snap.threshold_counters .== threshold_crossing_steps + 2)
+      @test all(iszero.(snap.threshold_counters))
       @test !any(iszero.(snap.current_minima))
 
       # Test update stable VMR
-      snap = make_snapshot(Val(:cpu), n_dims, :update, threshold_crossing_steps)
+      snap = make_snapshot(Val(:cpu), n_dims, :update, steps_buffer)
 
       density = fill(NaN, size(snap[1]))
       means = ones(Float64, size(snap[1]))
@@ -288,16 +285,15 @@ end
         dlogt,
         tol_high,
         tol_low_id,
-        tol_low,
-        alpha,
-        threshold_crossing_steps,
+        steps_buffer,
+        steps_stopping,
         snap.current_minima,
         snap.threshold_counters,
         snap.low_density_flags,
       )
 
       @test all(density .== 1.0)
-      @test all(snap.threshold_counters .== threshold_crossing_steps + 3)
+      @test all(iszero.(snap.threshold_counters))
       @test all(snap.current_minima .<= -2.5)
     end
   end
@@ -366,14 +362,13 @@ if CUDA.functional()
 
     @testset "Indentify convergence tests. $(n_dims)D" for n_dims in 1:3
       dlogt = 0.01f0
-      tol_high = -2.5f0
-      tol_low_id = 2.5f0
-      tol_low = 10.0f0
-      alpha = 0.75f0
-      threshold_crossing_steps = Int32(3)
+      tol_high = 0.0f0
+      tol_low_id = 2.0f0
+      steps_buffer = Int32(3)
+      steps_stopping = Int32(30)
 
       # Test unstable VMR
-      snap = make_snapshot(Val(:cuda), n_dims, :unstable, threshold_crossing_steps)
+      snap = make_snapshot(Val(:cuda), n_dims, :unstable, steps_buffer)
 
       density = CUDA.fill(NaN32, size(snap[1]))
       means = CUDA.ones(Float32, size(snap[1]))
@@ -388,20 +383,19 @@ if CUDA.functional()
         dlogt,
         tol_high,
         tol_low_id,
-        tol_low,
-        alpha,
-        threshold_crossing_steps,
+        steps_buffer,
+        steps_stopping,
         snap.current_minima,
         snap.threshold_counters,
         snap.low_density_flags,
       )
 
       @test all(isnan.(density))
-      @test all(snap.threshold_counters .== 1)
+      @test all(isone.(snap.threshold_counters))
       @test all(iszero.(snap.current_minima))
 
       # Test stable VMR
-      snap = make_snapshot(Val(:cuda), n_dims, :stable, threshold_crossing_steps)
+      snap = make_snapshot(Val(:cuda), n_dims, :stable, steps_buffer)
 
       density = CUDA.fill(NaN32, size(snap[1]))
       means = CUDA.ones(Float32, size(snap[1]))
@@ -416,20 +410,19 @@ if CUDA.functional()
         dlogt,
         tol_high,
         tol_low_id,
-        tol_low,
-        alpha,
-        threshold_crossing_steps,
+        steps_buffer,
+        steps_stopping,
         snap.current_minima,
         snap.threshold_counters,
         snap.low_density_flags,
       )
 
       @test all(density .== 1.0f0)
-      @test all(snap.threshold_counters .== threshold_crossing_steps + 2)
+      @test all(iszero.(snap.threshold_counters))
       @test !any(iszero.(snap.current_minima))
 
       # Test update stable VMR
-      snap = make_snapshot(Val(:cuda), n_dims, :update, threshold_crossing_steps)
+      snap = make_snapshot(Val(:cuda), n_dims, :update, steps_buffer)
 
       density = CUDA.fill(NaN32, size(snap[1]))
       means = CUDA.ones(Float32, size(snap[1]))
@@ -444,16 +437,15 @@ if CUDA.functional()
         dlogt,
         tol_high,
         tol_low_id,
-        tol_low,
-        alpha,
-        threshold_crossing_steps,
+        steps_buffer,
+        steps_stopping,
         snap.current_minima,
         snap.threshold_counters,
         snap.low_density_flags,
       )
 
       @test all(density .== 1.0f0)
-      @test all(snap.threshold_counters .== threshold_crossing_steps + 3)
+      @test all(iszero.(snap.threshold_counters))
       @test all(snap.current_minima .<= -5.0f0)
     end
   end

@@ -305,12 +305,12 @@ let
 	estimate_density!(
 		density_estimation,
 		:parallelEstimator,
-		n_steps=250,
-		# fraction_buffer=0.02,
+		# n_steps=250,
+		# eps_high=0,
+		# eps_low_id=2,
+		# fraction_buffer=0.03,
+		# fraction_stopping=0.3,
 		# time_step=0.0005,
-		eps_high=0,
-		# eps_low_id=0,
-		# alpha=0.75,
 		# time_final=0.5,
 		# n_bootstraps=1000,
 	)
@@ -372,12 +372,12 @@ begin
 		kde;
 		method,
 		grid=grid_support,
-		n_steps=1000,
+		# n_steps=250,
+		# eps_high=0,
 		# fraction_buffer=0.02,
+		# fraction_stopping=0.1,
 		# time_step=0.0005,
-		eps_high=-2.5,
-		# eps_low_id=0.0,
-		# alpha=0.75,
+		# eps_low_id=5,
 		# time_final=2.0
 	)
 
@@ -398,7 +398,6 @@ begin
 	density_assigned_time = falses(n_gridpoints, n_times)
 
 	dlogts = fill(NaN, n_times)
-	alpha_parm = parallel_estimator.density_state.alpha
 	eps_high = parallel_estimator.density_state.eps_high
 	eps_low_id = parallel_estimator.density_state.eps_low_id
 end;
@@ -487,18 +486,16 @@ sum(count(density_assigned_time, dims=1))
 
 # ╔═╡ 5cca44db-4f10-4f9b-9c0a-6e6e1a983720
 begin
-	derivatives1[:, begin+1:end] .= alpha_parm .* log.(
+	derivatives1[:, begin+1:end] .= log.(
 		abs.(
 			diff(vmr_time, dims=2) ./ reshape(2 .* dlogts[begin+1:end],1,:)
 		)
 	)
-	derivatives2[:, begin+2:end] .= (1-alpha_parm) .* log.(
+	derivatives2[:, begin+2:end] .= log.(
 		abs.(
 			diff(diff(vmr_time, dims=2), dims=2) ./ reshape(dlogts[begin+2:end] .^2 ,1,:)
 		)
 	)
-
-	indicator = derivatives1 .+ derivatives2
 	
 	optimal_times = times_range[
 		argmin.(eachrow(abs.(means_time .- reshape(distro_pdf, n_gridpoints, 1))))
@@ -687,6 +684,9 @@ begin
 	)
 end
 
+# ╔═╡ 4a7adae6-e2f5-4478-aad2-c868879f8236
+@bind plot_idx Slider(1:length(test_indices))
+
 # ╔═╡ c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
 md"#### First derivative"
 
@@ -694,7 +694,7 @@ md"#### First derivative"
 begin
 	p_dev1 = plot(
 		times_range[begin+1:end],
-		eachrow(derivatives1[:,begin+1:end])[test_indices],
+		eachrow(derivatives1[:,begin+1:end])[test_indices][plot_idx],
 		label=false,
 		palette=test_palette,
 		lw=2,
@@ -702,12 +702,23 @@ begin
 		xlims=extrema(times_range[begin+1:end]),
 		# xlims=(0,0.25),
 		# yaxis=:log,
-		# xaxis=:log
+		# xaxis=:log,
+		c=test_palette[plot_idx],
 	)
 
 	vline!(p_dev1, [propagation_time], c=:forestgreen, label="Propagation time")
 
+	vline!(
+			p_dev1,
+			[optimal_times[test_indices[plot_idx]]],
+			label=false,
+			lw=2,
+			lc=test_palette[plot_idx],
+			ls=:dashdot,
+		)
+
 	for (i, val) in enumerate(distro_pdf[test_indices])
+		if i == plot_idx
 		vline!(
 			p_dev1,
 			[
@@ -726,6 +737,7 @@ begin
 			lc=test_palette[i],
 			ls=:dash,
 		)
+		end
 	end
 
 	# Manual label
@@ -744,21 +756,31 @@ md"#### Second derivative"
 begin
 	p_dev2 = plot(
 		times_range[begin+1:end],
-		eachrow(derivatives2[:, begin+1:end])[test_indices],
+		eachrow(derivatives2[:, begin+1:end])[test_indices][plot_idx],
 		label=false,
 		palette=test_palette,
 		lw=2,
-		ylims=(-10,5),
+		ylims=(-10,10),
 		xlims=extrema(times_range[begin+1:end]),
 		# xlims=(0,0.25),
 		# yaxis=:log,
 		# xaxis=:log,
-		dpi=500,
+		c=test_palette[plot_idx]
 	)
 
 	vline!(p_dev2, [propagation_time], c=:forestgreen, label="Propagation time")
 
+	vline!(
+			p_dev2,
+			[optimal_times[test_indices[plot_idx]]],
+			label=false,
+			lw=2,
+			lc=test_palette[plot_idx],
+			ls=:dashdot,
+		)
+
 	for (i, val) in enumerate(distro_pdf[test_indices])
+		if i == plot_idx
 		vline!(
 			p_dev2,
 			[
@@ -777,6 +799,7 @@ begin
 			lc=test_palette[i],
 			ls=:dash,
 		)
+		end
 	end
 
 	# Manual label
@@ -792,6 +815,72 @@ begin
 	p_dev2
 end
 
+# ╔═╡ 3795c753-f4ae-45b5-822c-116ef118836e
+md"#### Difference between derivatives"
+
+# ╔═╡ 4c833f83-8721-4890-a593-9efb140e2ee7
+begin
+	p_t = plot(
+		times_range[begin+1:end],
+		eachrow(derivatives2[:, begin+1:end] .- derivatives1[:, begin+1:end])[test_indices][plot_idx],
+		label=false,
+		palette=test_palette,
+		lw=2,
+		ylims=(-10,5),
+		xlims=extrema(times_range[begin+1:end]),
+		# xlims=(0,0.25),
+		# yaxis=:log,
+		# xaxis=:log,
+		c=test_palette[plot_idx]
+	)
+
+	vline!(p_t, [propagation_time], c=:forestgreen, label="Propagation time")
+
+	vline!(
+			p_t,
+			[optimal_times[test_indices[plot_idx]]],
+			label=false,
+			lw=2,
+			lc=test_palette[plot_idx],
+			ls=:dashdot,
+		)
+
+	for (i, val) in enumerate(distro_pdf[test_indices])
+		if i == plot_idx
+		vline!(
+			p_t,
+			[
+				let
+					try
+						times_range[
+							findlast(density_assigned_time[test_indices[i], :])
+						]
+					catch
+						NaN
+					end
+				end
+			],
+			label=false,
+			lw=2,
+			lc=test_palette[i],
+			ls=:dash,
+		)
+		end
+	end
+
+	# Manual label
+	plot!(
+		p_t, [-10; -20], lw=2, lc=:black, ls=:solid, label="Second derivative"
+	)
+	# plot!(
+	# 	p_dev2, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
+	# )
+
+	# savefig(p_dev2, "dev2_cpu.png")
+
+	p_t
+end
+
 # ╔═╡ fcb3dd19-8c34-4870-9cdb-05aa140da88a
 md"#### Combined derivative indicator"
 
@@ -805,10 +894,12 @@ begin
 end
 
 # ╔═╡ 5359ee63-8b88-4215-b216-58dd5af0c2b0
+# ╠═╡ disabled = true
+#=╠═╡
 begin
 	p_dev12 = plot(
 		times_range[begin+1:end],
-		eachrow(indicator[:, begin+1:end])[test_indices],
+		eachrow(indicator[:, begin+1:end])[test_indices][plot_idx],
 		label=false,
 		palette=test_palette,
 		lw=2,
@@ -817,14 +908,23 @@ begin
 		# xlims=(0,0.25),
 		# yaxis=:log,
 		# xaxis=:log,
-		dpi=500,
+		c=test_palette[plot_idx],
 	)
+	vline!(
+			p_dev12,
+			[optimal_times[test_indices[plot_idx]]],
+			label=false,
+			lw=2,
+			lc=test_palette[plot_idx],
+			ls=:dashdot,
+		)
 
 	hline!(p_dev12, [threshold], c=:red, label="Threshold: $threshold")
 	vline!(p_dev12, [propagation_time], c=:forestgreen, label="Propagation time")
 
 	
 	for (i, val) in enumerate(distro_pdf[test_indices])
+		if i == plot_idx
 		vline!(
 			p_dev12,
 			[
@@ -843,10 +943,12 @@ begin
 			lc=test_palette[i],
 			ls=:dash,
 		)
+		end
 	end
 
 	p_dev12
 end
+  ╠═╡ =#
 
 # ╔═╡ 8bd6926d-dbec-4858-9c72-5e0904bc71d7
 md"#### Final stopping point"
@@ -1027,10 +1129,13 @@ end
 # ╟─7f9cf2ba-2085-4b80-a98a-9feb7fe0c4de
 # ╟─097c40b2-2b34-442d-8cb9-4c63b60abfc4
 # ╟─c20c3541-d935-423c-a07f-77d8e0679d8d
+# ╠═4a7adae6-e2f5-4478-aad2-c868879f8236
 # ╟─c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
 # ╟─36ff4668-62aa-4cb1-b732-2bc278d723e2
 # ╟─239d91b7-1a08-48aa-9e86-93e4c006bc06
 # ╟─c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
+# ╟─3795c753-f4ae-45b5-822c-116ef118836e
+# ╟─4c833f83-8721-4890-a593-9efb140e2ee7
 # ╟─fcb3dd19-8c34-4870-9cdb-05aa140da88a
 # ╟─adcc7ec7-f8cb-4c62-a6c8-10b2396c3fb3
 # ╟─5359ee63-8b88-4215-b216-58dd5af0c2b0

@@ -126,17 +126,17 @@
 
     @testset "Density state tests" begin
       density_state = ParallelKDE.DensityEstimators.DensityState(
-        size(grid), threshold_crossing_steps=10
+        size(grid), steps_buffer=3, steps_stopping=30
       )
 
       # Parameter tests
       @test isfinite(density_state.eps_high)
       @test isfinite(density_state.eps_low_id)
-      @test isfinite(density_state.eps_low)
-      @test isfinite(density_state.threshold_crossing_steps)
+      @test isfinite(density_state.steps_buffer)
+      @test isfinite(density_state.steps_stopping)
       # State arrays test
       @test density_state.indicator_minima isa Array{Float64,n_dims}
-      @test density_state.threshold_counters isa Array{UInt16,n_dims}
+      @test density_state.threshold_counters isa Array{Int16,n_dims}
       # Buffers tests
       @test all(isnan.(density_state.f_prev1))
       @test all(isnan.(density_state.f_prev2))
@@ -190,7 +190,7 @@
       grid_fourier = fftgrid(grid)
 
       density_state = ParallelKDE.DensityEstimators.DensityState(
-        size(grid), threshold_crossing_steps=10
+        size(grid), steps_buffer=3, steps_stopping=30
       )
 
       dt = @SVector fill(0.2, n_dims)
@@ -370,17 +370,17 @@ if CUDA.functional()
 
     @testset "Density state tests" begin
       density_state = ParallelKDE.DensityEstimators.CuDensityState(
-        size(grid), threshold_crossing_steps=10
+        size(grid), steps_buffer=3, steps_stopping=30
       )
 
       # Parameter tests
       @test isfinite(density_state.eps_high)
       @test isfinite(density_state.eps_low_id)
-      @test isfinite(density_state.eps_low)
-      @test isfinite(density_state.threshold_crossing_steps)
+      @test isfinite(density_state.steps_buffer)
+      @test isfinite(density_state.steps_stopping)
       # State arrays test
       @test density_state.indicator_minima isa CuArray{Float32,n_dims}
-      @test density_state.threshold_counters isa CuArray{UInt16,n_dims}
+      @test density_state.threshold_counters isa CuArray{Int16,n_dims}
       # Buffers tests
       @test all(isnan.(density_state.f_prev1))
       @test all(isnan.(density_state.f_prev2))
@@ -400,7 +400,7 @@ if CUDA.functional()
       density_state.f_prev2 .= 2.0
 
       ParallelKDE.DensityEstimators.update_state!(
-        density_state, 1e-3, kde, kernel_propagation, method=:cuda
+        density_state, 1e-4, kde, kernel_propagation, method=:cuda
       )
 
       @test all(density_state.f_prev1 .== ParallelKDE.DensityEstimators.get_vmr(kernel_propagation))
@@ -434,7 +434,7 @@ if CUDA.functional()
       grid_fourier = fftgrid(grid)
 
       density_state = ParallelKDE.DensityEstimators.CuDensityState(
-        size(grid), threshold_crossing_steps=10
+        size(grid), steps_buffer=3, steps_stopping=30
       )
 
       dt = CUDA.fill(0.2f0, n_dims)
