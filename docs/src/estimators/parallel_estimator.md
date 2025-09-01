@@ -19,8 +19,8 @@ estimate_density!(density_estimation, :parallelEstimator; kwargs...)
 - `method`: The method to use for the estimation. Options are `:serial`, `:threaded`, or `:cuda`. Default is `:serial` for CPU and `:cuda` must be selected for CUDA devices.
 - `n_bootstraps`: Number of bootstraps to use for the estimation. Default is 100.
 - `time_final`: Maximum bandwidth to iterate to. Default is given by Silverman's rule.
-- `time_step`: Size of the time step between iterations. Default is chosen for 1000 iterations.
-- `n_steps`: Number of iterations to perform. Default is 1000. This has precedence over `time_step`.
+- `time_step`: Size of the time step between iterations. Default is chosen for 250 iterations.
+- `n_steps`: Number of iterations to perform. Default is 250. This has precedence over `time_step`.
 - `fraction_buffer`: Percentage of the total time steps of persistence beyond the thresholds before registering the crossing event. Default is 0.03 (3%).
 - `fraction_stopping`: Maximum percentage of the total time steps allowed above `eps_high` before halting the estimated density updates. Default is 0.2 (20%).
 - `eps_high`: Threshold for convergence of high density regions. Default is 0.0 for CPU and -1.0 for GPU.
