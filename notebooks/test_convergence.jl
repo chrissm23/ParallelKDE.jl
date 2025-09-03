@@ -80,15 +80,28 @@ end;
 # ╔═╡ c22aeb1d-85b8-43d7-b938-d6ee5cf9d3e3
 function define_distro(::Val{:bimodal2})
 	μ1 = 4
-	σ1 = 0.3
+	σ1 = 0.5
 	w1 = 0.3
 
-	μ2 = 12
-	σ2 = 1.5
+	μ2 = 11
+	σ2 = 2
 	w2 = 1 - w1
 
 	return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
 end;
+
+# ╔═╡ 4bb13b8b-17fd-4ed1-a33e-6170a44158cd
+function define_distro(::Val{:bimodal3})
+	μ1 = 6.5
+	σ1 = 0.2
+	w1 = 0.5
+
+	μ2 = 13.5
+	σ2 = 1.2
+	w2 = 1 - w1
+
+	return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
+end
 
 # ╔═╡ 7f588fa0-525d-471a-9b3d-af73f4e083f5
 function define_distro(::Val{:noncentral_χ2})
@@ -103,20 +116,20 @@ md"Distribution (`distro_name`)"
 
 # ╔═╡ ba9f88bc-a309-4ed7-a08b-822ed48f19c1
 @bind distro_name Select(
-	[:normal, :bimodal1, :bimodal2, :noncentral_χ2], default=:bimodal2
+	[:normal, :bimodal1, :bimodal2, :bimodal3, :noncentral_χ2], default=:bimodal3
 )
 
 # ╔═╡ fe3cd654-ed53-415d-9429-beea88bedace
 md"Number of samples (`n_samples`)"
 
 # ╔═╡ 45f698a7-e91f-48b8-af2d-d77fe5264367
-@bind n_samples Select([100, 1000, 10000, 100000, 1000000], default=1000)
+@bind n_samples Select([100, 1000, 10000, 100000, 1000000], default=10000)
 
 # ╔═╡ 2473dd08-bff6-4d61-9448-fb9336404afd
 md"Number of grid points (`n_gridpoints`)"
 
 # ╔═╡ c9911762-16c7-4490-aa0e-0e5a5ff62524
-@bind n_gridpoints Slider(100:100:2000, default=1000)
+@bind n_gridpoints Slider(100:100:2000, default=500)
 
 # ╔═╡ 394ce4a6-f4da-464f-8fbb-e0c21af54a27
 @bind resample Button("Resample")
@@ -134,6 +147,8 @@ begin
 end;
 
 # ╔═╡ b2645b3b-2251-4d6a-9a41-e69eb101e12b
+# ╠═╡ disabled = true
+#=╠═╡
 let
 	line_length = 0.02
 	p_info = plot(distro_support, distro_pdf, label="PDF", lc=:cornflowerblue, lw=2)
@@ -154,6 +169,7 @@ let
 
 	p_info
 end
+  ╠═╡ =#
 
 # ╔═╡ ca25a9af-0783-492c-8362-2c163c4ec5f1
 md"### Full estimation"
@@ -243,13 +259,7 @@ let
 	estimate_density!(
 		density_estimation,
 		:rotEstimator,
-		rule_of_thumb=:silverman,
-		# time_step=0.0005,
-		# threshold_crossing_percentage=0.01,
-		# eps=2.0,
-		# alpha=0.75,
-		# time_final=0.5,
-		# n_bootstraps=1000,
+		# rule_of_thumb=:silverman,
 	)
 
 	density_estimated = get_density(density_estimation)
@@ -289,7 +299,7 @@ let
 	p_estimate
 end
 
-# ╔═╡ bbbd2e78-3a28-4783-9601-c883cf99d185
+# ╔═╡ 19ac248a-08cd-4842-8056-185cf7a4e526
 let
 	data_filtered = data[
 		(data .>= minimum(distro_support)) .& (data .<= maximum(distro_support))
@@ -306,9 +316,8 @@ let
 		density_estimation,
 		:parallelEstimator,
 		# n_steps=250,
-		# eps_high=0,
-		# eps_low_id=2,
-		# fraction_buffer=0.03,
+		# eps_low_id=2.0,
+		fraction_low=0.07,
 		# fraction_stopping=0.3,
 		# time_step=0.0005,
 		# time_final=0.5,
@@ -320,8 +329,8 @@ let
 	# density_estimated = Array(density_estimated_d)
 
 	dx = prod(spacings(get_grid(density_estimation)))
-	norm = sum(density_estimated) * dx
-	density_estimated .= density_estimated / norm
+	# norm = sum(density_estimated) * dx
+	# density_estimated .= density_estimated / norm
 
 	p_estimate = plot(
 		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
@@ -335,14 +344,14 @@ let
 		lc=:forestgreen
 	)
 
-	for (i, point) in enumerate(test_points)
-		vline!(
-			p_estimate,
-			[point],
-			label=false,
-			c=test_palette[i],
-		)
-	end
+	# for (i, point) in enumerate(test_points)
+	# 	vline!(
+	# 		p_estimate,
+	# 		[point],
+	# 		label=false,
+	# 		c=test_palette[i],
+	# 	)
+	# end
 	
 	println("NaNs: ", findall(isnan, density_estimated))
 
@@ -374,10 +383,10 @@ begin
 		grid=grid_support,
 		# n_steps=250,
 		# eps_high=0,
-		# fraction_buffer=0.02,
+		fraction_low=0.01,
 		# fraction_stopping=0.1,
 		# time_step=0.0005,
-		# eps_low_id=5,
+		# eps_low_id=1,
 		# time_final=2.0
 	)
 
@@ -400,6 +409,7 @@ begin
 	dlogts = fill(NaN, n_times)
 	eps_high = parallel_estimator.density_state.eps_high
 	eps_low_id = parallel_estimator.density_state.eps_low_id
+	# steps_buffer = parallel_estimator.density_state.steps_low
 end;
 
 # ╔═╡ fb725626-e5eb-4dfc-93e7-4946af668652
@@ -480,9 +490,6 @@ for (idx,time_propagated) in enumerate(times)
 	)
 	previous_density .= kde.density
 end
-
-# ╔═╡ fec6f503-cd04-4a43-9b69-fdd1136ef981
-sum(count(density_assigned_time, dims=1))
 
 # ╔═╡ 5cca44db-4f10-4f9b-9c0a-6e6e1a983720
 begin
@@ -765,10 +772,12 @@ begin
 		# xlims=(0,0.25),
 		# yaxis=:log,
 		# xaxis=:log,
-		c=test_palette[plot_idx]
+		c=test_palette[plot_idx],
+		marker="o"
 	)
 
 	vline!(p_dev2, [propagation_time], c=:forestgreen, label="Propagation time")
+	hline!(p_dev2, [eps_low_id], c=:red, label=false)
 
 	vline!(
 			p_dev2,
@@ -1087,7 +1096,8 @@ end
 # ╟─24267c16-0b02-445d-8d96-4aecd17bb52e
 # ╟─ab810aa5-916c-4491-a346-ba098b052e15
 # ╟─3524b6e7-c3f7-4a0c-85d9-25340ac8d5d7
-# ╟─c22aeb1d-85b8-43d7-b938-d6ee5cf9d3e3
+# ╠═c22aeb1d-85b8-43d7-b938-d6ee5cf9d3e3
+# ╟─4bb13b8b-17fd-4ed1-a33e-6170a44158cd
 # ╟─7f588fa0-525d-471a-9b3d-af73f4e083f5
 # ╟─7e79580a-4b79-48b6-984e-1b9cb351611a
 # ╟─ba9f88bc-a309-4ed7-a08b-822ed48f19c1
@@ -1097,7 +1107,7 @@ end
 # ╟─c9911762-16c7-4490-aa0e-0e5a5ff62524
 # ╟─394ce4a6-f4da-464f-8fbb-e0c21af54a27
 # ╟─5bf23fbc-556a-4014-a84b-47c6dedf0b9f
-# ╟─b2645b3b-2251-4d6a-9a41-e69eb101e12b
+# ╠═b2645b3b-2251-4d6a-9a41-e69eb101e12b
 # ╟─ca25a9af-0783-492c-8362-2c163c4ec5f1
 # ╟─87b3bd79-f44a-41a2-9aac-201d6bb3f00a
 # ╟─3e7d87af-6523-4218-86ee-e2af901bf491
@@ -1113,11 +1123,10 @@ end
 # ╟─23b14634-08bf-4a96-8c5c-361392fa4ad2
 # ╟─1200e59e-388b-4c62-b2a8-084098311922
 # ╠═cc7df97b-0138-4289-843d-8b5046dea0d9
-# ╠═bbbd2e78-3a28-4783-9601-c883cf99d185
+# ╠═19ac248a-08cd-4842-8056-185cf7a4e526
 # ╟─75e020f4-5682-46f3-8dff-7abeba257818
 # ╠═c7ae5c52-72ca-4449-bfa6-18fb36003ace
 # ╠═fb725626-e5eb-4dfc-93e7-4946af668652
-# ╠═fec6f503-cd04-4a43-9b69-fdd1136ef981
 # ╠═5cca44db-4f10-4f9b-9c0a-6e6e1a983720
 # ╟─95746d99-132a-4f7c-8075-5da357841e1f
 # ╟─33a0e17b-cf1e-4fb0-b9c4-1e2498f285a4
