@@ -514,12 +514,13 @@ abstract type AbstractDensityState{N,T} end
   eps_high::T
   eps_low_id::T
 
-  steps_buffer::Int
-  steps_stopping::Int
+  steps_low::Int
+  steps_over::Int
 
   # State
   indicator_minima::Array{T,N}
-  threshold_counters::Array{Int16,N}
+  counters_low::Array{UInt16,N}
+  counters_over::Array{UInt16,N}
   low_density_flags::Array{Bool,N}
 
   # Buffers
@@ -531,18 +532,19 @@ function DensityState(
   T::Type{<:Real}=Float64,
   eps_high::Real=0.0,
   eps_low_id::Real=2.0,
-  steps_buffer::Integer,
-  steps_stopping::Integer,
+  steps_low::Integer,
+  steps_over::Integer,
 ) where {N}
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
     eps_high=T(eps_high),
     eps_low_id=T(eps_low_id),
-    steps_buffer=Int(steps_buffer),
-    steps_stopping=Int(steps_stopping),
+    steps_low=Int(steps_low),
+    steps_over=Int(steps_over),
     indicator_minima=fill(T(NaN), dims),
-    threshold_counters=zeros(Int16, dims),
+    counters_low=zeros(UInt16, dims),
+    counters_over=zeros(UInt16, dims),
     low_density_flags=fill(false, dims),
   )
 end
@@ -552,12 +554,13 @@ end
   eps_high::T
   eps_low_id::T
 
-  steps_buffer::Int32
-  steps_stopping::Int32
+  steps_low::Int32
+  steps_over::Int32
 
   # State
   indicator_minima::CuArray{T,N}
-  threshold_counters::CuArray{Int16,N}
+  counters_low::CuArray{UInt16,N}
+  counters_over::CuArray{UInt16,N}
   low_density_flags::CuArray{Bool,N}
 
   # Buffers
@@ -569,18 +572,19 @@ function CuDensityState(
   T::Type{<:Real}=Float32,
   eps_high::Real=-1.0f0,
   eps_low_id::Real=6.0f0,
-  steps_buffer::Integer,
-  steps_stopping::Integer,
+  steps_low::Integer,
+  steps_over::Integer,
 ) where {N}
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
     eps_high=T(eps_high),
     eps_low_id=T(eps_low_id),
-    steps_buffer=Int32(steps_buffer),
-    steps_stopping=Int32(steps_stopping),
+    steps_low=Int32(steps_low),
+    steps_over=Int32(steps_over),
     indicator_minima=CUDA.fill(T(NaN), dims),
-    threshold_counters=CUDA.zeros(Int16, dims),
+    counters_low=CUDA.zeros(UInt16, dims),
+    counters_over=CUDA.zeros(UInt16, dims),
     low_density_flags=CUDA.fill(false, dims),
   )
 end
@@ -603,12 +607,12 @@ function update_state!(
     density_state.f_prev1,
     density_state.f_prev2,
     dlogt,
-    density_state.eps_high,
     density_state.eps_low_id,
-    density_state.steps_buffer,
-    density_state.steps_stopping,
+    density_state.steps_low,
+    density_state.steps_over,
     density_state.indicator_minima,
-    density_state.threshold_counters,
+    density_state.counters_low,
+    density_state.counters_over,
     density_state.low_density_flags,
   )
 
@@ -698,8 +702,8 @@ function initialize_estimator_propagation(
   time_step::Union{Nothing,Real}=nothing,
   time_final::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
-  fraction_buffer::Real=0.03,
-  fraction_stopping::Real=0.2,
+  fraction_low::Real=0.0,
+  fraction_over::Real=0.2,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
@@ -712,12 +716,12 @@ function initialize_estimator_propagation(
   end
   times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
 
-  steps_buffer, steps_stopping = calculate_duration_steps(
-    times[end], dt; fraction_buffer, fraction_stopping
+  steps_low, steps_over = calculate_duration_steps(
+    times[end], dt; fraction_low, fraction_over
   )
 
   density_state = DensityState(
-    size(grid); T=T, steps_buffer, steps_stopping, kwargs...
+    size(grid); T=T, steps_low, steps_over, kwargs...
   )
 
   return ParallelEstimator(
@@ -741,8 +745,8 @@ function initialize_estimator_propagation(
   time_step=nothing,
   time_final=nothing,
   n_steps=nothing,
-  fraction_buffer::Real=0.03f0,
-  fraction_stopping::Real=0.2f0,
+  fraction_low::Real=0.0f0,
+  fraction_over::Real=0.2f0,
   kwargs...
 ) where {N,T<:Real,M}
   grid_fourier = fftgrid(grid)
@@ -755,12 +759,12 @@ function initialize_estimator_propagation(
   end
   times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
 
-  steps_buffer, steps_stopping = calculate_duration_steps(
-    times[:, end], dt; fraction_buffer, fraction_stopping
+  steps_low, steps_over = calculate_duration_steps(
+    times[:, end], dt; fraction_low, fraction_over
   )
 
   density_state = CuDensityState(
-    size(grid); T=typeof(kde).parameters[2], steps_buffer, steps_stopping, kwargs...
+    size(grid); T=typeof(kde).parameters[2], steps_low, steps_over, kwargs...
   )
 
   return CuParallelEstimator(
@@ -869,16 +873,16 @@ function get_time(
 
 end
 
-function calculate_duration_steps(time_max, dt; fraction_buffer=0.01, fraction_stopping=0.3)
-  if fraction_buffer < 0 || fraction_buffer > 1
+function calculate_duration_steps(time_max, dt; fraction_low=0.01, fraction_over=0.3)
+  if fraction_low < 0 || fraction_low > 1
     throw(ArgumentError("Fraction must be in the range [0, 1]"))
   end
-  if fraction_stopping < 0 || fraction_stopping > 1
+  if fraction_over < 0 || fraction_over > 1
     throw(ArgumentError("Fraction must be in the range [0, 1]"))
   end
   n_steps = time_max ./ dt
-  steps_buffer = fraction_buffer .* n_steps
-  steps_stopping = fraction_stopping .* n_steps
+  steps_buffer = fraction_low .* n_steps
+  steps_stopping = fraction_over .* n_steps
 
   return round.(Int, (mean(steps_buffer), mean(steps_stopping)))
 end
@@ -956,6 +960,10 @@ function estimate!(
   end
   remaining_nans = findall(isnan, kde.density)
   kde.density[remaining_nans] .= get_means(estimator.kernel_propagation)[remaining_nans]
+
+  if get_device(estimator) isa IsCUDA
+    CUDA.device_synchronize()
+  end
 
   return nothing
 end

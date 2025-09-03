@@ -691,7 +691,6 @@ function calculate_scaled_vmr!(
   vmr .= dropdims(var(s2k, dims=M), dims=M)
   vmr .*= scaling_factor
 
-  n_dims = M - 1
   @. vmr = ifelse(isfinite(vmr), log(vmr), NaN32)
 
   return nothing
@@ -770,53 +769,54 @@ and update the density accordingly.
 - `Val(Symbol)`: The method type, e.g., `:serial`, `:threaded`, or `:cuda`.
 - `density`: The density array to be updated.
 - `means`: The means array corresponding to the density.
-- `vmr_current`: The current VMR values.
-- `vmr_prev1`: The previous VMR values.
-- `vmr_prev2`: The VMR values from two steps back.
+- `vmrs_current`: The current VMR values.
+- `vmrs_prev1`: The previous VMR values.
+- `vmrs_prev2`: The VMR values from two steps back.
 - `dlogt`: The logarithmic time step.
-- `tol_high`: The tolerance for convergence of high density regions.
 - `tol_low_id`: The tolerance to identify low density regions.
-- `steps_buffer`: The number of steps to consider for threshold crossing to avoid effects of noise.
-- `steps_stopping`: The number of steps to consider without updates to declare convergence.
+- `steps_low`: The number of steps to consider for threshold crossing to avoid effects of noise.
+- `steps_over`: The number of steps to consider without updates to declare convergence.
 - `current_minima`: The current minima array to be updated.
-- `threshold_counter`: The counter for threshold crossings.
+- `counters_low`: The counter to identify low density regions.
+- `counters_over`: The counter to identify over-smoothing of high density regions.
 - `low_density_flags`: Flags indicating low density regions.
 """
 function identify_convergence!(
   ::Val{:serial},
   density::AbstractArray{<:Real,N},
   means::AbstractArray{<:Real,N},
-  vmr_current::AbstractArray{T,N},
-  vmr_prev1::AbstractArray{T,N},
-  vmr_prev2::AbstractArray{T,N},
+  vmrs_current::AbstractArray{T,N},
+  vmrs_prev1::AbstractArray{T,N},
+  vmrs_prev2::AbstractArray{T,N},
   dlogt::Real,
-  tol_high::Real,
   tol_low_id::Real,
-  steps_buffer::Integer,
-  steps_stopping::Integer,
+  steps_low::Integer,
+  steps_over::Integer,
   current_minima::AbstractArray{T,N},
-  threshold_counter::AbstractArray{<:Integer,N},
+  counters_low::AbstractArray{<:Integer,N},
+  counters_over::AbstractArray{<:Integer,N},
   low_density_flags::AbstractArray{Bool,N},
 ) where {T<:Real,N}
-  @inbounds @simd for i in eachindex(vmr_current)
+  @inbounds @simd for i in eachindex(vmrs_current)
     results = find_stability(
-      vmr_current[i],
-      vmr_prev1[i],
-      vmr_prev2[i],
+      vmrs_current[i],
+      vmrs_prev1[i],
+      vmrs_prev2[i],
       dlogt,
-      tol_high,
       tol_low_id,
-      steps_buffer,
-      steps_stopping,
+      steps_low,
+      steps_over,
       current_minima[i],
-      threshold_counter[i],
+      counters_low[i],
+      counters_over[i],
       low_density_flags[i],
     )
-    threshold_counter[i] = results.counter
+    counters_low[i] = results.counter_low
+    counters_over[i] = results.counter_over
     low_density_flags[i] = results.low_density
+    current_minima[i] = results.new_minimum
 
     if results.more_stable
-      current_minima[i] = results.new_minimum
       density[i] = means[i]
     end
 
@@ -832,12 +832,12 @@ function identify_convergence!(
   vmr_prev1::AbstractArray{T,N},
   vmr_prev2::AbstractArray{T,N},
   dlogt::Real,
-  tol_high::Real,
   tol_low_id::Real,
-  steps_buffer::Integer,
-  steps_stopping::Integer,
+  steps_low::Integer,
+  steps_over::Integer,
   current_minima::AbstractArray{T,N},
-  threshold_counter::AbstractArray{<:Integer,N},
+  counters_low::AbstractArray{<:Integer,N},
+  counters_over::AbstractArray{<:Integer,N},
   low_density_flags::AbstractArray{Bool,N},
 ) where {T<:Real,N}
   Threads.@threads for i in eachindex(vmr_current)
@@ -846,19 +846,20 @@ function identify_convergence!(
       vmr_prev1[i],
       vmr_prev2[i],
       dlogt,
-      tol_high,
       tol_low_id,
-      steps_buffer,
-      steps_stopping,
+      steps_low,
+      steps_over,
       current_minima[i],
-      threshold_counter[i],
+      counters_low[i],
+      counters_over[i],
       low_density_flags[i],
     )
-    threshold_counter[i] = results.counter
+    counters_low[i] = results.counter_low
+    counters_over[i] = results.counter_over
     low_density_flags[i] = results.low_density
+    current_minima[i] = results.new_minimum
 
     if results.more_stable
-      current_minima[i] = results.new_minimum
       density[i] = means[i]
     end
 
@@ -874,19 +875,19 @@ function identify_convergence!(
   vmr_prev1::AnyCuArray{T,N},
   vmr_prev2::AnyCuArray{T,N},
   dlogt::Real,
-  tol_high::Real,
   tol_low_id::Real,
-  steps_buffer::Integer,
-  steps_stopping::Integer,
+  steps_low::Integer,
+  steps_over::Integer,
   current_minima::AnyCuArray{T,N},
-  threshold_counter::AnyCuArray{<:Integer,N},
+  counters_low::AnyCuArray{<:Integer,N},
+  counters_over::AnyCuArray{<:Integer,N},
   low_density_flags::AnyCuArray{Bool,N}
 ) where {T<:Real,N}
   n_points = length(vmr_current)
 
   # Stability detection
   stability_parms = CuArray{Float32}(
-    [dlogt, tol_high, tol_low_id, steps_buffer, steps_stopping]
+    [dlogt, tol_low_id, steps_low, steps_over]
   )
   kernel = @cuda launch = false kernel_stable!(
     vmr_current,
@@ -895,7 +896,8 @@ function identify_convergence!(
     means,
     density,
     current_minima,
-    threshold_counter,
+    counters_low,
+    counters_over,
     low_density_flags,
     stability_parms,
   )
@@ -911,7 +913,8 @@ function identify_convergence!(
       means,
       density,
       current_minima,
-      threshold_counter,
+      counters_low,
+      counters_over,
       low_density_flags,
       stability_parms;
       threads,
@@ -927,12 +930,12 @@ function find_stability(
   vmr_prev1::Real,
   vmr_prev2::Real,
   dlogt::Real,
-  tol_high::Real,
   tol_low_id::Real,
-  steps_buffer::Integer,
-  steps_stopping::Integer,
+  steps_low::Integer,
+  steps_over::Integer,
   current_minimum::Real,
-  threshold_counter::Integer,
+  counter_low::Integer,
+  counter_over::Integer,
   low_density_flag::Integer,
 )
   first_derivative = log(abs(first_difference(vmr_current, vmr_prev1, dlogt)))
@@ -941,43 +944,30 @@ function find_stability(
   more_stable = false
   new_minimum = NaN
 
-  if !low_density_flag && isnan(current_minimum)
-    if second_derivative > tol_low_id
-      threshold_counter -= one(threshold_counter)
-    elseif first_derivative < tol_high
-      threshold_counter += one(threshold_counter)
-    end
-
-    if threshold_counter < -steps_buffer
-      low_density_flag = true
-      threshold_counter = zero(threshold_counter)
-    elseif threshold_counter > steps_buffer
-      more_stable = true
-      new_minimum = first_derivative
-      threshold_counter = zero(threshold_counter)
-    end
-
-  elseif low_density_flag && isnan(current_minimum)
+  if !low_density_flag
     if second_derivative < tol_low_id
-      threshold_counter += one(threshold_counter)
-
-      if threshold_counter > steps_buffer
+      if ((first_derivative < current_minimum) || isnan(current_minimum)) && (counter_over < steps_over)
         more_stable = true
         new_minimum = first_derivative
+        counter_over = zero(counter_over)
+      else
+        counter_over += one(counter_over)
       end
 
     else
-      threshold_counter = zero(threshold_counter)
+      counter_low += one(counter_low)
+      if counter_low > steps_low
+        low_density_flag = true
+        current_minimum = NaN
+      end
     end
 
-  elseif !low_density_flag
-    if (first_derivative < current_minimum) && (threshold_counter <= steps_stopping)
+  else
+    if (second_derivative < tol_low_id) && isnan(current_minimum)
       more_stable = true
       new_minimum = first_derivative
-      threshold_counter = zero(threshold_counter)
-    else
-      threshold_counter += one(threshold_counter)
     end
+
   end
 
   if isnan(new_minimum)
@@ -987,7 +977,8 @@ function find_stability(
   return (
     more_stable=more_stable,
     new_minimum=new_minimum,
-    counter=threshold_counter,
+    counter_low=counter_low,
+    counter_over=counter_over,
     low_density=low_density_flag,
   )
 end
@@ -999,7 +990,8 @@ function kernel_stable!(
   means::Union{CuDeviceArray{T,N},SubArray{T,N,<:CuDeviceArray}},
   density::CuDeviceArray{T,N},
   current_minima::CuDeviceArray{T,N},
-  threshold_counters::CuDeviceArray{Z,N},
+  counters_low::CuDeviceArray{Z,N},
+  counters_over::CuDeviceArray{Z,N},
   low_density_flags::CuDeviceArray{Bool,N},
   parms::CuDeviceArray{Float32,1},
 ) where {T<:Real,N,Z<:Integer}
@@ -1010,10 +1002,9 @@ function kernel_stable!(
   end
 
   dlogt = parms[1]
-  tol_high = parms[2]
-  tol_low_id = parms[3]
-  steps_buffer = Z(parms[4])
-  steps_stopping = Z(parms[5])
+  tol_low_id = parms[2]
+  steps_low = Z(parms[3])
+  steps_over = Z(parms[4])
 
   vmr_i = vmr_current[idx]
   vmr_im1 = vmr_prev1[idx]
@@ -1022,49 +1013,31 @@ function kernel_stable!(
   first_derivative = log(abs(first_difference(vmr_i, vmr_im1, dlogt)))
   second_derivative = log(abs(second_difference(vmr_i, vmr_im1, vmr_im2, dlogt)))
 
-  counter = threshold_counters[idx]
-
-  if !low_density_flags[idx] && isnan(current_minima[idx])
-    if second_derivative > tol_low_id
-      counter -= one(counter)
-    elseif first_derivative < tol_high
-      counter -= one(counter)
-    end
-
-    if counter < -steps_buffer
-      low_density_flags[idx] = true
-      counter = zero(counter)
-    elseif counter > steps_buffer
-      current_minima[idx] = first_derivative
-      density[idx] = means[idx]
-      counter = zero(counter)
-    end
-
-  elseif low_density_flags[idx] && isnan(current_minima[idx])
+  if !low_density_flags[idx]
     if second_derivative < tol_low_id
-      counter = counter + one(counter)
-
-      if counter > steps_buffer
+      if ((first_derivative < current_minima[idx]) || isnan(current_minima[idx]) && (counters_over[idx] < steps_over))
         current_minima[idx] = first_derivative
+        counters_over[idx] = zero(counters_over[idx])
         density[idx] = means[idx]
+      else
+        counters_over[idx] += one(counters_over[idx])
       end
 
     else
-      counter = zero(counter)
+      counters_low[idx] += one(counters_low[idx])
+      if counters_low[idx] > steps_low
+        low_density_flags[idx] = true
+        current_minima[idx] = NaN
+      end
     end
 
-  elseif !low_density_flags[idx]
-    if (first_derivative < current_minima[idx]) && (counter <= steps_stopping)
+  else
+    if (second_derivative < tol_low_id) && isnan(current_minima[idx])
       current_minima[idx] = first_derivative
       density[idx] = means[idx]
-      counter = zero(counter)
-    else
-      counter = counter + one(counter)
     end
 
   end
-
-  threshold_counters[idx] = counter
 
   return
 end

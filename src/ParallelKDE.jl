@@ -188,6 +188,7 @@ has a grid, its spacing will be used for normalization. Otherwise, `dx` must be 
 """
 function KDEs.get_density(density_estimation::DensityEstimation; normalize=false, dx=nothing)
   density = get_density(density_estimation.kde)
+
   if normalize && has_grid(density_estimation)
     grid = density_estimation.grid
     density ./= sum(density) * prod(spacings(grid))
