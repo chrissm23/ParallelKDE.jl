@@ -511,7 +511,6 @@ abstract type AbstractDensityState{N,T} end
 
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  eps_high::T
   eps_low_id::T
 
   steps_low::Int
@@ -530,7 +529,6 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps_high::Real=0.0,
   eps_low_id::Real=2.0,
   steps_low::Integer,
   steps_over::Integer,
@@ -538,7 +536,6 @@ function DensityState(
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
-    eps_high=T(eps_high),
     eps_low_id=T(eps_low_id),
     steps_low=Int(steps_low),
     steps_over=Int(steps_over),
@@ -551,7 +548,6 @@ end
 
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  eps_high::T
   eps_low_id::T
 
   steps_low::Int32
@@ -570,7 +566,6 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps_high::Real=-1.0f0,
   eps_low_id::Real=6.0f0,
   steps_low::Integer,
   steps_over::Integer,
@@ -578,7 +573,6 @@ function CuDensityState(
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
-    eps_high=T(eps_high),
     eps_low_id=T(eps_low_id),
     steps_low=Int32(steps_low),
     steps_over=Int32(steps_over),
