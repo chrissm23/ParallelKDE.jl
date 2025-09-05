@@ -299,7 +299,7 @@ let
 	p_estimate
 end
 
-# ╔═╡ 19ac248a-08cd-4842-8056-185cf7a4e526
+# ╔═╡ 0d4ee210-b4d6-4811-addc-7a649db15295
 let
 	data_filtered = data[
 		(data .>= minimum(distro_support)) .& (data .<= maximum(distro_support))
@@ -317,7 +317,7 @@ let
 		:parallelEstimator,
 		# n_steps=250,
 		# eps_low_id=2.0,
-		fraction_low=0.07,
+		# fraction_low=0.07,
 		# fraction_stopping=0.3,
 		# time_step=0.0005,
 		# time_final=0.5,
@@ -344,14 +344,76 @@ let
 		lc=:forestgreen
 	)
 
-	# for (i, point) in enumerate(test_points)
-	# 	vline!(
-	# 		p_estimate,
-	# 		[point],
-	# 		label=false,
-	# 		c=test_palette[i],
-	# 	)
-	# end
+	for (i, point) in enumerate(test_points)
+		vline!(
+			p_estimate,
+			[point],
+			label=false,
+			c=test_palette[i],
+		)
+	end
+	
+	println("NaNs: ", findall(isnan, density_estimated))
+
+	mise = calculate_mise(density_estimated, distro_pdf, dx)
+	println("MISE: ", mise)
+
+	p_estimate
+end
+
+# ╔═╡ 19ac248a-08cd-4842-8056-185cf7a4e526
+let
+	data_filtered = data[
+		(data .>= minimum(distro_support)) .& (data .<= maximum(distro_support))
+	]
+	data_filtered = reshape(data_filtered, 1, length(data_filtered))
+	Random.seed!(random_seed)
+	density_estimation = initialize_estimation(
+		data_filtered,
+		grid=true,
+		grid_ranges=distro_support,
+		device=:cuda,
+	)
+	estimate_density!(
+		density_estimation,
+		:parallelEstimator,
+		# n_steps=250,
+		# eps_low_id=2.0,
+		# fraction_low=0.07,
+		# fraction_stopping=0.3,
+		# time_step=0.0005,
+		# time_final=0.5,
+		# n_bootstraps=1000,
+	)
+
+	# density_estimated = get_density(density_estimation)
+	density_estimated_d = get_density(density_estimation)
+	density_estimated = Array(density_estimated_d)
+
+	dx = prod(spacings(get_grid(density_estimation)))
+	# norm = sum(density_estimated) * dx
+	# density_estimated .= density_estimated / norm
+
+	p_estimate = plot(
+		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
+	)
+	plot!(
+		p_estimate,
+		distro_support,
+		density_estimated,
+		label="Estimation",
+		lw=2,
+		lc=:forestgreen
+	)
+
+	for (i, point) in enumerate(test_points)
+		vline!(
+			p_estimate,
+			[point],
+			label=false,
+			c=test_palette[i],
+		)
+	end
 	
 	println("NaNs: ", findall(isnan, density_estimated))
 
@@ -368,13 +430,16 @@ md"### Propagation behavior"
 begin
 	Random.seed!(random_seed)
 
-	grid_support = initialize_grid(distro_support)
+	# device=:cuda
+	# method=:cuda
+	device=:cpu
+	method=:serial
+
+	grid_support = initialize_grid(distro_support; device)
 	time_initial = initial_bandwidth(grid_support)
 	time_initial_squared = time_initial .^ 2
 
-	method=:serial
-
-	kde = initialize_kde(data, size(grid_support))
+	kde = initialize_kde(data, size(grid_support); device)
 	
 	parallel_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
 		ParallelKDE.DensityEstimators.AbstractParallelEstimator,
@@ -382,17 +447,17 @@ begin
 		method,
 		grid=grid_support,
 		# n_steps=250,
-		# eps_high=0,
-		fraction_low=0.01,
+		# eps_low_id=2.0,
+		# fraction_low=0.07,
 		# fraction_stopping=0.1,
 		# time_step=0.0005,
-		# eps_low_id=1,
 		# time_final=2.0
 	)
 
 	times = parallel_estimator.times
 	n_times = length(times)
 	times_reinterpreted = reinterpret(Float64, times)
+	# times_reinterpreted = reinterpret(Float32, times)
 	times_range = range(
 		minimum(times_reinterpreted), maximum(times_reinterpreted), length=n_times
 	)
@@ -407,7 +472,6 @@ begin
 	density_assigned_time = falses(n_gridpoints, n_times)
 
 	dlogts = fill(NaN, n_times)
-	eps_high = parallel_estimator.density_state.eps_high
 	eps_low_id = parallel_estimator.density_state.eps_low_id
 	# steps_buffer = parallel_estimator.density_state.steps_low
 end;
@@ -426,7 +490,7 @@ for (idx,time_propagated) in enumerate(times)
 	)
 	# Fourier transform back
 	ParallelKDE.DensityEstimators.ifft_bootstraps!(
-		parallel_estimator.kernel_propagation; method=:serial
+		parallel_estimator.kernel_propagation; method=method
 	)
 
 	# Calculate VMR
@@ -437,8 +501,10 @@ for (idx,time_propagated) in enumerate(times)
 		n_samples;
 		method
 	)
-	vmr_time[:, idx] .= ParallelKDE.DensityEstimators.get_vmr(
-		parallel_estimator.kernel_propagation
+	vmr_time[:, idx] .= Array(
+		ParallelKDE.DensityEstimators.get_vmr(
+			parallel_estimator.kernel_propagation
+		)
 	)
 
 	# Propagate means of full samples
@@ -459,15 +525,17 @@ for (idx,time_propagated) in enumerate(times)
 		n_samples;
 		method
 	)
-	means_time[:, idx] .= ParallelKDE.DensityEstimators.get_means(
-		parallel_estimator.kernel_propagation
+	means_time[:, idx] .= Array(
+		ParallelKDE.DensityEstimators.get_means(
+			parallel_estimator.kernel_propagation
+		)
 	)
 
 	# Update convergence state
 	if idx == 1
 		det_prev = prod(time_initial_squared)
 	else
-		det_prev = prod(time_initial_squared .+ times[idx-1] .^ 2)
+		det_prev = prod(time_initial_squared .+ Array(times)[idx-1] .^ 2)
 	end
 	det_curr = prod(time_initial_squared .+ time_propagated .^ 2)
 	dlogt = log(det_curr/det_prev)
@@ -480,15 +548,17 @@ for (idx,time_propagated) in enumerate(times)
 		method
 	)
 
+	kde_density = Array(kde.density)
+
 	@. density_assigned_time[:, idx] = ifelse(
 		(
-			(kde.density ≈ previous_density) | 
-			(isnan(kde.density) & isnan(previous_density))
+			(kde_density ≈ previous_density) | 
+			(isnan(kde_density) & isnan(previous_density))
 		),
 		false,
 		true
 	)
-	previous_density .= kde.density
+	previous_density .= kde_density
 end
 
 # ╔═╡ 5cca44db-4f10-4f9b-9c0a-6e6e1a983720
@@ -657,8 +727,8 @@ begin
 		lw=2,
 		ylims=vmr_bounds,
 		xlims=extrema(times_range[begin+1:end]),
-		# yaxis=:log,
-		xaxis=:log
+		# yscale=:log,
+		xscale=:log10,
 	)
 
 	vline!(p_stability, [propagation_time], c=:forestgreen, label="Propagation time")
@@ -824,141 +894,6 @@ begin
 	p_dev2
 end
 
-# ╔═╡ 3795c753-f4ae-45b5-822c-116ef118836e
-md"#### Difference between derivatives"
-
-# ╔═╡ 4c833f83-8721-4890-a593-9efb140e2ee7
-begin
-	p_t = plot(
-		times_range[begin+1:end],
-		eachrow(derivatives2[:, begin+1:end] .- derivatives1[:, begin+1:end])[test_indices][plot_idx],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=(-10,5),
-		xlims=extrema(times_range[begin+1:end]),
-		# xlims=(0,0.25),
-		# yaxis=:log,
-		# xaxis=:log,
-		c=test_palette[plot_idx]
-	)
-
-	vline!(p_t, [propagation_time], c=:forestgreen, label="Propagation time")
-
-	vline!(
-			p_t,
-			[optimal_times[test_indices[plot_idx]]],
-			label=false,
-			lw=2,
-			lc=test_palette[plot_idx],
-			ls=:dashdot,
-		)
-
-	for (i, val) in enumerate(distro_pdf[test_indices])
-		if i == plot_idx
-		vline!(
-			p_t,
-			[
-				let
-					try
-						times_range[
-							findlast(density_assigned_time[test_indices[i], :])
-						]
-					catch
-						NaN
-					end
-				end
-			],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dash,
-		)
-		end
-	end
-
-	# Manual label
-	plot!(
-		p_t, [-10; -20], lw=2, lc=:black, ls=:solid, label="Second derivative"
-	)
-	# plot!(
-	# 	p_dev2, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
-	# )
-
-	# savefig(p_dev2, "dev2_cpu.png")
-
-	p_t
-end
-
-# ╔═╡ fcb3dd19-8c34-4870-9cdb-05aa140da88a
-md"#### Combined derivative indicator"
-
-# ╔═╡ adcc7ec7-f8cb-4c62-a6c8-10b2396c3fb3
-begin
-	threshold_range = range(-5, 5, length=100)
-	@bind threshold Slider(
-		threshold_range,
-		default=threshold_range[argmin(abs.(threshold_range .- eps_high))]
-	)
-end
-
-# ╔═╡ 5359ee63-8b88-4215-b216-58dd5af0c2b0
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	p_dev12 = plot(
-		times_range[begin+1:end],
-		eachrow(indicator[:, begin+1:end])[test_indices][plot_idx],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=(-10,5),
-		xlims=extrema(times_range[begin+1:end]),
-		# xlims=(0,0.25),
-		# yaxis=:log,
-		# xaxis=:log,
-		c=test_palette[plot_idx],
-	)
-	vline!(
-			p_dev12,
-			[optimal_times[test_indices[plot_idx]]],
-			label=false,
-			lw=2,
-			lc=test_palette[plot_idx],
-			ls=:dashdot,
-		)
-
-	hline!(p_dev12, [threshold], c=:red, label="Threshold: $threshold")
-	vline!(p_dev12, [propagation_time], c=:forestgreen, label="Propagation time")
-
-	
-	for (i, val) in enumerate(distro_pdf[test_indices])
-		if i == plot_idx
-		vline!(
-			p_dev12,
-			[
-				let
-					try
-						times_range[
-							findlast(density_assigned_time[test_indices[i], :])
-						]
-					catch
-						NaN
-					end
-				end
-			],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dash,
-		)
-		end
-	end
-
-	p_dev12
-end
-  ╠═╡ =#
-
 # ╔═╡ 8bd6926d-dbec-4858-9c72-5e0904bc71d7
 md"#### Final stopping point"
 
@@ -1096,7 +1031,7 @@ end
 # ╟─24267c16-0b02-445d-8d96-4aecd17bb52e
 # ╟─ab810aa5-916c-4491-a346-ba098b052e15
 # ╟─3524b6e7-c3f7-4a0c-85d9-25340ac8d5d7
-# ╠═c22aeb1d-85b8-43d7-b938-d6ee5cf9d3e3
+# ╟─c22aeb1d-85b8-43d7-b938-d6ee5cf9d3e3
 # ╟─4bb13b8b-17fd-4ed1-a33e-6170a44158cd
 # ╟─7f588fa0-525d-471a-9b3d-af73f4e083f5
 # ╟─7e79580a-4b79-48b6-984e-1b9cb351611a
@@ -1123,7 +1058,8 @@ end
 # ╟─23b14634-08bf-4a96-8c5c-361392fa4ad2
 # ╟─1200e59e-388b-4c62-b2a8-084098311922
 # ╠═cc7df97b-0138-4289-843d-8b5046dea0d9
-# ╠═19ac248a-08cd-4842-8056-185cf7a4e526
+# ╟─0d4ee210-b4d6-4811-addc-7a649db15295
+# ╟─19ac248a-08cd-4842-8056-185cf7a4e526
 # ╟─75e020f4-5682-46f3-8dff-7abeba257818
 # ╠═c7ae5c52-72ca-4449-bfa6-18fb36003ace
 # ╠═fb725626-e5eb-4dfc-93e7-4946af668652
@@ -1138,16 +1074,11 @@ end
 # ╟─7f9cf2ba-2085-4b80-a98a-9feb7fe0c4de
 # ╟─097c40b2-2b34-442d-8cb9-4c63b60abfc4
 # ╟─c20c3541-d935-423c-a07f-77d8e0679d8d
-# ╠═4a7adae6-e2f5-4478-aad2-c868879f8236
+# ╟─4a7adae6-e2f5-4478-aad2-c868879f8236
 # ╟─c6e708d8-4ec9-4a83-8e36-ea25ea9dca8a
 # ╟─36ff4668-62aa-4cb1-b732-2bc278d723e2
 # ╟─239d91b7-1a08-48aa-9e86-93e4c006bc06
 # ╟─c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
-# ╟─3795c753-f4ae-45b5-822c-116ef118836e
-# ╟─4c833f83-8721-4890-a593-9efb140e2ee7
-# ╟─fcb3dd19-8c34-4870-9cdb-05aa140da88a
-# ╟─adcc7ec7-f8cb-4c62-a6c8-10b2396c3fb3
-# ╟─5359ee63-8b88-4215-b216-58dd5af0c2b0
 # ╟─8bd6926d-dbec-4858-9c72-5e0904bc71d7
 # ╟─123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
 # ╟─9f5e3a30-0104-45f8-b3f5-eaa4b73dce32

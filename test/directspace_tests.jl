@@ -66,37 +66,54 @@ function calculate_test_means(test_mean)
   return means
 end
 
-function make_snapshot(::Val{:cpu}, n_dims, stage, steps_buffer)
+function make_snapshot(::Val{:cpu}, n_dims, stage, steps_low, steps_over)
   grid_size = ntuple(i -> 101, n_dims)
-  if stage == :unstable
-    vmr_current = fill(1.0, grid_size)
+  if stage == :low_density_recon
+    vmr_current = fill(1.0e6, grid_size)
     vmr_prev1 = fill(0.8, grid_size)
-    vmr_prev2 = fill(1.0, grid_size)
+    vmr_prev2 = fill(1.0e6, grid_size)
 
     current_minima = zeros(Float64, grid_size)
-    threshold_counters = zeros(Int16, grid_size)
+    counters_low = fill(UInt16(steps_low), grid_size)
+    counters_over = zeros(UInt16, grid_size)
     low_density_flags = fill(false, grid_size)
 
-  elseif stage == :stable
+  elseif stage == :low_density_stop
+    vmr_current = fill(1.0, grid_size)
+    vmr_prev1 = fill(0.99, grid_size)
+    vmr_prev2 = fill(1.0, grid_size)
+
+    current_minima = fill(NaN, grid_size)
+    counters_low = fill(UInt16(steps_low + 1), grid_size)
+    counters_over = zeros(UInt16, grid_size)
+    low_density_flags = fill(true, grid_size)
+
+  elseif stage == :high_density_update
     vmr_current = fill(1.00005, grid_size)
     vmr_prev1 = fill(1.0, grid_size)
     vmr_prev2 = fill(1.00005, grid_size)
 
     current_minima = zeros(Float64, grid_size)
-    threshold_counters = zeros(Int16, grid_size)
+    counters_low = zeros(UInt16, grid_size)
+    counters_over = zeros(UInt16, grid_size)
     low_density_flags = fill(false, grid_size)
 
-  elseif stage == :update
-    vmr_current = fill(1.00001, grid_size)
+  elseif stage == :high_density_noupdate
+    vmr_current = fill(1.01, grid_size)
     vmr_prev1 = fill(1.0, grid_size)
-    vmr_prev2 = fill(1.00001, grid_size)
+    vmr_prev2 = fill(1.01, grid_size)
 
     current_minima = fill(-5.0, grid_size)
-    threshold_counters = zeros(Int16, grid_size)
+    counters_low = zeros(UInt16, grid_size)
+    counters_over = zeros(UInt16, grid_size)
     low_density_flags = fill(false, grid_size)
 
   else
-    throw(ArgumentError("stage can only be :unstable, :stable or :update"))
+    throw(
+      ArgumentError(
+        "stage can only be :low_density_recon, :low_density_stop, :high_density_update, :high_density_noupdate"
+      )
+    )
   end
 
   return (
@@ -104,42 +121,60 @@ function make_snapshot(::Val{:cpu}, n_dims, stage, steps_buffer)
     vmr_prev1=vmr_prev1,
     vmr_prev2=vmr_prev2,
     current_minima=current_minima,
-    threshold_counters=threshold_counters,
+    counters_low=counters_low,
+    counters_over=counters_over,
     low_density_flags=low_density_flags,
   )
 
 end
-function make_snapshot(::Val{:cuda}, n_dims, stage, steps_buffer)
+function make_snapshot(::Val{:cuda}, n_dims, stage, steps_low, steps_over)
   grid_size = ntuple(i -> 101, n_dims)
-  if stage == :unstable
-    vmr_current = CUDA.fill(1.0f0, grid_size)
+  if stage == :low_density_recon
+    vmr_current = CUDA.fill(1.0f6, grid_size)
     vmr_prev1 = CUDA.fill(0.8f0, grid_size)
-    vmr_prev2 = CUDA.fill(1.0f0, grid_size)
+    vmr_prev2 = CUDA.fill(1.0f6, grid_size)
 
     current_minima = CUDA.zeros(Float32, grid_size)
-    threshold_counters = CUDA.zeros(Int32, grid_size)
+    counters_low = CUDA.fill(UInt16(steps_low), grid_size)
+    counters_over = CUDA.zeros(UInt16, grid_size)
     low_density_flags = CUDA.fill(false, grid_size)
 
-  elseif stage == :stable
+  elseif stage == :low_density_stop
+    vmr_current = CUDA.fill(1.0f0, grid_size)
+    vmr_prev1 = CUDA.fill(0.99f0, grid_size)
+    vmr_prev2 = CUDA.fill(1.0f0, grid_size)
+
+    current_minima = CUDA.fill(NaN32, grid_size)
+    counters_low = CUDA.fill(UInt16(steps_low + 1), grid_size)
+    counters_over = CUDA.zeros(UInt16, grid_size)
+    low_density_flags = CUDA.fill(true, grid_size)
+
+  elseif stage == :high_density_update
     vmr_current = CUDA.fill(1.00005f0, grid_size)
     vmr_prev1 = CUDA.fill(1.0f0, grid_size)
     vmr_prev2 = CUDA.fill(1.00005f0, grid_size)
 
     current_minima = CUDA.zeros(Float32, grid_size)
-    threshold_counters = CUDA.fill(Int32(steps_buffer) + 1, grid_size)
+    counters_low = CUDA.zeros(UInt16, grid_size)
+    counters_over = CUDA.zeros(UInt16, grid_size)
     low_density_flags = CUDA.fill(false, grid_size)
 
-  elseif stage == :update
-    vmr_current = CUDA.fill(1.00001f0, grid_size)
+  elseif stage == :high_density_noupdate
+    vmr_current = CUDA.fill(1.01f0, grid_size)
     vmr_prev1 = CUDA.fill(1.0f0, grid_size)
-    vmr_prev2 = CUDA.fill(1.00001f0, grid_size)
+    vmr_prev2 = CUDA.fill(1.01f0, grid_size)
 
     current_minima = CUDA.fill(-5.0f0, grid_size)
-    threshold_counters = CUDA.fill(Int32(steps_buffer) + 2, grid_size)
+    counters_low = CUDA.zeros(UInt16, grid_size)
+    counters_over = CUDA.zeros(UInt16, grid_size)
     low_density_flags = CUDA.fill(false, grid_size)
 
   else
-    throw(ArgumentError("stage can only be :rough, :smooth or :stable"))
+    throw(
+      ArgumentError(
+        "stage can only be :low_density_recon, :low_density_stop, :high_density_update, :high_density_noupdate"
+      )
+    )
   end
 
   return (
@@ -147,13 +182,14 @@ function make_snapshot(::Val{:cuda}, n_dims, stage, steps_buffer)
     vmr_prev1=vmr_prev1,
     vmr_prev2=vmr_prev2,
     current_minima=current_minima,
-    threshold_counters=threshold_counters,
+    counters_low=counters_low,
+    counters_over=counters_over,
     low_density_flags=low_density_flags,
   )
 end
 
 @testset "CPU direct space operations tests" begin
-  @testset "Implementation: $implementation tests" for implementation in [:serial, :threaded]
+  @testset "Implementation: $implementation tests" for implementation in [:serial]
     @testset "Dirac sequences tests. $(n_dims)D" for n_dims in 1:3
       data_matrix = [fill(0.05, n_dims) fill(0.15, n_dims)]
       data = Vector{SVector{n_dims,Float64}}(eachcol(data_matrix))
@@ -209,14 +245,13 @@ end
     end
 
     @testset "Indentify convergence tests. $(n_dims)D" for n_dims in 1:3
-      dlogt = 0.01
-      tol_high = 0.0
+      dlogt = 1.0e-1
       tol_low_id = 2.0
-      steps_buffer = 3
-      steps_stopping = 30
+      steps_low = 3
+      steps_over = 30
 
-      # Test unstable VMR
-      snap = make_snapshot(Val(:cpu), n_dims, :unstable, steps_buffer)
+      # Test low density recognition
+      snap = make_snapshot(Val(:cpu), n_dims, :low_density_recon, steps_low, steps_over)
 
       density = fill(NaN, size(snap.vmr_current))
       means = ones(Float64, size(snap.vmr_current))
@@ -229,21 +264,23 @@ end
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol_high,
         tol_low_id,
-        steps_buffer,
-        steps_stopping,
+        steps_low,
+        steps_over,
         snap.current_minima,
-        snap.threshold_counters,
+        snap.counters_low,
+        snap.counters_over,
         snap.low_density_flags,
       )
 
       @test all(isnan.(density))
-      @test all(isone.(snap.threshold_counters))
-      @test all(iszero.(snap.current_minima))
+      @test all(isnan.(snap.current_minima))
+      @test all(snap.counters_low .== steps_low + 1)
+      @test all(iszero.(snap.counters_over))
+      @test all(snap.low_density_flags)
 
-      # Test stable VMR
-      snap = make_snapshot(Val(:cpu), n_dims, :stable, steps_buffer)
+      # Test low density stop
+      snap = make_snapshot(Val(:cpu), n_dims, :low_density_stop, steps_low, steps_over)
 
       density = fill(NaN, size(snap[1]))
       means = ones(Float64, size(snap[1]))
@@ -256,21 +293,23 @@ end
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol_high,
         tol_low_id,
-        steps_buffer,
-        steps_stopping,
+        steps_low,
+        steps_over,
         snap.current_minima,
-        snap.threshold_counters,
+        snap.counters_low,
+        snap.counters_over,
         snap.low_density_flags,
       )
 
-      @test all(density .== 1.0)
-      @test all(iszero.(snap.threshold_counters))
+      @test all(isone.(density))
       @test !any(iszero.(snap.current_minima))
+      @test all(snap.counters_low .== steps_low + 1)
+      @test all(iszero.(snap.counters_over))
+      @test all(snap.low_density_flags)
 
-      # Test update stable VMR
-      snap = make_snapshot(Val(:cpu), n_dims, :update, steps_buffer)
+      # Test high density update
+      snap = make_snapshot(Val(:cpu), n_dims, :high_density_update, steps_low, steps_over)
 
       density = fill(NaN, size(snap[1]))
       means = ones(Float64, size(snap[1]))
@@ -283,18 +322,49 @@ end
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol_high,
         tol_low_id,
-        steps_buffer,
-        steps_stopping,
+        steps_low,
+        steps_over,
         snap.current_minima,
-        snap.threshold_counters,
+        snap.counters_low,
+        snap.counters_over,
         snap.low_density_flags,
       )
 
-      @test all(density .== 1.0)
-      @test all(iszero.(snap.threshold_counters))
-      @test all(snap.current_minima .<= -2.5)
+      @test all(isone.(density))
+      @test all(snap.current_minima .<= 0)
+      @test all(iszero.(snap.counters_low))
+      @test all(iszero.(snap.counters_over))
+      @test !any(snap.low_density_flags)
+
+      # Test high density no update
+      snap = make_snapshot(Val(:cpu), n_dims, :high_density_noupdate, steps_low, steps_over)
+
+      density = fill(NaN, size(snap[1]))
+      means = ones(Float64, size(snap[1]))
+
+      ParallelKDE.DirectSpace.identify_convergence!(
+        Val(implementation),
+        density,
+        means,
+        snap.vmr_current,
+        snap.vmr_prev1,
+        snap.vmr_prev2,
+        dlogt,
+        tol_low_id,
+        steps_low,
+        steps_over,
+        snap.current_minima,
+        snap.counters_low,
+        snap.counters_over,
+        snap.low_density_flags,
+      )
+
+      @test all(isnan.(density))
+      @test all(snap.current_minima .== -5.0)
+      @test all(iszero.(snap.counters_low))
+      @test all(isone.(snap.counters_over))
+      @test !any(snap.low_density_flags)
     end
   end
 end
@@ -361,17 +431,16 @@ if CUDA.functional()
     end
 
     @testset "Indentify convergence tests. $(n_dims)D" for n_dims in 1:3
-      dlogt = 0.01f0
-      tol_high = 0.0f0
+      dlogt = 1.0f-1
       tol_low_id = 2.0f0
-      steps_buffer = Int32(3)
-      steps_stopping = Int32(30)
+      steps_low = Int32(3)
+      steps_over = Int32(30)
 
-      # Test unstable VMR
-      snap = make_snapshot(Val(:cuda), n_dims, :unstable, steps_buffer)
+      # Test low density recognition
+      snap = make_snapshot(Val(:cuda), n_dims, :low_density_recon, steps_low, steps_over)
 
-      density = CUDA.fill(NaN32, size(snap[1]))
-      means = CUDA.ones(Float32, size(snap[1]))
+      density = CUDA.fill(NaN32, size(snap.vmr_current))
+      means = CUDA.ones(Float32, size(snap.vmr_current))
 
       ParallelKDE.DirectSpace.identify_convergence!(
         Val(:cuda),
@@ -381,24 +450,26 @@ if CUDA.functional()
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol_high,
         tol_low_id,
-        steps_buffer,
-        steps_stopping,
+        steps_low,
+        steps_over,
         snap.current_minima,
-        snap.threshold_counters,
+        snap.counters_low,
+        snap.counters_over,
         snap.low_density_flags,
       )
 
       @test all(isnan.(density))
-      @test all(isone.(snap.threshold_counters))
-      @test all(iszero.(snap.current_minima))
+      @test all(isnan.(snap.current_minima))
+      @test all(snap.counters_low .== steps_low + 1)
+      @test all(iszero.(snap.counters_over))
+      @test all(snap.low_density_flags)
 
-      # Test stable VMR
-      snap = make_snapshot(Val(:cuda), n_dims, :stable, steps_buffer)
+      # Test low density stop
+      snap = make_snapshot(Val(:cuda), n_dims, :low_density_stop, steps_low, steps_over)
 
-      density = CUDA.fill(NaN32, size(snap[1]))
-      means = CUDA.ones(Float32, size(snap[1]))
+      density = CUDA.fill(NaN32, size(snap.vmr_current))
+      means = CUDA.ones(Float32, size(snap.vmr_current))
 
       ParallelKDE.DirectSpace.identify_convergence!(
         Val(:cuda),
@@ -408,24 +479,26 @@ if CUDA.functional()
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol_high,
         tol_low_id,
-        steps_buffer,
-        steps_stopping,
+        steps_low,
+        steps_over,
         snap.current_minima,
-        snap.threshold_counters,
+        snap.counters_low,
+        snap.counters_over,
         snap.low_density_flags,
       )
 
-      @test all(density .== 1.0f0)
-      @test all(iszero.(snap.threshold_counters))
+      @test all(isone.(density))
       @test !any(iszero.(snap.current_minima))
+      @test all(snap.counters_low .== steps_low + 1)
+      @test all(iszero.(snap.counters_over))
+      @test all(snap.low_density_flags)
 
-      # Test update stable VMR
-      snap = make_snapshot(Val(:cuda), n_dims, :update, steps_buffer)
+      # Test high density update
+      snap = make_snapshot(Val(:cuda), n_dims, :high_density_update, steps_low, steps_over)
 
-      density = CUDA.fill(NaN32, size(snap[1]))
-      means = CUDA.ones(Float32, size(snap[1]))
+      density = CUDA.fill(NaN32, size(snap.vmr_current))
+      means = CUDA.ones(Float32, size(snap.vmr_current))
 
       ParallelKDE.DirectSpace.identify_convergence!(
         Val(:cuda),
@@ -435,18 +508,49 @@ if CUDA.functional()
         snap.vmr_prev1,
         snap.vmr_prev2,
         dlogt,
-        tol_high,
         tol_low_id,
-        steps_buffer,
-        steps_stopping,
+        steps_low,
+        steps_over,
         snap.current_minima,
-        snap.threshold_counters,
+        snap.counters_low,
+        snap.counters_over,
         snap.low_density_flags,
       )
 
-      @test all(density .== 1.0f0)
-      @test all(iszero.(snap.threshold_counters))
-      @test all(snap.current_minima .<= -5.0f0)
+      @test all(isone.(density))
+      @test all(snap.current_minima .<= 0)
+      @test all(iszero.(snap.counters_low))
+      @test all(iszero.(snap.counters_over))
+      @test !any(snap.low_density_flags)
+
+      # Test high density no update
+      snap = make_snapshot(Val(:cuda), n_dims, :high_density_noupdate, steps_low, steps_over)
+
+      density = CUDA.fill(NaN32, size(snap.vmr_current))
+      means = CUDA.ones(Float32, size(snap.vmr_current))
+
+      ParallelKDE.DirectSpace.identify_convergence!(
+        Val(:cuda),
+        density,
+        means,
+        snap.vmr_current,
+        snap.vmr_prev1,
+        snap.vmr_prev2,
+        dlogt,
+        tol_low_id,
+        steps_low,
+        steps_over,
+        snap.current_minima,
+        snap.counters_low,
+        snap.counters_over,
+        snap.low_density_flags,
+      )
+
+      @test all(isnan.(density))
+      @test all(snap.current_minima .== -5.0)
+      @test all(iszero.(snap.counters_low))
+      @test all(isone.(snap.counters_over))
+      @test !any(snap.low_density_flags)
     end
   end
 end
