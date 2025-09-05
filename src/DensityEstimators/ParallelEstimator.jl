@@ -566,7 +566,7 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps_low_id::Real=6.0f0,
+  eps_low_id::Real=2.0f0,
   steps_low::Integer,
   steps_over::Integer,
 ) where {N}
@@ -862,7 +862,7 @@ function get_time(
     return times, dt
   else
 
-    return get_time(IsCUDA(), time_final, n_steps=1000)
+    return get_time(IsCUDA(), time_final, n_steps=250)
   end
 
 end
