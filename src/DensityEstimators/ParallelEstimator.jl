@@ -987,6 +987,9 @@ function get_necessary_memory(estimator::AbstractParallelEstimator)
 end
 
 function check_memory(estimator::AbstractParallelEstimator)
+  if get_device(estimator) isa IsCUDA
+    return nothing
+  end
   available_memory = get_available_memory(get_device(estimator))
   required_memory = get_necessary_memory(estimator)
 
