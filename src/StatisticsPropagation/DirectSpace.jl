@@ -687,13 +687,58 @@ function calculate_scaled_vmr!(
   @. s2k = abs(s2k) / n_samples - sk^2
 
   @. s2k /= sk
+
+  n_points = prod(size(s2k)[begin:end-1])
+  kernel = @cuda maxregs = 32 launch = false calculate_vmrvar_cuda!(s2k)
+
+  config = launch_configuration(kernel.fun)
+  threads = min(n_points, config.threads)
+  blocks = cld(n_points, threads)
+
+  CUDA.@sync blocking = true begin
+    kernel(s2k; threads, blocks)
+  end
+
   vmr = selectdim(s2k, M, 1)
-  vmr .= dropdims(var(s2k, dims=M), dims=M)
   vmr .*= scaling_factor
 
   @. vmr = ifelse(isfinite(vmr), log(vmr), NaN32)
 
   return nothing
+end
+
+function calculate_vmrvar_cuda!(
+  vmr::CuDeviceArray{<:Complex,M},
+) where {M}
+  N = M - 1i32
+  idx = (blockIdx().x - 1i32) * blockDim().x + threadIdx().x
+
+  grid_size = size(vmr)[begin:N]
+  n_points = prod(grid_size)
+
+  if idx > n_points
+    return
+  end
+
+  n_bootstraps = size(vmr, M)
+  cartesian_idx = Tuple(
+    CartesianIndices(grid_size)[idx]
+  )
+
+  m1 = 0.0f0
+  m2 = 0.0f0
+  n = 0i32
+  @inbounds for j in 1:n_bootstraps
+    x = Float32(real(vmr[cartesian_idx..., j]))
+    n += 1i32
+    d = x - m1
+    m1 += d / n
+    m2 += d * (x - m1)
+  end
+
+  @inbounds vmr[cartesian_idx..., 1i32] = m2 / (n_bootstraps - 1i32)
+
+  return
 end
 
 """
