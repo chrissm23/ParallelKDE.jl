@@ -1,10 +1,10 @@
 ---
-title: 'ParallelKDE: A package for highly parallel Kernel Density Estimation'
+title: 'ParallelKDE.jl: A Package for Highly Parallel Kernel Density Estimation'
 tags:
   - Julia
-  - Python
   - kernel density estimation
   - parallel algorithms
+  - Python
 authors:
   - name:
       given: Christian
@@ -35,7 +35,6 @@ Kernel density estimation (KDE) is a valuable tool in exploratory analysis, simu
 
 # Statement of need
 
-[Speed comparison with standard libraries]
 Many researchers rely on Python or Julia KDE implementations (e.g., SciPy's `gaussian_kde` [@virtanen_scipy_2020; @scipy_developers_scipystatsgaussian_kde_2025] with automatic bandwidth via rule-of-thumb; scikit-learn's `KernelDensity` [@pedregosa_scikit-learn_2011; @scikit-learn_developers_kerneldensity_2025] which also supports rule-of-thumb; statsmodels' [@seabold_statsmodels_2010] univariate FFT KDE and multivariate estimators with cross-validated bandwidths [@statsmodels_developers_statsmodelsnonparametrickernel_densitykdemultivariate_2024]; KDEpy's [@odland_tommyodkdepy_2018] FFT KDE with rule-of-thumb and plug-in rules [@sheather_reliable_1991]). While mature and widely used, these tools are CPU-centric and can become slow as data grow in size and dimension, which is especially when many evaluations are needed in downstream tasks.
 
 `ParallelKDE.jl` addresses this gap with:
@@ -53,6 +52,7 @@ Benchmarks in the repository show that parallel CPU implementations substantiall
 - Serial CPU for portability and determinism;
 - Threaded CPU using Julia's built-in multithreading;
 - CUDA GPU via `CUDA.jl` [@besard_effective_2019; @besard_rapid_2019].
+
 Figure shows a module diagram highlighting device and estimator abstractions.
 
 **Implemented methods.** The package includes (a) parallel rules-of-thumb KDE, namely Scott and Silverman, for rapid baselines and (b) [MethodName], engineered to perform independent grid-point-wise density estimation using FFT and reducing necessary memory by reusing it throughout the routines without damaging performance. The serial version serves as a reference; the threaded version parallelizes routines applied over the bootstrap re-samples required by the method; the CUDA routines provide parallelization at each estimated grid-point. Each implemented method naturally exposes all its parameters up to the user and can place convenient defaults when reasonable. Figure shows a flowchart of the implemented algorithm.
