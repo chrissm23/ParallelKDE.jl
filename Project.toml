@@ -13,18 +13,22 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
 Aqua = "^0.8"
-CUDA = "^5.5"
-FFTW = "^1.8"
-LinearAlgebra = "^1.11"
-StaticArrays = "^1.9"
-Statistics = "^1.11"
+CUDA = "^5"
+Distributions = "^0.25"
+FFTW = "^1"
+LinearAlgebra = "^1"
+Random = "^1"
+StaticArrays = "^1"
+Statistics = "^1"
 StatsBase = "^0.34"
-Test = "^1.11"
+Test = "^1"
 julia = "^1.11"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "Test"]
+test = ["Aqua", "Distributions", "Random", "Test"]

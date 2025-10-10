@@ -10,8 +10,7 @@ using Statistics,
 using StaticArrays,
   FFTW,
   CUDA,
-  Distributions,
-  Plots
+  Distributions
 
 include("test_utils.jl")
 
