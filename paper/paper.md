@@ -55,7 +55,9 @@ Benchmarks in the repository show that parallel CPU implementations substantiall
 
 Figure shows a module diagram highlighting device and estimator abstractions.
 
-**Implemented methods.** The package includes (a) parallel rules-of-thumb KDE, namely Scott and Silverman, for rapid baselines and (b) [MethodName], engineered to perform independent grid-point-wise density estimation using FFT and reducing necessary memory by reusing it throughout the routines without damaging performance. The serial version serves as a reference; the threaded version parallelizes routines applied over the bootstrap re-samples required by the method; the CUDA routines provide parallelization at each estimated grid-point. Each implemented method naturally exposes all its parameters up to the user and can place convenient defaults when reasonable. Figure shows a flowchart of the implemented algorithm.
+**Implemented methods.** The package includes (a) parallel rules-of-thumb KDE, namely Scott and Silverman, for rapid baselines and (b) [MethodName], engineered to perform independent grid-point-wise density estimation using FFT and reducing necessary memory by reusing it throughout the routines without damaging performance. The serial version serves as a reference; the threaded version parallelizes routines applied over the bootstrap re-samples required by the method; the CUDA routines provide parallelization at each estimated grid-point. Each implemented method naturally exposes all its parameters up to the user and can place convenient defaults when reasonable. Figure \autoref{fig:flowchart} shows a flowchart of the implemented algorithm.
+
+![Flowchart of the parallelizable point-wise density estimation algorithm. \label{fig:flowchart}](./parallelkde_flowchart.pdf)
 
 **Reproducibility and testing.** We include timing typed benchmarks to illustrate the speed gains obtained from parallelizable KDE algorithms.
 
