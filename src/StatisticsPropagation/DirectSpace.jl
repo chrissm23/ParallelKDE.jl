@@ -20,8 +20,6 @@ export silverman_rule,
   calculate_full_means!,
   identify_convergence!
 
-include("../CuStatistics/CuStatistics.jl")
-
 """
     initialize_dirac_sequence(data; kwargs...)
 
