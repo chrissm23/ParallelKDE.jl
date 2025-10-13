@@ -1,5 +1,6 @@
 abstract type AbstractKernelStatistics{N,T,M} end
 abstract type AbstractKernelMeans{N,T,M} <: AbstractKernelStatistics{N,T,M} end
+using Core: Argument
 abstract type AbstractKernelVars{N,T,M} <: AbstractKernelStatistics{N,T,M} end
 
 struct KernelMeans{N,T<:Real,M} <: AbstractKernelMeans{N,T,M}
@@ -529,10 +530,23 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps_low_id::Real=2.0,
+  eps_low_id::Union{Real,Nothing}=nothing,
   steps_low::Integer,
   steps_over::Integer,
 ) where {N}
+  # TODO: Find scaling behavior of Var(vmr) with N and
+  # change scaling function to be independent of N.
+  if eps_low_id === nothing
+    if N == 1
+      eps_low_id = 2.0
+    elseif N == 2
+      eps_low_id = -0.5
+    else
+      @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
+      eps_low_id = -0.5
+    end
+  end
+
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
@@ -566,10 +580,25 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps_low_id::Real=2.0f0,
+  eps_low_id::Union{Real,Nothing}=nothing,
   steps_low::Integer,
   steps_over::Integer,
 ) where {N}
+  # TODO: Find scaling behavior of Var(vmr) with N and
+  # change scaling function to be independent of N.
+  if eps_low_id === nothing
+    if N == 1
+      eps_low_id = 2.0f0
+    elseif N == 2
+      eps_low_id = -0.5f0
+    elseif N == 3
+      @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
+      eps_low_id = -0.5f0
+    else
+      throw(ArgumentError("CUDA implementation for dimensions higher than 3 is not supported."))
+    end
+  end
+
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
@@ -696,10 +725,33 @@ function initialize_estimator_propagation(
   time_step::Union{Nothing,Real}=nothing,
   time_final::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
-  fraction_low::Real=0.0,
-  fraction_over::Real=0.2,
+  fraction_low::Union{Real,Nothing}=nothing,
+  fraction_over::Union{Real,Nothing}=nothing,
   kwargs...
 ) where {N,T<:Real,M}
+  # TODO: Find scaling behavior of Var(vmr) with N and
+  # change scaling function to be independent of N.
+  if fraction_low === nothing
+    if N == 1
+      fraction_low = 0.0
+    elseif N == 2
+      fraction_low = 0.06
+    else
+      @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
+      fraction_low = 0.06
+    end
+  end
+  if fraction_over === nothing
+    if N == 1
+      fraction_over = 0.2
+    elseif N == 2
+      fraction_over = 0.1
+    else
+      @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
+      fraction_over = 0.1
+    end
+  end
+
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
@@ -739,10 +791,37 @@ function initialize_estimator_propagation(
   time_step=nothing,
   time_final=nothing,
   n_steps=nothing,
-  fraction_low::Real=0.0f0,
-  fraction_over::Real=0.2f0,
+  fraction_low::Union{Real,Nothing}=nothing,
+  fraction_over::Union{Real,Nothing}=nothing,
   kwargs...
 ) where {N,T<:Real,M}
+  # TODO: Find scaling behavior of Var(vmr) with N and
+  # change scaling function to be independent of N.
+  if fraction_low === nothing
+    if N == 1
+      fraction_low = 0.0f0
+    elseif N == 2
+      fraction_low = 0.06f0
+    elseif N == 3
+      @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
+      fraction_low = 0.06f0
+    else
+      throw(ArgumentError("CUDA implementation for dimensions higher than 3 is not supported."))
+    end
+  end
+  if fraction_over === nothing
+    if N == 1
+      fraction_over = 0.2f0
+    elseif N == 2
+      fraction_over = 0.1f0
+    elseif N == 3
+      @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
+      fraction_over = 0.1f0
+    else
+      throw(ArgumentError("CUDA implementation for dimensions higher than 3 is not supported."))
+    end
+  end
+
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = CuKernelPropagation(means_bootstraps, vars_bootstraps)
