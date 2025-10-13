@@ -25,6 +25,5 @@ estimate_density!(density_estimation, :rot; kwargs...)
 
 ## References
 
-[1] Silverman, B. W. (1986). Density Estimation for Statistics and Data Analysis. Chapman and Hall/CRC.
-
-[2] [Scott, D. W. (1992). Multivariate Density Estimation: Theory, Practice, and Visualization. Wiley & Sons.](doi.org/10.1002/9780470316849)
+[Silverman, B. W. (1986). Density Estimation for Statistics and Data Analysis. Chapman and Hall/CRC.](https://doi.org/10.1201/9781315140919)
+[Scott, D. W. (1992). Multivariate Density Estimation: Theory, Practice, and Visualization. Wiley & Sons.](https://doi.org/10.1002/9780470316849)
