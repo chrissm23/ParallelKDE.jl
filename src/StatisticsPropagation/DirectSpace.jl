@@ -326,7 +326,7 @@ function initialize_dirac_sequence(
   blocks = cld(n_modified_gridpoints, threads)
 
   if include_var
-    CUDA.@sync blocking = true begin
+    CUDA.@sync begin
       kernel(
         dirac_sequence_real,
         dirac_sequence_squared_real,
@@ -339,9 +339,11 @@ function initialize_dirac_sequence(
       )
     end
 
+    CUDA.synchronize()
+
     return dirac_sequence, dirac_sequence_squared
   else
-    CUDA.@sync blocking = true begin
+    CUDA.@sync begin
       kernel(
         dirac_sequence_real,
         data,
@@ -352,6 +354,8 @@ function initialize_dirac_sequence(
         blocks
       )
     end
+
+    CUDA.synchronize()
 
     return dirac_sequence
   end
@@ -693,7 +697,7 @@ function calculate_scaled_vmr!(
   threads = min(n_points, config.threads)
   blocks = cld(n_points, threads)
 
-  CUDA.@sync blocking = true begin
+  CUDA.@sync begin
     kernel(s2k; threads, blocks)
   end
 
@@ -701,6 +705,8 @@ function calculate_scaled_vmr!(
   vmr .*= scaling_factor
 
   @. vmr = ifelse(isfinite(vmr), log(vmr), NaN32)
+
+  CUDA.synchronize()
 
   return nothing
 end
@@ -798,6 +804,8 @@ function calculate_full_means!(
 end
 function calculate_full_means!(::Val{:cuda}, sk::AnyCuArray, n_samples::Integer)
   @. sk = abs(sk)
+
+  CUDA.synchronize()
 
   return nothing
 end
@@ -948,7 +956,7 @@ function identify_convergence!(
   threads = min(n_points, config.threads)
   blocks = cld(n_points, threads)
 
-  CUDA.@sync blocking = true begin
+  CUDA.@sync begin
     kernel(
       vmr_current,
       vmr_prev1,
@@ -964,6 +972,8 @@ function identify_convergence!(
       blocks
     )
   end
+
+  CUDA.synchronize()
 
   return nothing
 end

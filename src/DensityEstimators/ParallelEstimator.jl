@@ -353,10 +353,11 @@ function get_means(kernel_propagation::CuKernelPropagation{N,T,M}) where {N,T<:R
     throw(ArgumentError("Means not calculated"))
   end
 
-  means = view(kernel_propagation.kernel_means, fill(Colon(), N)..., 1)
-  reinterpreted_means = reinterpret(reshape, T, means)
+  means_complex = view(kernel_propagation.kernel_means, fill(Colon(), N)..., 1)
+  reinterpreted_means = reinterpret(reshape, T, means_complex)
+  means = selectdim(reinterpreted_means, 1, 1)
 
-  return selectdim(reinterpreted_means, 1, 1)
+  return means
 end
 
 function propagate_bootstraps!(
@@ -439,12 +440,13 @@ function ifft_means!(
   kernel_propagation::KernelPropagation{N,T,M};
   method=Devices.CPU_SERIAL,
 ) where {N,T<:Real,M}
+  means = reshape(
+    view(kernel_propagation.kernel_means, fill(Colon(), N)..., 1),
+    size(kernel_propagation.kernel_means)[begin:end-1]..., 1
+  )
   ifourier_statistics!(
     Val(method),
-    reshape(
-      view(kernel_propagation.kernel_means, fill(Colon(), N)..., 1),
-      size(kernel_propagation.kernel_means)[begin:end-1]..., 1
-    ),
+    means,
     kernel_propagation.ifft_plan,
   )
 
@@ -454,9 +456,10 @@ function ifft_means!(
   kernel_propagation::CuKernelPropagation{N,T,M};
   method::Symbol=Devices.GPU_CUDA,
 ) where {N,T<:Real,M}
+  means = view(kernel_propagation.kernel_means, fill(Colon(), N)..., 1)
   ifourier_statistics!(
     Val(method),
-    view(kernel_propagation.kernel_means, fill(Colon(), N)..., 1),
+    means,
     kernel_propagation.ifft_plan_means,
   )
 
@@ -612,6 +615,27 @@ function CuDensityState(
   )
 end
 
+function update_density_state_vmr!(
+  density_state::DensityState{N,<:Real},
+  vmr_var::AbstractArray{<:Real,N},
+) where {N}
+  density_state.f_prev2 .= density_state.f_prev1
+  density_state.f_prev1 .= vmr_var
+
+  return nothing
+end
+function update_density_state_vmr!(
+  density_state::CuDensityState{N,<:Real},
+  vmr_var::AnyCuArray{<:Real,N},
+) where {N}
+  density_state.f_prev2 .= density_state.f_prev1
+  density_state.f_prev1 .= vmr_var
+
+  CUDA.synchronize()
+
+  return nothing
+end
+
 function update_state!(
   density_state::AbstractDensityState{N,<:Real},
   dlogt::Real,
@@ -639,8 +663,7 @@ function update_state!(
     density_state.low_density_flags,
   )
 
-  density_state.f_prev2 .= density_state.f_prev1
-  density_state.f_prev1 .= vmr_var
+  update_density_state_vmr!(density_state, vmr_var)
 
   return nothing
 
@@ -972,11 +995,14 @@ function estimate!(
 
   time_initial = initial_bandwidth(estimator.grid_direct)
   time_initial_squared = time_initial .^ 2
+  time_initial_squared_dlogt = Vector(time_initial_squared)
 
   if estimator.times isa AbstractVector{<:AbstractVector{<:Real}}
     times = estimator.times
+    times_dlogt = times
   elseif estimator.times isa AbstractMatrix{<:Real}
     times = eachcol(estimator.times)
+    times_dlogt = eachcol(Matrix(estimator.times))
   else
     throw(ArgumentError("Unsupported type for times: $(typeof(estimator.times))"))
   end
@@ -1019,9 +1045,11 @@ function estimate!(
     )
 
     if time_idx == 1
-      dlogt = calculate_dlogt(time_initial_squared, time_propagated)
+      dlogt = calculate_dlogt(time_initial_squared_dlogt, times_dlogt[time_idx])
     else
-      dlogt = calculate_dlogt(time_initial_squared, time_propagated, previous_time=times[time_idx-1])
+      dlogt = calculate_dlogt(
+        time_initial_squared_dlogt, times_dlogt[time_idx], previous_time=times_dlogt[time_idx-1]
+      )
     end
     update_state!(
       estimator.density_state,
@@ -1031,12 +1059,32 @@ function estimate!(
       method
     )
   end
-  remaining_nans = findall(isnan, kde.density)
-  kde.density[remaining_nans] .= get_means(estimator.kernel_propagation)[remaining_nans]
+  replace_nans!(kde, estimator)
 
   if get_device(estimator) isa IsCUDA
     CUDA.device_synchronize()
   end
+
+  return nothing
+end
+
+function replace_nans!(
+  kde::KDE,
+  estimator::ParallelEstimator,
+)
+  remaining_nans = findall(isnan, kde.density)
+  kde.density[remaining_nans] .= get_means(estimator.kernel_propagation)[remaining_nans]
+
+  return nothing
+end
+function replace_nans!(
+  kde::CuKDE,
+  estimator::CuParallelEstimator,
+)
+  remaining_nans = findall(isnan, kde.density)
+  kde.density[remaining_nans] .= get_means(estimator.kernel_propagation)[remaining_nans]
+
+  CUDA.synchronize()
 
   return nothing
 end
