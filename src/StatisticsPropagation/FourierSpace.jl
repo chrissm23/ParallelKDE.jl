@@ -87,6 +87,8 @@ function fourier_statistics!(
   plan * sk
   plan * s2k
 
+  CUDA.synchronize()
+
   return nothing
 end
 function fourier_statistics!(
@@ -95,6 +97,8 @@ function fourier_statistics!(
   plan::CUFFT.CuFFTPlan{<:Complex},
 ) where {M}
   plan * sk
+
+  CUDA.synchronize()
 
   return nothing
 end
@@ -282,7 +286,7 @@ function propagate_statistics!(
   threads = min(n_points, config.threads)
   blocks = cld(n_points, threads)
 
-  CUDA.@sync blocking = true begin
+  CUDA.@sync begin
     kernel(
       means_t,
       variances_t,
@@ -295,6 +299,8 @@ function propagate_statistics!(
       blocks
     )
   end
+
+  CUDA.synchronize()
 
   return nothing
 end
@@ -317,7 +323,7 @@ function propagate_statistics!(
   threads = min(n_points, config.threads)
   blocks = cld(n_points, threads)
 
-  CUDA.@sync blocking = true begin
+  CUDA.@sync begin
     kernel(
       means_t,
       means_0,
@@ -327,6 +333,8 @@ function propagate_statistics!(
       blocks
     )
   end
+
+  CUDA.synchronize()
 
   return nothing
 end
@@ -499,6 +507,8 @@ function ifourier_statistics!(
   ifft_plan * sk
   ifft_plan * s2k
 
+  CUDA.synchronize()
+
   return nothing
 end
 function ifourier_statistics!(
@@ -507,6 +517,8 @@ function ifourier_statistics!(
   ifft_plan::AbstractFFTs.ScaledPlan{<:Complex},
 ) where {M}
   ifft_plan * sk
+
+  CUDA.synchronize()
 
   return nothing
 end
