@@ -999,7 +999,7 @@ function find_stability(
 
   if !low_density_flag
     if second_derivative < tol_low_id
-      if ((first_derivative < current_minimum) || isnan(current_minimum)) && (counter_over < steps_over)
+      if ((first_derivative < current_minimum) || isnan(current_minimum)) && (counter_over <= steps_over)
         more_stable = true
         new_minimum = first_derivative
         counter_over = zero(counter_over)
