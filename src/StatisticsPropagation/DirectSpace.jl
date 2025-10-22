@@ -1068,7 +1068,7 @@ function kernel_stable!(
 
   if !low_density_flags[idx]
     if second_derivative < tol_low_id
-      if ((first_derivative < current_minima[idx]) || isnan(current_minima[idx])) && (counters_over[idx] < steps_over)
+      if ((first_derivative < current_minima[idx]) || isnan(current_minima[idx])) && (counters_over[idx] <= steps_over)
         current_minima[idx] = first_derivative
         counters_over[idx] = zero(counters_over[idx])
         density[idx] = means[idx]
