@@ -66,11 +66,11 @@ Further comparison of GradePro with other methods is in progress. In the future,
 
 **Implemented methods.** The package includes (a) parallel rules-of-thumb KDE, namely Scott and Silverman, for rapid baselines and (b) GradePro, engineered to perform rapid adaptive KDE in multiple dimensions. This implementation effectively performs independent grid-point-wise density estimation using FFT. Throughout the routines, the necessary memory is reduced by reusing allocated memory, without damaging performance. The serial version serves as a reference; the threaded version parallelizes routines applied over the bootstrap re-samples (which are required by the method); the CUDA routines provide parallelization at each estimated grid-point. Each implemented method naturally exposes all its parameters up to the user. Convenient defaults are set where reasonable. \autoref{fig:flowchart} shows a flowchart of the implemented algorithm.
 
-![Flowchart of the parallelizable point-wise density estimation algorithm. \label{fig:flowchart}](./parallelkde_flowchart.pdf)
-
 **Reproducibility and testing.** We include timing benchmarks to illustrate the speed gains obtained from parallelizable KDE algorithms.
 
 **Python wrapper.** The companion package `ParallelKDEpy` provides, with the help of `PythonCall.jl` [@rowley_pythoncalljl_2022], Python bindings to `ParallelKDE.jl`, offering identical estimators and device selection for seamless integration in Python-based workflows.
+
+![Flowchart of the parallelizable point-wise density estimation algorithm. \label{fig:flowchart}](./parallelkde_flowchart.pdf)
 
 # Acknowledgements
 
