@@ -54,7 +54,7 @@ Further comparison of GradePro with other methods is in progress. In the future,
 
 ![Benchmark of common KDE packages and their estimators along with estimators in ParallelKDE at different sample sizes. The estimations were performed for 100 and 100,000 samples in 1D with a grid of 500 points; and for 1,000 and 1,000,000 samples in 2D with a grid of 100 points per dimension. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_samples}](./benchmark_samples.pdf)
 
-![Benchmark of common KDE packages and their estimators along with estimators in ParallelKDE at different grid sizes. The estimations were performed for 100 to 2,500 grid points in 1D with 10,000 samples; and for 33 to 300 grid points per dimension with 100,000 samples in 2D. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_grids}](./benchmark_grid.pdf)
+![Benchmark of common KDE packages and their estimators along with estimators in ParallelKDE at different grid sizes. The estimations were performed for 100 to 2,500 grid points in 1D with 10,000 samples; and for 33 to 300 grid points per dimension with 100,000 samples in 2D. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_grids}](./benchmark_grids.pdf)
 
 # Functionality
 
