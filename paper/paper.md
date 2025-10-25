@@ -52,9 +52,9 @@ Besides that, we want to mention that our novel method, GradePro, is not only ve
 
 Further comparison of GradePro with other methods is in progress. In the future, we aim to provide general recommendations for users on the optimal choice of bandwidth selection methods for different use-cases. Here, we focus on the software engineering aspects, which enable our fast implementation.
 
-![Benchmark of common KDE packages and their estimators along with estimators in ParallelKDE at different sample sizes. The estimations were performed for 100 and 100,000 samples in 1D with a grid of 500 points; and for 1,000 and 1,000,000 samples in 2D with a grid of 100 points per dimension. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_samples}](./benchmark_samples.pdf)
+![Benchmark of common KDE packages and their estimators along with estimators in ParallelKDE at different sample sizes. The estimations were performed for 100 and 100,000 samples in 1D with a grid of 500 points; and for 1,000 and 1,000,000 samples in 2D with a grid of 100 points per dimension. Reported runtimes are averages over 10 repetitions. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_samples}](./benchmark_samples.pdf)
 
-![Benchmark of common KDE packages and their estimators along with estimators in ParallelKDE at different grid sizes. The estimations were performed for 100 to 2,500 grid points in 1D with 10,000 samples; and for 33 to 300 grid points per dimension with 100,000 samples in 2D. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_grids}](./benchmark_grids.pdf)
+![Benchmark of common KDE packages and their estimators along with estimators in ParallelKDE at different grid sizes. The estimations were performed for 100 to 2,500 grid points in 1D with 10,000 samples; and for 33 to 300 grid points per dimension with 100,000 samples in 2D. Reported runtimes are averages over 10 repetitions. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_grids}](./benchmark_grids.pdf)
 
 # Functionality
 
@@ -64,7 +64,7 @@ Further comparison of GradePro with other methods is in progress. In the future,
 - Threaded CPU using Julia's built-in multithreading;
 - CUDA GPU via `CUDA.jl` [@besard_effective_2019; @besard_rapid_2019].
 
-**Implemented methods.** The package includes (a) parallel rules-of-thumb KDE, namely Scott and Silverman, for rapid baselines and (b) GradePro, engineered to perform rapid adaptive KDE in multiple dimensions. This implementation effectively performs independent grid-point-wise density estimation using FFT. Throughout the routines, the necessary memory is reduced by reusing allocated memory, without damaging performance. The serial version serves as a reference; the threaded version parallelizes routines applied over the bootstrap re-samples (which are required by the method); the CUDA routines provide parallelization at each estimated grid-point. Each implemented method naturally exposes all its parameters up to the user. Convenient defaults are set where reasonable. \autoref{fig:flowchart} shows a flowchart of the implemented algorithm.
+**Implemented methods.** The package includes (a) parallel rules-of-thumb KDE, namely Scott and Silverman, for rapid baselines and (b) GradePro, engineered to perform rapid adaptive KDE in multiple dimensions. This implementation effectively performs independent grid-point-wise density estimation using FFT [@frigo_design_2005]. Throughout the routines, the necessary memory is reduced by reusing allocated memory, without damaging performance. The serial version serves as a reference; the threaded version parallelizes routines applied over the bootstrap re-samples (which are required by the method); the CUDA routines provide parallelization at each estimated grid-point. Each implemented method naturally exposes all its parameters up to the user. Convenient defaults are set where reasonable. \autoref{fig:flowchart} shows a flowchart of the implemented algorithm.
 
 **Reproducibility and testing.** We include timing benchmarks to illustrate the speed gains obtained from parallelizable KDE algorithms.
 
