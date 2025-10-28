@@ -533,27 +533,27 @@ end
 function DensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float64,
-  eps_low_id::Union{Real,Nothing}=nothing,
+  eps::Union{Real,Nothing}=nothing,
   steps_low::Integer,
   steps_over::Integer,
 ) where {N}
   # TODO: Find scaling behavior of Var(vmr) with dimensionality and
   # change scaling function to be independent of it.
-  if eps_low_id === nothing
+  if eps === nothing
     if N == 1
-      eps_low_id = 2.0
+      eps = 2.0
     elseif N == 2
-      eps_low_id = -0.5
+      eps = -0.5
     else
       @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
-      eps_low_id = -0.5
+      eps = -0.5
     end
   end
 
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
-    eps_low_id=T(eps_low_id),
+    eps_low_id=T(eps),
     steps_low=Int(steps_low),
     steps_over=Int(steps_over),
     indicator_minima=fill(T(NaN), dims),
@@ -583,20 +583,20 @@ end
 function CuDensityState(
   dims::NTuple{N,<:Integer};
   T::Type{<:Real}=Float32,
-  eps_low_id::Union{Real,Nothing}=nothing,
+  eps::Union{Real,Nothing}=nothing,
   steps_low::Integer,
   steps_over::Integer,
 ) where {N}
   # TODO: Find scaling behavior of Var(vmr) with dimensionality and
   # change scaling function to be independent of it.
-  if eps_low_id === nothing
+  if eps === nothing
     if N == 1
-      eps_low_id = 2.0f0
+      eps = 2.0f0
     elseif N == 2
-      eps_low_id = -0.5f0
+      eps = -0.5f0
     elseif N == 3
       @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
-      eps_low_id = -0.5f0
+      eps = -0.5f0
     else
       throw(ArgumentError("CUDA implementation for dimensions higher than 3 is not supported."))
     end
@@ -605,7 +605,7 @@ function CuDensityState(
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
-    eps_low_id=T(eps_low_id),
+    eps_low_id=T(eps),
     steps_low=Int32(steps_low),
     steps_over=Int32(steps_over),
     indicator_minima=CUDA.fill(T(NaN), dims),
@@ -669,9 +669,9 @@ function update_state!(
 
 end
 
-abstract type AbstractParallelEstimator{N,T,M} <: AbstractEstimator end
+abstract type AbstractGradeProEstimator{N,T,M} <: AbstractEstimator end
 
-struct ParallelEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractParallelEstimator{N,T,M}
+struct GradeProEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractGradeProEstimator{N,T,M}
   means_bootstraps::KernelMeans{N,T,M}
   vars_bootstraps::KernelVars{N,T,M}
   means::KernelMeans{N,T,N}
@@ -682,7 +682,7 @@ struct ParallelEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractParallelEstimat
   density_state::DensityState{N,T}
 end
 
-struct CuParallelEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractParallelEstimator{N,T,M}
+struct CuGradeProEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractGradeProEstimator{N,T,M}
   means_bootstraps::CuKernelMeans{N,T,M}
   vars_bootstraps::CuKernelVars{N,T,M}
   means::CuKernelMeans{N,T,N}
@@ -693,18 +693,18 @@ struct CuParallelEstimator{N,T<:Real,M,P<:Real,S<:Real} <: AbstractParallelEstim
   density_state::CuDensityState
 end
 
-add_estimator!(:parallelEstimator, AbstractParallelEstimator)
+add_estimator!(:gradepro, AbstractGradeProEstimator)
 
-Devices.get_device(::ParallelEstimator) = IsCPU()
-Devices.get_device(::CuParallelEstimator) = IsCUDA()
+Devices.get_device(::GradeProEstimator) = IsCPU()
+Devices.get_device(::CuGradeProEstimator) = IsCUDA()
 
 function initialize_estimator(
-  ::Type{<:AbstractParallelEstimator},
+  ::Type{<:AbstractGradeProEstimator},
   kde::AbstractKDE;
   method::Symbol,
   grid::Union{AbstractGrid,Nothing}=nothing,
   n_bootstraps::Integer=100,
-  time_step::Union{Nothing,Real}=nothing,
+  bw_step::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
   kwargs...,
 )
@@ -728,7 +728,7 @@ function initialize_estimator(
     vars_bootstraps,
     means,
     grid;
-    time_step,
+    bw_step,
     n_steps,
     kwargs...,
   )
@@ -745,46 +745,46 @@ function initialize_estimator_propagation(
   vars_bootstraps::KernelVars{N,T,M},
   means::KernelMeans{N,T,N},
   grid::Grid{N,<:Real,M};
-  time_step::Union{Nothing,Real}=nothing,
-  time_final::Union{Nothing,Real}=nothing,
+  bw_step::Union{Nothing,Real}=nothing,
+  bw_final::Union{Nothing,Real}=nothing,
   n_steps::Union{Nothing,Integer}=nothing,
-  fraction_low::Union{Real,Nothing}=nothing,
-  fraction_over::Union{Real,Nothing}=nothing,
+  alpha_s::Union{Real,Nothing}=nothing,
+  alpha_os::Union{Real,Nothing}=nothing,
   kwargs...
 ) where {N,T<:Real,M}
-  if fraction_low === nothing
+  if alpha_s === nothing
     if N == 1
-      fraction_low = 0.0
+      alpha_s = 0.0
     elseif N == 2
-      fraction_low = 0.06
+      alpha_s = 0.06
     else
       @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
-      fraction_low = 0.06
+      alpha_s = 0.06
     end
   end
-  if fraction_over === nothing
-    fraction_over = 0.1
+  if alpha_os === nothing
+    alpha_os = 0.1
   end
 
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = KernelPropagation(means_bootstraps, vars_bootstraps)
-  if time_final === nothing
-    time_final = silverman_rule(get_data(kde))
-  elseif time_final isa Real
-    time_final = fill(time_final, N)
+  if bw_final === nothing
+    bw_final = silverman_rule(get_data(kde))
+  elseif bw_final isa Real
+    bw_final = fill(bw_final, N)
   end
-  times, dt = get_time(IsCPU(), time_final; time_step, n_steps)
+  times, dt = get_time(IsCPU(), bw_final; bw_step, n_steps)
 
   steps_low, steps_over = calculate_duration_steps(
-    times[end], dt; fraction_low, fraction_over
+    times[end], dt; alpha_s, alpha_os
   )
 
   density_state = DensityState(
     size(grid); T=T, steps_low, steps_over, kwargs...
   )
 
-  return ParallelEstimator(
+  return GradeProEstimator(
     means_bootstraps,
     vars_bootstraps,
     means,
@@ -802,11 +802,11 @@ function initialize_estimator_propagation(
   vars_bootstraps::CuKernelVars{N,T,M},
   means::CuKernelMeans{N,T,N},
   grid::CuGrid{N,<:Real,M};
-  time_step=nothing,
-  time_final=nothing,
+  bw_step=nothing,
+  bw_final=nothing,
   n_steps=nothing,
-  fraction_low::Union{Real,Nothing}=nothing,
-  fraction_over::Union{Real,Nothing}=nothing,
+  alpha_s::Union{Real,Nothing}=nothing,
+  alpha_os::Union{Real,Nothing}=nothing,
   kwargs...
 ) where {N,T<:Real,M}
   # TODO: Workout FFT for higher thatn 3D
@@ -814,39 +814,39 @@ function initialize_estimator_propagation(
     throw(ArgumentError("CUDA implementation for dimensions higher than 3 is not supported."))
   end
 
-  if fraction_low === nothing
+  if alpha_s === nothing
     if N == 1
-      fraction_low = 0.0f0
+      alpha_s = 0.0f0
     elseif N == 2
-      fraction_low = 0.06f0
+      alpha_s = 0.06f0
     else
       @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
-      fraction_low = 0.06f0
+      alpha_s = 0.06f0
     end
   end
-  if fraction_over === nothing
-    fraction_over = 0.1f0
+  if alpha_os === nothing
+    alpha_os = 0.1f0
   end
 
   grid_fourier = fftgrid(grid)
 
   kernel_propagation = CuKernelPropagation(means_bootstraps, vars_bootstraps)
-  if time_final === nothing
-    time_final = silverman_rule(Array(get_data(kde)))
-  elseif time_final isa Real
-    time_final = CUDA.fill(Float32(time_final), N)
+  if bw_final === nothing
+    bw_final = silverman_rule(Array(get_data(kde)))
+  elseif bw_final isa Real
+    bw_final = CUDA.fill(Float32(bw_final), N)
   end
-  times, dt = get_time(IsCUDA(), time_final; time_step, n_steps)
+  times, dt = get_time(IsCUDA(), bw_final; bw_step, n_steps)
 
   steps_low, steps_over = calculate_duration_steps(
-    times[:, end], dt; fraction_low, fraction_over
+    times[:, end], dt; alpha_s, alpha_os
   )
 
   density_state = CuDensityState(
     size(grid); T=typeof(kde).parameters[2], steps_low, steps_over, kwargs...
   )
 
-  return CuParallelEstimator(
+  return CuGradeProEstimator(
     means_bootstraps,
     vars_bootstraps,
     means,
@@ -967,7 +967,7 @@ function calculate_duration_steps(time_max, dt; fraction_low=0.01, fraction_over
 end
 
 function estimate!(
-  estimator::AbstractParallelEstimator,
+  estimator::AbstractGradeProEstimator,
   kde::AbstractKDE;
   method::Symbol,
   kwargs...,
@@ -1053,7 +1053,7 @@ end
 
 function replace_nans!(
   kde::KDE,
-  estimator::ParallelEstimator,
+  estimator::GradeProEstimator,
 )
   remaining_nans = findall(isnan, kde.density)
   kde.density[remaining_nans] .= get_means(estimator.kernel_propagation)[remaining_nans]
@@ -1062,7 +1062,7 @@ function replace_nans!(
 end
 function replace_nans!(
   kde::CuKDE,
-  estimator::CuParallelEstimator,
+  estimator::CuGradeProEstimator,
 )
   remaining_nans = findall(isnan, kde.density)
   kde.density[remaining_nans] .= get_means(estimator.kernel_propagation)[remaining_nans]
@@ -1089,14 +1089,14 @@ function calculate_dlogt(
   return dlogt
 end
 
-function get_necessary_memory(estimator::AbstractParallelEstimator)
+function get_necessary_memory(estimator::AbstractGradeProEstimator)
   bootstraps_memory = sizeof(estimator.means_bootstraps.statistic) * 4
   means_memory = sizeof(estimator.means.statistic) * 3
 
   return 1.25(bootstraps_memory + means_memory) / 1024^2
 end
 
-function check_memory(estimator::AbstractParallelEstimator)
+function check_memory(estimator::AbstractGradeProEstimator)
   if get_device(estimator) isa IsCUDA
     return nothing
   end

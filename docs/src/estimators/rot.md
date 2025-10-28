@@ -9,16 +9,16 @@ There are two currently two implemented rules of thumb:
 
 ## Usage
 
-To use this estimator, call the `estimate_density!` method and pass `:rotEstimator` to the `estimation_method` argument.
+To use this estimator, call the `estimate_density!` method and pass `:rot` to the `estimation_method` argument.
 
 ```julia
-estimate_density!(density_estimation, :rotEstimator; kwargs...)
+estimate_density!(density_estimation, :rot; kwargs...)
 ```
 
 ### Available Keyword Arguments
 
-- `method`: The method to use fo rthe estimation. Options are `:serial`, `:threaded`, or `:cuda`. Default is `:serial` for CPU and `:cuda` must be selected for CUDA devices.
-- `rule_of_thumb`: The rule of thumb to use for the bandwidth estimation. Options are `:silverman` or `:scott`. Default is `:silverman`.
+- `method`: The method to use for the estimation. Options are `:serial`, `:threaded`, or `:cuda`. Default is `:serial` for CPU and `:cuda` must be selected for CUDA devices.
+- `rule_of_thumb`: The rule of thumb to use for the bandwidth estimation. Current options are `:silverman` or `:scott`. Default is `:scott`.
 
 !!! warning "High dimensionality with CUDA"
     Implementation with CUDA was not written to support higher dimensionality than 3D estimations.

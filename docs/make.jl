@@ -4,8 +4,8 @@ using Documenter
 DocMeta.setdocmeta!(ParallelKDE, :DocTestSetup, :(using ParallelKDE); recursive=true)
 
 ESTIMATOR_PAGES = [
-  "estimators/parallel_estimator.md",
-  "estimators/rot_estimator.md",
+  "estimators/gradepro.md",
+  "estimators/rot.md",
 ]
 API_PAGES = [
   "api_reference/devices.md",

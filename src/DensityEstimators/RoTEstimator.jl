@@ -104,7 +104,7 @@ end
 Devices.get_device(::RoTEstimator) = IsCPU()
 Devices.get_device(::CuRoTEstimator) = IsCUDA()
 
-add_estimator!(:rotEstimator, AbstractRoTEstimator)
+add_estimator!(:rot, AbstractRoTEstimator)
 
 function initialize_estimator(
   ::Type{<:AbstractRoTEstimator},
