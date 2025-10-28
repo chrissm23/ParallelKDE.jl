@@ -235,51 +235,6 @@ end;
 # ╔═╡ 0b4e1a19-e7d2-4acd-9687-ef8b3463f568
 md"## Full result"
 
-# ╔═╡ ddba9257-1165-4360-a35c-470c6c7a060d
-begin
-	support_minima = vec(minimum(coordinates_support, dims=Tuple(2:n_dims+1)))
-	support_maxima = vec(maximum(coordinates_support, dims=Tuple(2:n_dims+1)))
-	filter_mask = support_minima .< data .< support_maxima
-	data_filtered = data[:, dropdims(reduce(&, filter_mask, dims=1), dims=1)]
-
-	Random.seed!(random_seed)
-
-	density_estimation = initialize_estimation(
-		data_filtered,
-		grid=true,
-		grid_ranges=distro_support,
-		device=:cuda
-	)
-	estimate_density!(
-		density_estimation,
-		:parallelEstimator,
-		# time_step=0.00001,
-		# stable_duration=0.01,
-		# eps=-5.0,
-		# n_bootstraps=1000,
-	)
-
-	density_estimated = Array(get_density(density_estimation))
-	density_estimated_t = transpose(density_estimated)
-
-	p_true1 = contourf(
-		distro_support...,
-		distro_pdf_t,
-		c=:blues, 
-		levels=100,
-		colorbar=false
-	)
-	p_approx1 = contourf(
-		distro_support...,
-		density_estimated_t,
-		c=:greens,
-		levels=100,
-		colorbar=false
-	)
-
-	plot(p_true1, p_approx1, layout=(1,2), size=(1000, 400))
-end
-
 # ╔═╡ 28bef9db-c4a0-427a-b06c-695c1f51a0ad
 md"Coordinate"
 
@@ -318,121 +273,73 @@ end
 # ╔═╡ 894fdf5a-5a49-40d5-84bc-ea6098bd9cb4
 md"## Propagation behaviour"
 
-# ╔═╡ 6f8f9399-c8ab-4164-a549-c0e388076a07
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	Random.seed!(random_seed)
-
-	grid_support = initialize_grid(distro_support, device=:cuda)
-	time_initial = initial_bandwidth(grid_support)
-
-	method=:cuda
-
-	support_minima = vec(minimum(coordinates_support, dims=Tuple(2:n_dims+1)))
-	support_maxima = vec(maximum(coordinates_support, dims=Tuple(2:n_dims+1)))
-	filter_mask = support_minima .< data .< support_maxima
-	data_filtered = data[:, dropdims(reduce(&, filter_mask, dims=1), dims=1)]
-
-	kde = initialize_kde(data_filtered, size(grid_support), device=:cuda)
-	
-	parallel_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
-		ParallelKDE.DensityEstimators.AbstractParallelEstimator,
-		kde;
-		method,
-		grid=grid_support,
-		# time_step=0.00001,
-		# eps1=1.5,
-		# eps2=0.1,
-		# smoothness_duration=0.005,
-		# stable_duration=0.01,
-	)
-
-	times = parallel_estimator.times
-	n_times = length(times)
-	times_reinterpreted = reinterpret(reshape, Float64, times)
-	times_range = range(
-		minimum(times_reinterpreted), maximum(times_reinterpreted), length=n_times
-	)
-
-	grid_dims = size(kde.density)
-	previous_density = fill(NaN, grid_dims)
-
-	derivatives1 = fill(NaN, grid_dims..., n_times)
-	derivatives2 = fill(NaN, grid_dims..., n_times)
-
-	vmr_time = fill(NaN, grid_dims..., n_times)
-	means_time = fill(NaN, grid_dims..., n_times)
-	density_assigned_time = falses(grid_dims..., n_times)
-end;
-  ╠═╡ =#
-
 # ╔═╡ e3ae3fb5-ab84-419d-95e0-8ad8f0404cbd
+#=╠═╡
 for (idx,time_propagated) in enumerate(eachcol(times))
 	# Propagate bootstrap samples
 	ParallelKDE.DensityEstimators.propagate_bootstraps!(
-		parallel_estimator.kernel_propagation,
-		parallel_estimator.means_bootstraps,
-		parallel_estimator.vars_bootstraps,
-		parallel_estimator.grid_fourier,
+		gradepro_estimator.kernel_propagation,
+		gradepro_estimator.means_bootstraps,
+		gradepro_estimator.vars_bootstraps,
+		gradepro_estimator.grid_fourier,
 		time_propagated,
 		time_initial;
 		method
 	)
 	# Fourier transform back
 	ParallelKDE.DensityEstimators.ifft_bootstraps!(
-		parallel_estimator.kernel_propagation; method=:serial
+		gradepro_estimator.kernel_propagation; method=:serial
 	)
 
 	# Calculate VMR
 	ParallelKDE.DensityEstimators.calculate_vmr!(
-		parallel_estimator.kernel_propagation,
+		gradepro_estimator.kernel_propagation,
 		time_propagated,
-		parallel_estimator.grid_direct,
+		gradepro_estimator.grid_direct,
 		n_samples;
 		method
 	)
 	vmr_time[fill(Colon(), n_dims)..., idx] .= ParallelKDE.DensityEstimators.get_vmr(
-		parallel_estimator.kernel_propagation
+		gradepro_estimator.kernel_propagation
 	)
 
 	# Propagate means of full samples
 	ParallelKDE.DensityEstimators.propagate_means!(
-		parallel_estimator.kernel_propagation,
-		parallel_estimator.means,
-		parallel_estimator.grid_fourier,
+		gradepro_estimator.kernel_propagation,
+		gradepro_estimator.means,
+		gradepro_estimator.grid_fourier,
 		time_propagated;
 		method
 	)
 	# Fourier transform back
 	ParallelKDE.DensityEstimators.ifft_means!(
-		parallel_estimator.kernel_propagation;
+		gradepro_estimator.kernel_propagation;
 		method
 	)
 	ParallelKDE.DensityEstimators.calculate_means!(
-		parallel_estimator.kernel_propagation,
+		gradepro_estimator.kernel_propagation,
 		n_samples;
 		method
 	)
 	means_time[fill(Colon(), n_dims)..., idx] .= ParallelKDE.DensityEstimators.get_means(
-		parallel_estimator.kernel_propagation
+		gradepro_estimator.kernel_propagation
 	)
 
 	# Update convergence state
 	ParallelKDE.DensityEstimators.update_state!(
-		parallel_estimator.density_state,
+		gradepro_estimator.density_state,
 		kde,
-		parallel_estimator.kernel_propagation;
+		gradepro_estimator.kernel_propagation;
 		method
 	)
 	is_smooth_time[fill(Colon(), n_dims)..., idx] .= (
-		parallel_estimator.density_state.is_smooth
+		gradepro_estimator.density_state.is_smooth
 	)
 	has_decreased_time[fill(Colon(), n_dims)..., idx] .= (
-		parallel_estimator.density_state.has_decreased
+		gradepro_estimator.density_state.has_decreased
 	)
 	is_stable_time[fill(Colon(), n_dims)..., idx] .= (
-		parallel_estimator.density_state.is_stable
+		gradepro_estimator.density_state.is_stable
 	)
 
 	@. density_assigned_time[fill(Colon(), n_dims)..., idx] = ifelse(
@@ -445,22 +352,28 @@ for (idx,time_propagated) in enumerate(eachcol(times))
 	)
 	previous_density .= kde.density
 end
+  ╠═╡ =#
 
 # ╔═╡ f9cd5bb5-aafd-4c11-bbc4-1d5fed9dc649
 md"Propagation time (`propagation_time`)"
 
 # ╔═╡ 7e65eea3-5911-47ad-8a08-9ea809ba8425
+#=╠═╡
 @bind propagation_time_idx Slider(range( 1,n_times), default=1)
+  ╠═╡ =#
 
 # ╔═╡ 6480774f-be27-429a-bbb3-24454b1280d8
+#=╠═╡
 begin
 	propagation_time = times[propagation_time_idx]
 	propagation_t = norm(propagation_time)
 	ts = norm.(times)
 	dt = norm(time_step)
 end;
+  ╠═╡ =#
 
 # ╔═╡ 27c22b1e-463b-4b01-8fac-0f388094e416
+#=╠═╡
 p_propagation = contourf(
 	distro_support...,
 	permutedims(means_time[fill(Colon(), n_dims)..., propagation_time_idx], (2,1)),
@@ -468,8 +381,10 @@ p_propagation = contourf(
 	levels=100,
 	colorbar=false
 )
+  ╠═╡ =#
 
 # ╔═╡ 3f12b0f1-f7b9-48f0-b364-318a7b32e428
+#=╠═╡
 begin
 	derivatives1[fill(Colon(), n_dims)..., begin+1:end] .= abs.(
 		diff(vmr_time, dims=n_dims+1) ./ (2*dt)
@@ -486,8 +401,10 @@ begin
 		)
 	]
 end;
+  ╠═╡ =#
 
 # ╔═╡ 0536cd2b-d2c1-4f7d-aa46-81287dd34623
+#=╠═╡
 begin
 	test_means_time = [
 		means_time[i,j,k] for k in 1:size(means_time,3), (i,j) in test_indices
@@ -524,8 +441,10 @@ begin
 		for k in 1:size(density_assigned_time,3), (i,j) in test_indices
 	]
 end;
+  ╠═╡ =#
 
 # ╔═╡ c2eaa783-11ca-4a37-843a-63891fafaf89
+#=╠═╡
 begin
 	p_optimal = plot(
 		ts,
@@ -573,6 +492,7 @@ begin
 		[-10; -20], lw=2, lc=:black, ls=:dashdot, label="Optimal time"
 	)
 end
+  ╠═╡ =#
 
 # ╔═╡ 80839339-a09d-4424-9025-af36aba59948
 vmr_bounds = (-2, 8);
@@ -581,6 +501,7 @@ vmr_bounds = (-2, 8);
 md"### Finding smooth regime"
 
 # ╔═╡ 7f3b3272-0d39-4b08-b705-358824d64ebb
+#=╠═╡
 begin
 	p_smooth = plot(
 		ts,
@@ -620,11 +541,13 @@ begin
 		p_smooth, [-10; -20], lw=2, lc=:black, ls=:dash, label="Smoothness found"
 	)
 end
+  ╠═╡ =#
 
 # ╔═╡ 074148c8-4fbc-4a45-b7e3-58cea7d03aca
 md"### Finding decrease point"
 
 # ╔═╡ 1fa3871b-9f02-4e4c-9f26-c5f8cbf115e3
+#=╠═╡
 begin
 	p_decrease = plot(
 		ts,
@@ -664,11 +587,13 @@ begin
 		p_decrease, [-10; -20], lw=2, lc=:black, ls=:dash, label="Decrease found"
 	)
 end
+  ╠═╡ =#
 
 # ╔═╡ 66bc5a7d-707c-4920-8c4e-db238ca87dd9
 md"### Find stability point"
 
 # ╔═╡ 64c2750e-bb4b-41bb-96e8-bf2955943fbe
+#=╠═╡
 begin
 	p_stability = plot(
 		ts,
@@ -708,6 +633,7 @@ begin
 		p_stability, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
 	)
 end
+  ╠═╡ =#
 
 # ╔═╡ daac6add-0657-4a3a-bcba-0d4377b62b44
 md"### First derivative"
@@ -722,6 +648,7 @@ begin
 end
 
 # ╔═╡ 3114aa7d-f0c8-45cd-a7fa-b1cee9b9cd3b
+#=╠═╡
 begin
 	p_dev1 = plot(
 		ts,
@@ -763,6 +690,7 @@ begin
 		p_dev1, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
 	)
 end
+  ╠═╡ =#
 
 # ╔═╡ 3e5b37f5-ebc8-4785-a8c2-7d1c258e38c6
 md"### Second derivative"
@@ -777,6 +705,7 @@ begin
 end
 
 # ╔═╡ 26e50e62-8e3b-48e4-8983-ded0c5b871ac
+#=╠═╡
 begin
 	p_dev2 = plot(
 		ts,
@@ -823,11 +752,13 @@ begin
 
 	p_dev2
 end
+  ╠═╡ =#
 
 # ╔═╡ 4f1bd110-b5ad-4066-a8d7-9973c989bb20
 md"### Final stopping point"
 
 # ╔═╡ 472e1f7c-d8c5-495f-954d-4ccf3adfc8bf
+#=╠═╡
 begin
 	p_stopping = plot(
 		ts,
@@ -877,8 +808,10 @@ begin
 
 	p_stopping
 end
+  ╠═╡ =#
 
 # ╔═╡ 781b579d-3fa5-45d8-b404-6c4bf55d3321
+#=╠═╡
 begin
 	p_error = plot(
 		ts,
@@ -937,6 +870,103 @@ begin
 		[-10; -20], lw=2, lc=:black, ls=:dash, label="Stopping time"
 	)
 end
+  ╠═╡ =#
+
+# ╔═╡ ddba9257-1165-4360-a35c-470c6c7a060d
+#=╠═╡
+begin
+	support_minima = vec(minimum(coordinates_support, dims=Tuple(2:n_dims+1)))
+	support_maxima = vec(maximum(coordinates_support, dims=Tuple(2:n_dims+1)))
+	filter_mask = support_minima .< data .< support_maxima
+	data_filtered = data[:, dropdims(reduce(&, filter_mask, dims=1), dims=1)]
+
+	Random.seed!(random_seed)
+
+	density_estimation = initialize_estimation(
+		data_filtered,
+		grid=true,
+		grid_ranges=distro_support,
+		device=:cuda
+	)
+	estimate_density!(
+		density_estimation,
+		:gradepro,
+		# time_step=0.00001,
+		# stable_duration=0.01,
+		# eps=-5.0,
+		# n_bootstraps=1000,
+	)
+
+	density_estimated = Array(get_density(density_estimation))
+	density_estimated_t = transpose(density_estimated)
+
+	p_true1 = contourf(
+		distro_support...,
+		distro_pdf_t,
+		c=:blues, 
+		levels=100,
+		colorbar=false
+	)
+	p_approx1 = contourf(
+		distro_support...,
+		density_estimated_t,
+		c=:greens,
+		levels=100,
+		colorbar=false
+	)
+
+	plot(p_true1, p_approx1, layout=(1,2), size=(1000, 400))
+end
+  ╠═╡ =#
+
+# ╔═╡ 6f8f9399-c8ab-4164-a549-c0e388076a07
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	Random.seed!(random_seed)
+
+	grid_support = initialize_grid(distro_support, device=:cuda)
+	time_initial = initial_bandwidth(grid_support)
+
+	method=:cuda
+
+	support_minima = vec(minimum(coordinates_support, dims=Tuple(2:n_dims+1)))
+	support_maxima = vec(maximum(coordinates_support, dims=Tuple(2:n_dims+1)))
+	filter_mask = support_minima .< data .< support_maxima
+	data_filtered = data[:, dropdims(reduce(&, filter_mask, dims=1), dims=1)]
+
+	kde = initialize_kde(data_filtered, size(grid_support), device=:cuda)
+	
+	gradepro_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
+		ParallelKDE.DensityEstimators.AbstractGradeProEstimator,
+		kde;
+		method,
+		grid=grid_support,
+		# time_step=0.00001,
+		# eps1=1.5,
+		# eps2=0.1,
+		# smoothness_duration=0.005,
+		# stable_duration=0.01,
+	)
+
+	times = gradepro_estimator.times
+	n_times = length(times)
+	times_reinterpreted = reinterpret(reshape, Float64, times)
+	times_range = range(
+		minimum(times_reinterpreted), maximum(times_reinterpreted), length=n_times
+	)
+
+	grid_dims = size(kde.density)
+	previous_density = fill(NaN, grid_dims)
+
+	derivatives1 = fill(NaN, grid_dims..., n_times)
+	derivatives2 = fill(NaN, grid_dims..., n_times)
+
+	vmr_time = fill(NaN, grid_dims..., n_times)
+	means_time = fill(NaN, grid_dims..., n_times)
+	density_assigned_time = falses(grid_dims..., n_times)
+end;
+  ╠═╡ =#
 
 # ╔═╡ Cell order:
 # ╠═d43e18a8-45e8-11f0-0c94-b3c8669c9ba7

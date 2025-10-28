@@ -314,7 +314,7 @@ let
 	)
 	estimate_density!(
 		density_estimation,
-		:parallelEstimator,
+		:gradepro,
 		# n_steps=250,
 		# eps_low_id=2.0,
 		# fraction_low=0.07,
@@ -376,7 +376,7 @@ let
 	)
 	estimate_density!(
 		density_estimation,
-		:parallelEstimator,
+		:gradepro,
 		# n_steps=250,
 		# eps_low_id=2.0,
 		# fraction_low=0.07,
@@ -441,8 +441,8 @@ begin
 
 	kde = initialize_kde(data, size(grid_support); device)
 	
-	parallel_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
-		ParallelKDE.DensityEstimators.AbstractParallelEstimator,
+	gradepro_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
+		ParallelKDE.DensityEstimators.AbstractGradeProEstimator,
 		kde;
 		method,
 		grid=grid_support,
@@ -454,7 +454,7 @@ begin
 		# time_final=2.0
 	)
 
-	times = parallel_estimator.times
+	times = gradepro_estimator.times
 	n_times = length(times)
 	times_reinterpreted = reinterpret(Float64, times)
 	# times_reinterpreted = reinterpret(Float32, times)
@@ -472,62 +472,62 @@ begin
 	density_assigned_time = falses(n_gridpoints, n_times)
 
 	dlogts = fill(NaN, n_times)
-	eps_low_id = parallel_estimator.density_state.eps_low_id
-	# steps_buffer = parallel_estimator.density_state.steps_low
+	eps_low_id = gradepro_estimator.density_state.eps_low_id
+	# steps_buffer = gradepro_estimator.density_state.steps_low
 end;
 
 # ╔═╡ fb725626-e5eb-4dfc-93e7-4946af668652
 for (idx,time_propagated) in enumerate(times)
 	# Propagate bootstrap samples
 	ParallelKDE.DensityEstimators.propagate_bootstraps!(
-		parallel_estimator.kernel_propagation,
-		parallel_estimator.means_bootstraps,
-		parallel_estimator.vars_bootstraps,
-		parallel_estimator.grid_fourier,
+		gradepro_estimator.kernel_propagation,
+		gradepro_estimator.means_bootstraps,
+		gradepro_estimator.vars_bootstraps,
+		gradepro_estimator.grid_fourier,
 		time_propagated,
 		time_initial;
 		method
 	)
 	# Fourier transform back
 	ParallelKDE.DensityEstimators.ifft_bootstraps!(
-		parallel_estimator.kernel_propagation; method=method
+		gradepro_estimator.kernel_propagation; method=method
 	)
 
 	# Calculate VMR
 	ParallelKDE.DensityEstimators.calculate_vmr!(
-		parallel_estimator.kernel_propagation,
+		gradepro_estimator.kernel_propagation,
 		time_propagated,
-		parallel_estimator.grid_direct,
+		gradepro_estimator.grid_direct,
 		n_samples;
 		method
 	)
 	vmr_time[:, idx] .= Array(
 		ParallelKDE.DensityEstimators.get_vmr(
-			parallel_estimator.kernel_propagation
+			gradepro_estimator.kernel_propagation
 		)
 	)
 
 	# Propagate means of full samples
 	ParallelKDE.DensityEstimators.propagate_means!(
-		parallel_estimator.kernel_propagation,
-		parallel_estimator.means,
-		parallel_estimator.grid_fourier,
+		gradepro_estimator.kernel_propagation,
+		gradepro_estimator.means,
+		gradepro_estimator.grid_fourier,
 		time_propagated;
 		method
 	)
 	# Fourier transform back
 	ParallelKDE.DensityEstimators.ifft_means!(
-		parallel_estimator.kernel_propagation;
+		gradepro_estimator.kernel_propagation;
 		method
 	)
 	ParallelKDE.DensityEstimators.calculate_means!(
-		parallel_estimator.kernel_propagation,
+		gradepro_estimator.kernel_propagation,
 		n_samples;
 		method
 	)
 	means_time[:, idx] .= Array(
 		ParallelKDE.DensityEstimators.get_means(
-			parallel_estimator.kernel_propagation
+			gradepro_estimator.kernel_propagation
 		)
 	)
 
@@ -541,10 +541,10 @@ for (idx,time_propagated) in enumerate(times)
 	dlogt = log(det_curr/det_prev)
 	dlogts[idx] = dlogt
 	ParallelKDE.DensityEstimators.update_state!(
-		parallel_estimator.density_state,
+		gradepro_estimator.density_state,
 		dlogt,
 		kde,
-		parallel_estimator.kernel_propagation;
+		gradepro_estimator.kernel_propagation;
 		method
 	)
 

@@ -515,7 +515,7 @@ abstract type AbstractDensityState{N,T} end
 
 @kwdef mutable struct DensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  eps_low_id::T
+  eps::T
 
   steps_low::Int
   steps_over::Int
@@ -553,7 +553,7 @@ function DensityState(
   DensityState{N,T}(;
     f_prev1=fill(T(NaN), dims),
     f_prev2=fill(T(NaN), dims),
-    eps_low_id=T(eps),
+    eps=T(eps),
     steps_low=Int(steps_low),
     steps_over=Int(steps_over),
     indicator_minima=fill(T(NaN), dims),
@@ -565,7 +565,7 @@ end
 
 @kwdef mutable struct CuDensityState{N,T} <: AbstractDensityState{N,T}
   # Parameters
-  eps_low_id::T
+  eps::T
 
   steps_low::Int32
   steps_over::Int32
@@ -605,7 +605,7 @@ function CuDensityState(
   CuDensityState{N,T}(;
     f_prev1=CUDA.fill(T(NaN), dims),
     f_prev2=CUDA.fill(T(NaN), dims),
-    eps_low_id=T(eps),
+    eps=T(eps),
     steps_low=Int32(steps_low),
     steps_over=Int32(steps_over),
     indicator_minima=CUDA.fill(T(NaN), dims),
@@ -952,16 +952,16 @@ function get_time(
 
 end
 
-function calculate_duration_steps(time_max, dt; fraction_low=0.01, fraction_over=0.3)
-  if fraction_low < 0 || fraction_low > 1
+function calculate_duration_steps(time_max, dt; alpha_s=0.0, alpha_os=0.1)
+  if alpha_s < 0 || alpha_s > 1
     throw(ArgumentError("Fraction must be in the range [0, 1]"))
   end
-  if fraction_over < 0 || fraction_over > 1
+  if alpha_os < 0 || alpha_os > 1
     throw(ArgumentError("Fraction must be in the range [0, 1]"))
   end
   n_steps = time_max ./ dt
-  steps_buffer = fraction_low .* n_steps
-  steps_stopping = fraction_over .* n_steps
+  steps_buffer = alpha_s .* n_steps
+  steps_stopping = alpha_os .* n_steps
 
   return round.(Int, (mean(steps_buffer), mean(steps_stopping)))
 end

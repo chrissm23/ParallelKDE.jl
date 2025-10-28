@@ -16,10 +16,12 @@
   end
 
   estimator_keys = [
-    :parallelEstimator
+    :gradepro,
+    :rot
   ]
   estimator_types = [
-    ParallelKDE.DensityEstimators.AbstractParallelEstimator
+    ParallelKDE.DensityEstimators.AbstractGradeProEstimator
+    ParallelKDE.DensityEstimators.AbstractRoTEstimator
   ]
   @testset "Included estimators tests" for (estimator_key, estimator_type) in zip(estimator_keys, estimator_types)
     @test (estimator_key => estimator_type) ∈ ParallelKDE.DensityEstimators.estimator_lookup
