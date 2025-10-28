@@ -221,7 +221,7 @@
         kde,
         grid=grid,
         n_bootstraps=n_bootstraps,
-        time_step=0.2,
+        bw_step=0.2,
         n_steps=10,
         method=implementation,
       )
@@ -465,7 +465,7 @@ if CUDA.functional()
         kde,
         grid=grid,
         n_bootstraps=n_bootstraps,
-        time_step=0.2f0,
+        bw_step=0.2f0,
         n_steps=10,
         method=:cuda,
       )

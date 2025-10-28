@@ -654,7 +654,7 @@ function update_state!(
     density_state.f_prev1,
     density_state.f_prev2,
     dlogt,
-    density_state.eps_low_id,
+    density_state.eps,
     density_state.steps_low,
     density_state.steps_over,
     density_state.indicator_minima,
@@ -774,7 +774,7 @@ function initialize_estimator_propagation(
   elseif bw_final isa Real
     bw_final = fill(bw_final, N)
   end
-  times, dt = get_time(IsCPU(), bw_final; bw_step, n_steps)
+  times, dt = get_time(IsCPU(), bw_final; time_step=bw_step, n_steps)
 
   steps_low, steps_over = calculate_duration_steps(
     times[end], dt; alpha_s, alpha_os
@@ -836,7 +836,7 @@ function initialize_estimator_propagation(
   elseif bw_final isa Real
     bw_final = CUDA.fill(Float32(bw_final), N)
   end
-  times, dt = get_time(IsCUDA(), bw_final; bw_step, n_steps)
+  times, dt = get_time(IsCUDA(), bw_final; time_step=bw_step, n_steps)
 
   steps_low, steps_over = calculate_duration_steps(
     times[:, end], dt; alpha_s, alpha_os
