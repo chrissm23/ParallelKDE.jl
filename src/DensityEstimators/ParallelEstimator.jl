@@ -537,8 +537,8 @@ function DensityState(
   steps_low::Integer,
   steps_over::Integer,
 ) where {N}
-  # TODO: Find scaling behavior of Var(vmr) with N and
-  # change scaling function to be independent of N.
+  # TODO: Find scaling behavior of Var(vmr) with dimensionality and
+  # change scaling function to be independent of it.
   if eps_low_id === nothing
     if N == 1
       eps_low_id = 2.0
@@ -587,8 +587,8 @@ function CuDensityState(
   steps_low::Integer,
   steps_over::Integer,
 ) where {N}
-  # TODO: Find scaling behavior of Var(vmr) with N and
-  # change scaling function to be independent of N.
+  # TODO: Find scaling behavior of Var(vmr) with dimensionality and
+  # change scaling function to be independent of it.
   if eps_low_id === nothing
     if N == 1
       eps_low_id = 2.0f0
@@ -752,8 +752,6 @@ function initialize_estimator_propagation(
   fraction_over::Union{Real,Nothing}=nothing,
   kwargs...
 ) where {N,T<:Real,M}
-  # TODO: Find scaling behavior of Var(vmr) with N and
-  # change scaling function to be independent of N.
   if fraction_low === nothing
     if N == 1
       fraction_low = 0.0
@@ -765,14 +763,7 @@ function initialize_estimator_propagation(
     end
   end
   if fraction_over === nothing
-    if N == 1
-      fraction_over = 0.2
-    elseif N == 2
-      fraction_over = 0.1
-    else
-      @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
-      fraction_over = 0.1
-    end
+    fraction_over = 0.1
   end
 
   grid_fourier = fftgrid(grid)
@@ -818,31 +809,23 @@ function initialize_estimator_propagation(
   fraction_over::Union{Real,Nothing}=nothing,
   kwargs...
 ) where {N,T<:Real,M}
-  # TODO: Find scaling behavior of Var(vmr) with N and
-  # change scaling function to be independent of N.
+  # TODO: Workout FFT for higher thatn 3D
+  if N > 3
+    throw(ArgumentError("CUDA implementation for dimensions higher than 3 is not supported."))
+  end
+
   if fraction_low === nothing
     if N == 1
       fraction_low = 0.0f0
     elseif N == 2
       fraction_low = 0.06f0
-    elseif N == 3
+    else
       @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
       fraction_low = 0.06f0
-    else
-      throw(ArgumentError("CUDA implementation for dimensions higher than 3 is not supported."))
     end
   end
   if fraction_over === nothing
-    if N == 1
-      fraction_over = 0.2f0
-    elseif N == 2
-      fraction_over = 0.1f0
-    elseif N == 3
-      @warn "Parameters for 3D and higher have not been tested yet. Using parameters for 2D."
-      fraction_over = 0.1f0
-    else
-      throw(ArgumentError("CUDA implementation for dimensions higher than 3 is not supported."))
-    end
+    fraction_over = 0.1f0
   end
 
   grid_fourier = fftgrid(grid)
