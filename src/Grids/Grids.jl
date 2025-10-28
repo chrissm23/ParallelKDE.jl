@@ -278,7 +278,7 @@ function find_grid(
   ]
 
   # Find grid ranges
-  default_size = 300
+  default_size = 150
   if (grid_steps === nothing) && (grid_dims === nothing)
     grid_dims = ntuple(i -> default_size, Val(n_dims))
   end
