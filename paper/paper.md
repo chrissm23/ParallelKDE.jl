@@ -15,17 +15,17 @@ authors:
   - name:
       given: Patrick K.
       surname: Quoika
-    orcid:
+    orcid: 0000-0002-6227-5443
     affiliation: 1
   - name:
       given: Martin
       surname: Zacharias
-    orcid:
+    orcid: 0000-0001-5163-2663
     affiliation: 1
 affiliations:
   - index: 1
-    name: Center for Functional Protein Assemblies (CPA), Technical University of Munich, Germany
-date: 23.10.2025
+    name: Center for Functional Protein Assemblies, Technical University of Munich, Ernst-Otto-Fischer-Str. 8, Garching 85748, Germany
+date: 28.10.2025
 bibliography: paper.bib
 ---
 
