@@ -4,17 +4,18 @@ CurrentModule = ParallelKDE
 
 # ParallelKDE
 
-[ParallelKDE](https://github.com/chrissm23/ParallelKDE.jl) is a package for flexible and efficient kernel density estimation (KDE), with a strong focus on parallel implementations. Its core estimator, the [Parallel Estimator](@ref "ParallelEstimator") described here, supports CPU and GPU acceleration (threaded and CUDA), and its designed to scale with modern hardware. While the package is centered around grid-based KDEs, it also provides extensible infrastructure to support and implement other types of estimators.
+[ParallelKDE](https://github.com/chrissm23/ParallelKDE.jl) is a package for flexible and efficient kernel density estimation (KDE), with a strong focus on parallel implementations. Its core estimator, the [Parallel Estimator](@ref "GradeproEstimator") described here, supports CPU and GPU acceleration (threaded and CUDA), and its designed to scale with modern hardware. While the package is centered around grid-based KDEs, it also provides extensible infrastructure to support and implement other types of estimators.
 
 The user interface is built around a modular design that separates concerns between grids, devices, density objects and estimation routines. This allows users to easily switch estimators, control execution targets (e.g., CPU or GPU), and prototype new estimation strategies without rewriting boilerplate code.
 
 Typical usage involves:
+
 - Instantiating an estimation in a specific device (e.g., CPU, CUDA),
 - This also involves defining a grid for the estimation or using a default grid,
 - Estimating the density with a chosen estimator,
 - Accessing the resulting density.
 
-For example, to estimate a density on a CPU with a default grid using the [Parallel Estimator](@ref "ParallelEstimator"), you can use:
+For example, to estimate a density on a CPU with a default grid using the [GradePro Estimator](@ref "GradeproEstimator"), you can use:
 
 ```@example 1
 using ParallelKDE
@@ -28,7 +29,7 @@ density_estimation = initialize_estimation(
 )
 estimate_density!(
   density_estimation,
-  :parallelEstimator,
+  :gradepro,
 )
 
 density_estimated = get_density(density_estimation)

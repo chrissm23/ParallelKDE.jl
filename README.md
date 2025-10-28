@@ -14,6 +14,7 @@ High performance implementation in Julia of a parallel kernel density estimation
 - ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) Python wrapper: [ParallelKDEpy](https://github.com/chrissm23/ParallelKDEpy)
 
 ### Why this project?
+
 - ParallelKDE provides a framework to perform kernel density estimation (KDE) using parallel algorithms.
 - It is friendly to high-dimensional data and big datasets.
 - ParallelKDE is easily extensible, allowing users to implement their own parallel algorithms.
@@ -44,7 +45,7 @@ density_estimation = initialize_estimation(
   grid=true,
   device=:cpu, # or :cuda for GPU support
 )
-estimate_density!(density_estimation, :parallelEstimator)
+estimate_density!(density_estimation, :gradepro)
 
 density_estimated = get_density(density_estimation)
 ```
@@ -55,8 +56,8 @@ See the [documentation] for more details on how to use the package.
 
 Currently, there are two estimators available:
 
-- `:parallelEstimator`: As described in [Sustay Martinez *et al.* (2025)], this estimator is designed for high-dimensional data and can be run on both CPU and GPU.
-- `:rotEstimator`: Implements the rules of thumb (Silverman and Scott) for bandwidth selection. It makes use of some of the routines from `:parallelEstimator` to evaluate the density on a grid.
+- `:gradepro`: As described in [Sustay Martinez *et al.* (2025)], this estimator is designed for high-dimensional data and can be run on both CPU and GPU.
+- `:rot`: Implements the rules of thumb (Silverman and Scott) for bandwidth selection. It makes use of some of the routines from `:gradepro` to evaluate the density on a grid.
 
 ## Python Wrapper
 

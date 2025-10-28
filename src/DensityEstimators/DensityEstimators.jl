@@ -114,7 +114,7 @@ function estimate!(
 
 end
 
-include("ParallelEstimator.jl")
+include("GradeProEstimator.jl")
 include("RoTEstimator.jl")
 
 end
