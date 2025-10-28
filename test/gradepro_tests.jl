@@ -130,7 +130,7 @@
       )
 
       # Parameter tests
-      @test isfinite(density_state.eps_low_id)
+      @test isfinite(density_state.eps)
       @test isfinite(density_state.steps_low)
       @test isfinite(density_state.steps_over)
       # State arrays test
@@ -195,7 +195,7 @@
 
       dt = @SVector fill(0.2, n_dims)
 
-      parallel_estimator = ParallelKDE.DensityEstimators.ParallelEstimator(
+      parallel_estimator = ParallelKDE.DensityEstimators.GradeProEstimator(
         means_bootstraps,
         vars_bootstraps,
         means,
@@ -217,7 +217,7 @@
       parallel_estimator = nothing
 
       parallel_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
-        ParallelKDE.DensityEstimators.AbstractParallelEstimator,
+        ParallelKDE.DensityEstimators.AbstractGradeProEstimator,
         kde,
         grid=grid,
         n_bootstraps=n_bootstraps,
@@ -374,7 +374,7 @@ if CUDA.functional()
       )
 
       # Parameter tests
-      @test isfinite(density_state.eps_low_id)
+      @test isfinite(density_state.eps)
       @test isfinite(density_state.steps_low)
       @test isfinite(density_state.steps_over)
       # State arrays test
@@ -439,7 +439,7 @@ if CUDA.functional()
 
       dt = CUDA.fill(0.2f0, n_dims)
 
-      parallel_estimator = ParallelKDE.DensityEstimators.CuParallelEstimator(
+      parallel_estimator = ParallelKDE.DensityEstimators.CuGradeProEstimator(
         means_bootstraps,
         vars_bootstraps,
         means,
@@ -461,7 +461,7 @@ if CUDA.functional()
       parallel_estimator = nothing
 
       parallel_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
-        ParallelKDE.DensityEstimators.CuParallelEstimator,
+        ParallelKDE.DensityEstimators.CuGradeProEstimator,
         kde,
         grid=grid,
         n_bootstraps=n_bootstraps,
@@ -490,7 +490,7 @@ end
     kde = initialize_kde(data, size(grid), device=:cpu)
 
     estimator = ParallelKDE.DensityEstimators.initialize_estimator(
-      ParallelKDE.DensityEstimators.AbstractParallelEstimator,
+      ParallelKDE.DensityEstimators.AbstractGradeProEstimator,
       kde,
       grid=grid,
       method=implementation
@@ -518,7 +518,7 @@ if CUDA.functional()
     kde = initialize_kde(data, size(grid), device=:cuda)
 
     estimator = ParallelKDE.DensityEstimators.initialize_estimator(
-      ParallelKDE.DensityEstimators.AbstractParallelEstimator,
+      ParallelKDE.DensityEstimators.AbstractGradeProEstimator,
       kde,
       grid=grid,
       method=:cuda

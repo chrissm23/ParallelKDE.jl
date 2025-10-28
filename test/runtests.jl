@@ -43,7 +43,7 @@ include("test_utils.jl")
   end
 
   @testset "Parallel Estimation tests" begin
-    include("parallelestimation_tests.jl")
+    include("gradepro_tests.jl")
   end
 
   @testset "Rules of Thumb tests" begin

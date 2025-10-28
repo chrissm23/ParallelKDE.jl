@@ -131,7 +131,7 @@ if CUDA.functional()
       kde = initialize_kde(data, size(grid), device=:cuda)
 
       estimator = ParallelKDE.DensityEstimators.initialize_estimator(
-        ParallelKDE.DensityEstimators.AbstractParallelEstimator,
+        ParallelKDE.DensityEstimators.AbstractRoTEstimator,
         kde,
         grid=grid,
         method=:cuda
