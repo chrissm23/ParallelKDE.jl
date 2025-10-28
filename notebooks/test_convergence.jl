@@ -18,30 +18,30 @@ end
 
 # ╔═╡ 3add1086-3d31-11f0-0a9e-cd0909baedac
 begin
-	import Pkg
-	Pkg.activate(Base.current_project())
-	Pkg.instantiate()
-	
-	using TestEnv
-	
-	TestEnv.activate()
-	
-	using Revise
-	using ParallelKDE
+  import Pkg
+  Pkg.activate(Base.current_project())
+  Pkg.instantiate()
 
-	using Statistics,
-		LinearAlgebra,
-		Random
+  using TestEnv
 
-	using StaticArrays,
-		FFTW,
-		CUDA,
-		Distributions,
-		StatsBase,
-		Plots,
-		PlutoUI
+  TestEnv.activate()
 
-	pythonplot()
+  using Revise
+  using ParallelKDE
+
+  using Statistics,
+    LinearAlgebra,
+    Random
+
+  using StaticArrays,
+    FFTW,
+    CUDA,
+    Distributions,
+    StatsBase,
+    Plots,
+    PlutoUI
+
+  pythonplot()
 end
 
 # ╔═╡ c823e934-2430-4c95-ae36-96879b565e47
@@ -58,57 +58,57 @@ sample_distro(distro, n_samples) = reshape(rand(distro, n_samples), 1, n_samples
 
 # ╔═╡ ab810aa5-916c-4491-a346-ba098b052e15
 function define_distro(::Val{:normal})
-	μ = 10
-	σ = 1
+  μ = 10
+  σ = 1
 
-	return Normal(μ, σ)
+  return Normal(μ, σ)
 end;
 
 # ╔═╡ 3524b6e7-c3f7-4a0c-85d9-25340ac8d5d7
 function define_distro(::Val{:bimodal1})
-	μ1 = 6
-	σ1 = 1
-	w1 = 0.4
+  μ1 = 6
+  σ1 = 1
+  w1 = 0.4
 
-	μ2 = 11
-	σ2 = 2
-	w2 = 1 - w1
+  μ2 = 11
+  σ2 = 2
+  w2 = 1 - w1
 
-	return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
+  return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
 end;
 
 # ╔═╡ c22aeb1d-85b8-43d7-b938-d6ee5cf9d3e3
 function define_distro(::Val{:bimodal2})
-	μ1 = 4
-	σ1 = 0.5
-	w1 = 0.3
+  μ1 = 4
+  σ1 = 0.5
+  w1 = 0.3
 
-	μ2 = 11
-	σ2 = 2
-	w2 = 1 - w1
+  μ2 = 11
+  σ2 = 2
+  w2 = 1 - w1
 
-	return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
+  return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
 end;
 
 # ╔═╡ 4bb13b8b-17fd-4ed1-a33e-6170a44158cd
 function define_distro(::Val{:bimodal3})
-	μ1 = 6.5
-	σ1 = 0.2
-	w1 = 0.5
+  μ1 = 6.5
+  σ1 = 0.2
+  w1 = 0.5
 
-	μ2 = 13.5
-	σ2 = 1.2
-	w2 = 1 - w1
+  μ2 = 13.5
+  σ2 = 1.2
+  w2 = 1 - w1
 
-	return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
+  return MixtureModel(Normal, [(μ1, σ1), (μ2, σ2)], [w1, w2])
 end
 
 # ╔═╡ 7f588fa0-525d-471a-9b3d-af73f4e083f5
 function define_distro(::Val{:noncentral_χ2})
-	ν = 2
-	λ = 1.7
+  ν = 2
+  λ = 1.7
 
-	return NoncentralChisq(ν, λ)
+  return NoncentralChisq(ν, λ)
 end;
 
 # ╔═╡ 7e79580a-4b79-48b6-984e-1b9cb351611a
@@ -116,7 +116,7 @@ md"Distribution (`distro_name`)"
 
 # ╔═╡ ba9f88bc-a309-4ed7-a08b-822ed48f19c1
 @bind distro_name Select(
-	[:normal, :bimodal1, :bimodal2, :bimodal3, :noncentral_χ2], default=:bimodal3
+  [:normal, :bimodal1, :bimodal2, :bimodal3, :noncentral_χ2], default=:bimodal3
 )
 
 # ╔═╡ fe3cd654-ed53-415d-9429-beea88bedace
@@ -136,14 +136,14 @@ md"Number of grid points (`n_gridpoints`)"
 
 # ╔═╡ 5bf23fbc-556a-4014-a84b-47c6dedf0b9f
 begin
-	resample
-	
-	x_min = 0
-	x_max = 20
-	distro = define_distro(distro_name)
-	data = sample_distro(distro, n_samples)
-	distro_support = range(x_min, x_max, length=n_gridpoints)
-	distro_pdf = pdf(distro, distro_support)
+  resample
+
+  x_min = 0
+  x_max = 20
+  distro = define_distro(distro_name)
+  data = sample_distro(distro, n_samples)
+  distro_support = range(x_min, x_max, length=n_gridpoints)
+  distro_pdf = pdf(distro, distro_support)
 end;
 
 # ╔═╡ b2645b3b-2251-4d6a-9a41-e69eb101e12b
@@ -152,7 +152,7 @@ end;
 let
 	line_length = 0.02
 	p_info = plot(distro_support, distro_pdf, label="PDF", lc=:cornflowerblue, lw=2)
-	
+
 	m = Matrix{Float64}(undef, 3, n_samples)
 	m[1, :] .= vec(data)
 	m[2, :] .= vec(data)
@@ -164,7 +164,7 @@ let
 
 	xx = vec(m)
 	yy = vec(n)
-	
+
 	plot!(p_info, xx, yy, seriestype=:path, lc=:firebrick, label=false, alpha=0.1)
 
 	p_info
@@ -179,9 +179,9 @@ md"### Full estimation"
 
 # ╔═╡ 3e7d87af-6523-4218-86ee-e2af901bf491
 begin
-	calculate_seed
+  calculate_seed
 
-	random_seed = rand(Int)
+  random_seed = rand(Int)
 end;
 
 # ╔═╡ d904caba-b00e-449b-b0b9-c6132c3a0e6c
@@ -210,8 +210,8 @@ md"
 
 # ╔═╡ 67a1126e-ca9a-4551-9255-ea75004ec2ff
 begin
-	println(testpoints_min)
-	println(testpoints_max)
+  println(testpoints_min)
+  println(testpoints_max)
 end
 
 # ╔═╡ d048004b-ecbf-4455-944b-4a7ea105a50e
@@ -223,204 +223,204 @@ Color palette for those test points in `test_palette`.
 
 # ╔═╡ 23b14634-08bf-4a96-8c5c-361392fa4ad2
 begin
-	testpoints_min_idx = findfirst(x -> (x - testpoints_min) >= 0, distro_support)
-	testpoints_max_idx = findfirst(x -> (x - testpoints_max) >= 0, distro_support)
-	test_indices = floor.(
-		Int, range(testpoints_min_idx, testpoints_max_idx, length=n_testpoints)
-	)
-	test_points = distro_support[test_indices]
-	test_palette = palette(:vik, n_testpoints)
+  testpoints_min_idx = findfirst(x -> (x - testpoints_min) >= 0, distro_support)
+  testpoints_max_idx = findfirst(x -> (x - testpoints_max) >= 0, distro_support)
+  test_indices = floor.(
+    Int, range(testpoints_min_idx, testpoints_max_idx, length=n_testpoints)
+  )
+  test_points = distro_support[test_indices]
+  test_palette = palette(:vik, n_testpoints)
 end;
 
 # ╔═╡ 1200e59e-388b-4c62-b2a8-084098311922
 function calculate_mise(
-	f1::AbstractArray{<:Real,N},
-	f2::AbstractArray{<:Real,N},
-	dx::Real
+  f1::AbstractArray{<:Real,N},
+  f2::AbstractArray{<:Real,N},
+  dx::Real
 ) where {N}
-	n_points = length(f1)
+  n_points = length(f1)
 
-	return sum((f1 .- f2) .^ 2) * dx / n_points
+  return sum((f1 .- f2) .^ 2) * dx / n_points
 end
 
 # ╔═╡ cc7df97b-0138-4289-843d-8b5046dea0d9
 let
-	data_filtered = data[
-		(data .>= minimum(distro_support)) .& (data .<= maximum(distro_support))
-	]
-	data_filtered = reshape(data_filtered, 1, length(data_filtered))
-	Random.seed!(random_seed)
-	density_estimation = initialize_estimation(
-		data_filtered,
-		grid=true,
-		grid_ranges=distro_support,
-		# device=:cuda,
-	)
-	estimate_density!(
-		density_estimation,
-		:rotEstimator,
-		# rule_of_thumb=:silverman,
-	)
+  data_filtered = data[
+    (data.>=minimum(distro_support)).&(data.<=maximum(distro_support))
+  ]
+  data_filtered = reshape(data_filtered, 1, length(data_filtered))
+  Random.seed!(random_seed)
+  density_estimation = initialize_estimation(
+    data_filtered,
+    grid=true,
+    grid_ranges=distro_support,
+    # device=:cuda,
+  )
+  estimate_density!(
+    density_estimation,
+    :rotEstimator,
+    # rule_of_thumb=:silverman,
+  )
 
-	density_estimated = get_density(density_estimation)
-	# density_estimated_d = get_density(density_estimation)
-	# density_estimated = Array(density_estimated_d)
+  density_estimated = get_density(density_estimation)
+  # density_estimated_d = get_density(density_estimation)
+  # density_estimated = Array(density_estimated_d)
 
-	dx = prod(spacings(get_grid(density_estimation)))
-	norm = sum(density_estimated) * dx
-	density_estimated .= density_estimated / norm
+  dx = prod(spacings(get_grid(density_estimation)))
+  norm = sum(density_estimated) * dx
+  density_estimated .= density_estimated / norm
 
-	p_estimate = plot(
-		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
-	)
-	plot!(
-		p_estimate,
-		distro_support,
-		density_estimated,
-		label="Estimation",
-		lw=2,
-		lc=:forestgreen
-	)
+  p_estimate = plot(
+    distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
+  )
+  plot!(
+    p_estimate,
+    distro_support,
+    density_estimated,
+    label="Estimation",
+    lw=2,
+    lc=:forestgreen
+  )
 
-	for (i, point) in enumerate(test_points)
-		vline!(
-			p_estimate,
-			[point],
-			label=false,
-			c=test_palette[i],
-		)
-	end
-	
-	println("NaNs: ", findall(isnan, density_estimated))
+  for (i, point) in enumerate(test_points)
+    vline!(
+      p_estimate,
+      [point],
+      label=false,
+      c=test_palette[i],
+    )
+  end
 
-	mise = calculate_mise(density_estimated, distro_pdf, dx)
-	println("MISE: ", mise)
+  println("NaNs: ", findall(isnan, density_estimated))
 
-	p_estimate
+  mise = calculate_mise(density_estimated, distro_pdf, dx)
+  println("MISE: ", mise)
+
+  p_estimate
 end
 
 # ╔═╡ 0d4ee210-b4d6-4811-addc-7a649db15295
 let
-	data_filtered = data[
-		(data .>= minimum(distro_support)) .& (data .<= maximum(distro_support))
-	]
-	data_filtered = reshape(data_filtered, 1, length(data_filtered))
-	Random.seed!(random_seed)
-	density_estimation = initialize_estimation(
-		data_filtered,
-		grid=true,
-		grid_ranges=distro_support,
-		# device=:cuda,
-	)
-	estimate_density!(
-		density_estimation,
-		:gradepro,
-		# n_steps=250,
-		# eps_low_id=2.0,
-		# fraction_low=0.07,
-		# fraction_stopping=0.3,
-		# time_step=0.0005,
-		# time_final=0.5,
-		# n_bootstraps=1000,
-	)
+  data_filtered = data[
+    (data.>=minimum(distro_support)).&(data.<=maximum(distro_support))
+  ]
+  data_filtered = reshape(data_filtered, 1, length(data_filtered))
+  Random.seed!(random_seed)
+  density_estimation = initialize_estimation(
+    data_filtered,
+    grid=true,
+    grid_ranges=distro_support,
+    # device=:cuda,
+  )
+  estimate_density!(
+    density_estimation,
+    :gradepro,
+    # n_steps=250,
+    # eps_low_id=2.0,
+    # fraction_low=0.07,
+    # fraction_stopping=0.3,
+    # time_step=0.0005,
+    # time_final=0.5,
+    # n_bootstraps=1000,
+  )
 
-	density_estimated = get_density(density_estimation)
-	# density_estimated_d = get_density(density_estimation)
-	# density_estimated = Array(density_estimated_d)
+  density_estimated = get_density(density_estimation)
+  # density_estimated_d = get_density(density_estimation)
+  # density_estimated = Array(density_estimated_d)
 
-	dx = prod(spacings(get_grid(density_estimation)))
-	# norm = sum(density_estimated) * dx
-	# density_estimated .= density_estimated / norm
+  dx = prod(spacings(get_grid(density_estimation)))
+  # norm = sum(density_estimated) * dx
+  # density_estimated .= density_estimated / norm
 
-	p_estimate = plot(
-		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
-	)
-	plot!(
-		p_estimate,
-		distro_support,
-		density_estimated,
-		label="Estimation",
-		lw=2,
-		lc=:forestgreen
-	)
+  p_estimate = plot(
+    distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
+  )
+  plot!(
+    p_estimate,
+    distro_support,
+    density_estimated,
+    label="Estimation",
+    lw=2,
+    lc=:forestgreen
+  )
 
-	for (i, point) in enumerate(test_points)
-		vline!(
-			p_estimate,
-			[point],
-			label=false,
-			c=test_palette[i],
-		)
-	end
-	
-	println("NaNs: ", findall(isnan, density_estimated))
+  for (i, point) in enumerate(test_points)
+    vline!(
+      p_estimate,
+      [point],
+      label=false,
+      c=test_palette[i],
+    )
+  end
 
-	mise = calculate_mise(density_estimated, distro_pdf, dx)
-	println("MISE: ", mise)
+  println("NaNs: ", findall(isnan, density_estimated))
 
-	p_estimate
+  mise = calculate_mise(density_estimated, distro_pdf, dx)
+  println("MISE: ", mise)
+
+  p_estimate
 end
 
 # ╔═╡ 19ac248a-08cd-4842-8056-185cf7a4e526
 let
-	data_filtered = data[
-		(data .>= minimum(distro_support)) .& (data .<= maximum(distro_support))
-	]
-	data_filtered = reshape(data_filtered, 1, length(data_filtered))
-	Random.seed!(random_seed)
-	density_estimation = initialize_estimation(
-		data_filtered,
-		grid=true,
-		grid_ranges=distro_support,
-		device=:cuda,
-	)
-	estimate_density!(
-		density_estimation,
-		:gradepro,
-		# n_steps=250,
-		# eps_low_id=2.0,
-		# fraction_low=0.07,
-		# fraction_stopping=0.3,
-		# time_step=0.0005,
-		# time_final=0.5,
-		# n_bootstraps=1000,
-	)
+  data_filtered = data[
+    (data.>=minimum(distro_support)).&(data.<=maximum(distro_support))
+  ]
+  data_filtered = reshape(data_filtered, 1, length(data_filtered))
+  Random.seed!(random_seed)
+  density_estimation = initialize_estimation(
+    data_filtered,
+    grid=true,
+    grid_ranges=distro_support,
+    device=:cuda,
+  )
+  estimate_density!(
+    density_estimation,
+    :gradepro,
+    # n_steps=250,
+    # eps_low_id=2.0,
+    # fraction_low=0.07,
+    # fraction_stopping=0.3,
+    # time_step=0.0005,
+    # time_final=0.5,
+    # n_bootstraps=1000,
+  )
 
-	# density_estimated = get_density(density_estimation)
-	density_estimated_d = get_density(density_estimation)
-	density_estimated = Array(density_estimated_d)
+  # density_estimated = get_density(density_estimation)
+  density_estimated_d = get_density(density_estimation)
+  density_estimated = Array(density_estimated_d)
 
-	dx = prod(spacings(get_grid(density_estimation)))
-	# norm = sum(density_estimated) * dx
-	# density_estimated .= density_estimated / norm
+  dx = prod(spacings(get_grid(density_estimation)))
+  # norm = sum(density_estimated) * dx
+  # density_estimated .= density_estimated / norm
 
-	p_estimate = plot(
-		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
-	)
-	plot!(
-		p_estimate,
-		distro_support,
-		density_estimated,
-		label="Estimation",
-		lw=2,
-		lc=:forestgreen
-	)
+  p_estimate = plot(
+    distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue
+  )
+  plot!(
+    p_estimate,
+    distro_support,
+    density_estimated,
+    label="Estimation",
+    lw=2,
+    lc=:forestgreen
+  )
 
-	for (i, point) in enumerate(test_points)
-		vline!(
-			p_estimate,
-			[point],
-			label=false,
-			c=test_palette[i],
-		)
-	end
-	
-	println("NaNs: ", findall(isnan, density_estimated))
+  for (i, point) in enumerate(test_points)
+    vline!(
+      p_estimate,
+      [point],
+      label=false,
+      c=test_palette[i],
+    )
+  end
 
-	mise = calculate_mise(density_estimated, distro_pdf, dx)
-	println("MISE: ", mise)
+  println("NaNs: ", findall(isnan, density_estimated))
 
-	p_estimate
+  mise = calculate_mise(density_estimated, distro_pdf, dx)
+  println("MISE: ", mise)
+
+  p_estimate
 end
 
 # ╔═╡ 75e020f4-5682-46f3-8dff-7abeba257818
@@ -428,155 +428,155 @@ md"### Propagation behavior"
 
 # ╔═╡ c7ae5c52-72ca-4449-bfa6-18fb36003ace
 begin
-	Random.seed!(random_seed)
+  Random.seed!(random_seed)
 
-	# device=:cuda
-	# method=:cuda
-	device=:cpu
-	method=:serial
+  # device=:cuda
+  # method=:cuda
+  device = :cpu
+  method = :serial
 
-	grid_support = initialize_grid(distro_support; device)
-	time_initial = initial_bandwidth(grid_support)
-	time_initial_squared = time_initial .^ 2
+  grid_support = initialize_grid(distro_support; device)
+  time_initial = initial_bandwidth(grid_support)
+  time_initial_squared = time_initial .^ 2
 
-	kde = initialize_kde(data, size(grid_support); device)
-	
-	gradepro_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
-		ParallelKDE.DensityEstimators.AbstractGradeProEstimator,
-		kde;
-		method,
-		grid=grid_support,
-		# n_steps=250,
-		# eps_low_id=2.0,
-		# fraction_low=0.07,
-		# fraction_stopping=0.1,
-		# time_step=0.0005,
-		# time_final=2.0
-	)
+  kde = initialize_kde(data, size(grid_support); device)
 
-	times = gradepro_estimator.times
-	n_times = length(times)
-	times_reinterpreted = reinterpret(Float64, times)
-	# times_reinterpreted = reinterpret(Float32, times)
-	times_range = range(
-		minimum(times_reinterpreted), maximum(times_reinterpreted), length=n_times
-	)
+  gradepro_estimator = ParallelKDE.DensityEstimators.initialize_estimator(
+    ParallelKDE.DensityEstimators.AbstractGradeProEstimator,
+    kde;
+    method,
+    grid=grid_support,
+    # n_steps=250,
+    # eps_low_id=2.0,
+    # fraction_low=0.07,
+    # fraction_stopping=0.1,
+    # time_step=0.0005,
+    # time_final=2.0
+  )
 
-	previous_density = fill(NaN, size(kde.density))
+  times = gradepro_estimator.times
+  n_times = length(times)
+  times_reinterpreted = reinterpret(Float64, times)
+  # times_reinterpreted = reinterpret(Float32, times)
+  times_range = range(
+    minimum(times_reinterpreted), maximum(times_reinterpreted), length=n_times
+  )
 
-	derivatives1 = fill(NaN, n_gridpoints, n_times)
-	derivatives2 = fill(NaN, n_gridpoints, n_times)
+  previous_density = fill(NaN, size(kde.density))
 
-	vmr_time = fill(NaN, n_gridpoints, n_times)
-	means_time = fill(NaN, n_gridpoints, n_times)
-	density_assigned_time = falses(n_gridpoints, n_times)
+  derivatives1 = fill(NaN, n_gridpoints, n_times)
+  derivatives2 = fill(NaN, n_gridpoints, n_times)
 
-	dlogts = fill(NaN, n_times)
-	eps_low_id = gradepro_estimator.density_state.eps_low_id
-	# steps_buffer = gradepro_estimator.density_state.steps_low
+  vmr_time = fill(NaN, n_gridpoints, n_times)
+  means_time = fill(NaN, n_gridpoints, n_times)
+  density_assigned_time = falses(n_gridpoints, n_times)
+
+  dlogts = fill(NaN, n_times)
+  eps_low_id = gradepro_estimator.density_state.eps
+  # steps_buffer = gradepro_estimator.density_state.steps_low
 end;
 
 # ╔═╡ fb725626-e5eb-4dfc-93e7-4946af668652
-for (idx,time_propagated) in enumerate(times)
-	# Propagate bootstrap samples
-	ParallelKDE.DensityEstimators.propagate_bootstraps!(
-		gradepro_estimator.kernel_propagation,
-		gradepro_estimator.means_bootstraps,
-		gradepro_estimator.vars_bootstraps,
-		gradepro_estimator.grid_fourier,
-		time_propagated,
-		time_initial;
-		method
-	)
-	# Fourier transform back
-	ParallelKDE.DensityEstimators.ifft_bootstraps!(
-		gradepro_estimator.kernel_propagation; method=method
-	)
+for (idx, time_propagated) in enumerate(times)
+  # Propagate bootstrap samples
+  ParallelKDE.DensityEstimators.propagate_bootstraps!(
+    gradepro_estimator.kernel_propagation,
+    gradepro_estimator.means_bootstraps,
+    gradepro_estimator.vars_bootstraps,
+    gradepro_estimator.grid_fourier,
+    time_propagated,
+    time_initial;
+    method
+  )
+  # Fourier transform back
+  ParallelKDE.DensityEstimators.ifft_bootstraps!(
+    gradepro_estimator.kernel_propagation; method=method
+  )
 
-	# Calculate VMR
-	ParallelKDE.DensityEstimators.calculate_vmr!(
-		gradepro_estimator.kernel_propagation,
-		time_propagated,
-		gradepro_estimator.grid_direct,
-		n_samples;
-		method
-	)
-	vmr_time[:, idx] .= Array(
-		ParallelKDE.DensityEstimators.get_vmr(
-			gradepro_estimator.kernel_propagation
-		)
-	)
+  # Calculate VMR
+  ParallelKDE.DensityEstimators.calculate_vmr!(
+    gradepro_estimator.kernel_propagation,
+    time_propagated,
+    gradepro_estimator.grid_direct,
+    n_samples;
+    method
+  )
+  vmr_time[:, idx] .= Array(
+    ParallelKDE.DensityEstimators.get_vmr(
+      gradepro_estimator.kernel_propagation
+    )
+  )
 
-	# Propagate means of full samples
-	ParallelKDE.DensityEstimators.propagate_means!(
-		gradepro_estimator.kernel_propagation,
-		gradepro_estimator.means,
-		gradepro_estimator.grid_fourier,
-		time_propagated;
-		method
-	)
-	# Fourier transform back
-	ParallelKDE.DensityEstimators.ifft_means!(
-		gradepro_estimator.kernel_propagation;
-		method
-	)
-	ParallelKDE.DensityEstimators.calculate_means!(
-		gradepro_estimator.kernel_propagation,
-		n_samples;
-		method
-	)
-	means_time[:, idx] .= Array(
-		ParallelKDE.DensityEstimators.get_means(
-			gradepro_estimator.kernel_propagation
-		)
-	)
+  # Propagate means of full samples
+  ParallelKDE.DensityEstimators.propagate_means!(
+    gradepro_estimator.kernel_propagation,
+    gradepro_estimator.means,
+    gradepro_estimator.grid_fourier,
+    time_propagated;
+    method
+  )
+  # Fourier transform back
+  ParallelKDE.DensityEstimators.ifft_means!(
+    gradepro_estimator.kernel_propagation;
+    method
+  )
+  ParallelKDE.DensityEstimators.calculate_means!(
+    gradepro_estimator.kernel_propagation,
+    n_samples;
+    method
+  )
+  means_time[:, idx] .= Array(
+    ParallelKDE.DensityEstimators.get_means(
+      gradepro_estimator.kernel_propagation
+    )
+  )
 
-	# Update convergence state
-	if idx == 1
-		det_prev = prod(time_initial_squared)
-	else
-		det_prev = prod(time_initial_squared .+ Array(times)[idx-1] .^ 2)
-	end
-	det_curr = prod(time_initial_squared .+ time_propagated .^ 2)
-	dlogt = log(det_curr/det_prev)
-	dlogts[idx] = dlogt
-	ParallelKDE.DensityEstimators.update_state!(
-		gradepro_estimator.density_state,
-		dlogt,
-		kde,
-		gradepro_estimator.kernel_propagation;
-		method
-	)
+  # Update convergence state
+  if idx == 1
+    det_prev = prod(time_initial_squared)
+  else
+    det_prev = prod(time_initial_squared .+ Array(times)[idx-1] .^ 2)
+  end
+  det_curr = prod(time_initial_squared .+ time_propagated .^ 2)
+  dlogt = log(det_curr / det_prev)
+  dlogts[idx] = dlogt
+  ParallelKDE.DensityEstimators.update_state!(
+    gradepro_estimator.density_state,
+    dlogt,
+    kde,
+    gradepro_estimator.kernel_propagation;
+    method
+  )
 
-	kde_density = Array(kde.density)
+  kde_density = Array(kde.density)
 
-	@. density_assigned_time[:, idx] = ifelse(
-		(
-			(kde_density ≈ previous_density) | 
-			(isnan(kde_density) & isnan(previous_density))
-		),
-		false,
-		true
-	)
-	previous_density .= kde_density
+  @. density_assigned_time[:, idx] = ifelse(
+    (
+      (kde_density ≈ previous_density) |
+      (isnan(kde_density) & isnan(previous_density))
+    ),
+    false,
+    true
+  )
+  previous_density .= kde_density
 end
 
 # ╔═╡ 5cca44db-4f10-4f9b-9c0a-6e6e1a983720
 begin
-	derivatives1[:, begin+1:end] .= log.(
-		abs.(
-			diff(vmr_time, dims=2) ./ reshape(2 .* dlogts[begin+1:end],1,:)
-		)
-	)
-	derivatives2[:, begin+2:end] .= log.(
-		abs.(
-			diff(diff(vmr_time, dims=2), dims=2) ./ reshape(dlogts[begin+2:end] .^2 ,1,:)
-		)
-	)
-	
-	optimal_times = times_range[
-		argmin.(eachrow(abs.(means_time .- reshape(distro_pdf, n_gridpoints, 1))))
-	]
+  derivatives1[:, begin+1:end] .= log.(
+    abs.(
+      diff(vmr_time, dims=2) ./ reshape(2 .* dlogts[begin+1:end], 1, :)
+    )
+  )
+  derivatives2[:, begin+2:end] .= log.(
+    abs.(
+      diff(diff(vmr_time, dims=2), dims=2) ./ reshape(dlogts[begin+2:end] .^ 2, 1, :)
+    )
+  )
+
+  optimal_times = times_range[
+    argmin.(eachrow(abs.(means_time .- reshape(distro_pdf, n_gridpoints, 1))))
+  ]
 end;
 
 # ╔═╡ 95746d99-132a-4f7c-8075-5da357841e1f
@@ -590,30 +590,30 @@ md"#### Propagation of mean Dirac sequences"
 
 # ╔═╡ f5278add-a94e-4d43-a1be-4093f6bcefae
 begin
-	p_propagation = plot(
-		distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue, dpi=500
-	)
-	plot!(
-		p_propagation,
-		distro_support,
-		means_time[:, findfirst(t -> t == propagation_time, times_range)],
-		label="Propagated sequence\nt=$propagation_time",
-		lw=2,
-		lc=:forestgreen,
-	)
+  p_propagation = plot(
+    distro_support, distro_pdf, label="PDF", lw=2, lc=:cornflowerblue, dpi=500
+  )
+  plot!(
+    p_propagation,
+    distro_support,
+    means_time[:, findfirst(t -> t == propagation_time, times_range)],
+    label="Propagated sequence\nt=$propagation_time",
+    lw=2,
+    lc=:forestgreen,
+  )
 
-	for (i, point) in enumerate(test_points)
-		vline!(
-			p_propagation,
-			[point],
-			label=false,
-			c=test_palette[i],
-		)
-	end
+  for (i, point) in enumerate(test_points)
+    vline!(
+      p_propagation,
+      [point],
+      label=false,
+      c=test_palette[i],
+    )
+  end
 
-	# savefig(p_propagation, "dirac_cpu.png")
-	
-	p_propagation
+  # savefig(p_propagation, "dirac_cpu.png")
+
+  p_propagation
 end
 
 # ╔═╡ 9d33bbd6-2f00-4633-8500-ef1fd18dead9
@@ -621,51 +621,51 @@ md"#### Known optimal time propagation"
 
 # ╔═╡ b62dc21c-c3a5-482e-9ad4-97f0e161d3dc
 begin
-	p_means = plot(
-		times_range,
-		eachrow(means_time)[test_indices],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=1.1 .* extrema(means_time[test_indices, :]),
-		xlims=extrema(times_range),
-	)
+  p_means = plot(
+    times_range,
+    eachrow(means_time)[test_indices],
+    label=false,
+    palette=test_palette,
+    lw=2,
+    ylims=1.1 .* extrema(means_time[test_indices, :]),
+    xlims=extrema(times_range),
+  )
 
-	vline!(p_means, [propagation_time], c=:forestgreen, label="Propagation time")
+  vline!(p_means, [propagation_time], c=:forestgreen, label="Propagation time")
 
-	for (i, val) in enumerate(distro_pdf[test_indices])
-		hline!(
-			p_means,
-			[val],
-			label=false,
-			lc=test_palette[i],
-			lw=2,
-			ls=:dash,
-		)
+  for (i, val) in enumerate(distro_pdf[test_indices])
+    hline!(
+      p_means,
+      [val],
+      label=false,
+      lc=test_palette[i],
+      lw=2,
+      ls=:dash,
+    )
 
-		vline!(
-			p_means,
-			[optimal_times[test_indices[i]]],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dashdot,
-		)
-	end
+    vline!(
+      p_means,
+      [optimal_times[test_indices[i]]],
+      label=false,
+      lw=2,
+      lc=test_palette[i],
+      ls=:dashdot,
+    )
+  end
 
-	# Manual label
-	plot!(
-		p_means,
-		[-10; -20], lw=2, lc=:black, ls=:solid, label="Propagated means"
-	)
-	plot!(
-		p_means,
-		[-10; -20], lw=2, lc=:black, ls=:dash, label="PDF"
-	)
-	plot!(
-		p_means,
-		[-10; -20], lw=2, lc=:black, ls=:dashdot, label="Optimal time"
-	)
+  # Manual label
+  plot!(
+    p_means,
+    [-10; -20], lw=2, lc=:black, ls=:solid, label="Propagated means"
+  )
+  plot!(
+    p_means,
+    [-10; -20], lw=2, lc=:black, ls=:dash, label="PDF"
+  )
+  plot!(
+    p_means,
+    [-10; -20], lw=2, lc=:black, ls=:dashdot, label="Optimal time"
+  )
 end
 
 # ╔═╡ d132f438-3764-4844-9634-7416f2e062b7
@@ -676,89 +676,89 @@ md"#### VMR"
 
 # ╔═╡ 097c40b2-2b34-442d-8cb9-4c63b60abfc4
 begin
-	p_decrease = plot(
-		times_range,
-		eachrow(vmr_time)[test_indices],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=vmr_bounds,
-		xlims=extrema(times_range),
-		# yaxis=:log
-	)
+  p_decrease = plot(
+    times_range,
+    eachrow(vmr_time)[test_indices],
+    label=false,
+    palette=test_palette,
+    lw=2,
+    ylims=vmr_bounds,
+    xlims=extrema(times_range),
+    # yaxis=:log
+  )
 
-	vline!(p_decrease, [propagation_time], c=:forestgreen, label="Propagation time")
+  vline!(p_decrease, [propagation_time], c=:forestgreen, label="Propagation time")
 
-	for (i, test_idx) in enumerate(test_indices)
-		vline!(
-			p_decrease,
-			[
-				let
-					try
-						times_range[findfirst(has_decreased_time[test_idx, :])]
-					catch
-						NaN
-					end
-				end
-			],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dash,
-		)
-	end
+  for (i, test_idx) in enumerate(test_indices)
+    vline!(
+      p_decrease,
+      [
+        let
+          try
+            times_range[findfirst(has_decreased_time[test_idx, :])]
+          catch
+            NaN
+          end
+        end
+      ],
+      label=false,
+      lw=2,
+      lc=test_palette[i],
+      ls=:dash,
+    )
+  end
 
-	# Manual label
-	plot!(
-		p_decrease, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
-	)
-	plot!(
-		p_decrease, [-10; -20], lw=2, lc=:black, ls=:dash, label="Decrease found"
-	)
+  # Manual label
+  plot!(
+    p_decrease, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
+  )
+  plot!(
+    p_decrease, [-10; -20], lw=2, lc=:black, ls=:dash, label="Decrease found"
+  )
 end
 
 # ╔═╡ c20c3541-d935-423c-a07f-77d8e0679d8d
 begin
-	p_stability = plot(
-		times_range[begin+1:end],
-		eachrow(vmr_time[:, begin+1:end])[test_indices],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=vmr_bounds,
-		xlims=extrema(times_range[begin+1:end]),
-		# yscale=:log,
-		xscale=:log10,
-	)
+  p_stability = plot(
+    times_range[begin+1:end],
+    eachrow(vmr_time[:, begin+1:end])[test_indices],
+    label=false,
+    palette=test_palette,
+    lw=2,
+    ylims=vmr_bounds,
+    xlims=extrema(times_range[begin+1:end]),
+    # yscale=:log,
+    xscale=:log10,
+  )
 
-	vline!(p_stability, [propagation_time], c=:forestgreen, label="Propagation time")
+  vline!(p_stability, [propagation_time], c=:forestgreen, label="Propagation time")
 
-	for (i, test_idx) in enumerate(test_indices)
-		vline!(
-			p_stability,
-			[
-				let
-					try
-						times_range[findfirst(is_stable_time[test_idx, :])]
-					catch
-						NaN
-					end
-				end
-			],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dash,
-		)
-	end
+  for (i, test_idx) in enumerate(test_indices)
+    vline!(
+      p_stability,
+      [
+        let
+          try
+            times_range[findfirst(is_stable_time[test_idx, :])]
+          catch
+            NaN
+          end
+        end
+      ],
+      label=false,
+      lw=2,
+      lc=test_palette[i],
+      ls=:dash,
+    )
+  end
 
-	# Manual label
-	plot!(
-		p_stability, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
-	)
-	plot!(
-		p_stability, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
-	)
+  # Manual label
+  plot!(
+    p_stability, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
+  )
+  plot!(
+    p_stability, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
+  )
 end
 
 # ╔═╡ 4a7adae6-e2f5-4478-aad2-c868879f8236
@@ -769,61 +769,61 @@ md"#### First derivative"
 
 # ╔═╡ 36ff4668-62aa-4cb1-b732-2bc278d723e2
 begin
-	p_dev1 = plot(
-		times_range[begin+1:end],
-		eachrow(derivatives1[:,begin+1:end])[test_indices][plot_idx],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=(-10,5),
-		xlims=extrema(times_range[begin+1:end]),
-		# xlims=(0,0.25),
-		# yaxis=:log,
-		# xaxis=:log,
-		c=test_palette[plot_idx],
-	)
+  p_dev1 = plot(
+    times_range[begin+1:end],
+    eachrow(derivatives1[:, begin+1:end])[test_indices][plot_idx],
+    label=false,
+    palette=test_palette,
+    lw=2,
+    ylims=(-10, 5),
+    xlims=extrema(times_range[begin+1:end]),
+    # xlims=(0,0.25),
+    # yaxis=:log,
+    # xaxis=:log,
+    c=test_palette[plot_idx],
+  )
 
-	vline!(p_dev1, [propagation_time], c=:forestgreen, label="Propagation time")
+  vline!(p_dev1, [propagation_time], c=:forestgreen, label="Propagation time")
 
-	vline!(
-			p_dev1,
-			[optimal_times[test_indices[plot_idx]]],
-			label=false,
-			lw=2,
-			lc=test_palette[plot_idx],
-			ls=:dashdot,
-		)
+  vline!(
+    p_dev1,
+    [optimal_times[test_indices[plot_idx]]],
+    label=false,
+    lw=2,
+    lc=test_palette[plot_idx],
+    ls=:dashdot,
+  )
 
-	for (i, val) in enumerate(distro_pdf[test_indices])
-		if i == plot_idx
-		vline!(
-			p_dev1,
-			[
-				let
-					try
-						times_range[
-							findlast(density_assigned_time[test_indices[i], :])
-						]
-					catch
-						NaN
-					end
-				end
-			],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dash,
-		)
-		end
-	end
+  for (i, val) in enumerate(distro_pdf[test_indices])
+    if i == plot_idx
+      vline!(
+        p_dev1,
+        [
+          let
+            try
+              times_range[
+                findlast(density_assigned_time[test_indices[i], :])
+              ]
+            catch
+              NaN
+            end
+          end
+        ],
+        label=false,
+        lw=2,
+        lc=test_palette[i],
+        ls=:dash,
+      )
+    end
+  end
 
-	# Manual label
-	plot!(
-		p_dev1, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
-	)
-	plot!(
-		p_dev1, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
-	)
+  # Manual label
+  plot!(
+    p_dev1, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
+  )
+  plot!(
+    p_dev1, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
+  )
 end
 
 # ╔═╡ 239d91b7-1a08-48aa-9e86-93e4c006bc06
@@ -831,67 +831,67 @@ md"#### Second derivative"
 
 # ╔═╡ c2d6f057-8bd6-4b0c-9e24-83b9c8d0ee52
 begin
-	p_dev2 = plot(
-		times_range[begin+1:end],
-		eachrow(derivatives2[:, begin+1:end])[test_indices][plot_idx],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=(-10,10),
-		xlims=extrema(times_range[begin+1:end]),
-		# xlims=(0,0.25),
-		# yaxis=:log,
-		# xaxis=:log,
-		c=test_palette[plot_idx],
-		marker="o"
-	)
+  p_dev2 = plot(
+    times_range[begin+1:end],
+    eachrow(derivatives2[:, begin+1:end])[test_indices][plot_idx],
+    label=false,
+    palette=test_palette,
+    lw=2,
+    ylims=(-10, 10),
+    xlims=extrema(times_range[begin+1:end]),
+    # xlims=(0,0.25),
+    # yaxis=:log,
+    # xaxis=:log,
+    c=test_palette[plot_idx],
+    marker="o"
+  )
 
-	vline!(p_dev2, [propagation_time], c=:forestgreen, label="Propagation time")
-	hline!(p_dev2, [eps_low_id], c=:red, label=false)
+  vline!(p_dev2, [propagation_time], c=:forestgreen, label="Propagation time")
+  hline!(p_dev2, [eps_low_id], c=:red, label=false)
 
-	vline!(
-			p_dev2,
-			[optimal_times[test_indices[plot_idx]]],
-			label=false,
-			lw=2,
-			lc=test_palette[plot_idx],
-			ls=:dashdot,
-		)
+  vline!(
+    p_dev2,
+    [optimal_times[test_indices[plot_idx]]],
+    label=false,
+    lw=2,
+    lc=test_palette[plot_idx],
+    ls=:dashdot,
+  )
 
-	for (i, val) in enumerate(distro_pdf[test_indices])
-		if i == plot_idx
-		vline!(
-			p_dev2,
-			[
-				let
-					try
-						times_range[
-							findlast(density_assigned_time[test_indices[i], :])
-						]
-					catch
-						NaN
-					end
-				end
-			],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dash,
-		)
-		end
-	end
+  for (i, val) in enumerate(distro_pdf[test_indices])
+    if i == plot_idx
+      vline!(
+        p_dev2,
+        [
+          let
+            try
+              times_range[
+                findlast(density_assigned_time[test_indices[i], :])
+              ]
+            catch
+              NaN
+            end
+          end
+        ],
+        label=false,
+        lw=2,
+        lc=test_palette[i],
+        ls=:dash,
+      )
+    end
+  end
 
-	# Manual label
-	plot!(
-		p_dev2, [-10; -20], lw=2, lc=:black, ls=:solid, label="Second derivative"
-	)
-	# plot!(
-	# 	p_dev2, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
-	# )
+  # Manual label
+  plot!(
+    p_dev2, [-10; -20], lw=2, lc=:black, ls=:solid, label="Second derivative"
+  )
+  # plot!(
+  # 	p_dev2, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stability found"
+  # )
 
-	# savefig(p_dev2, "dev2_cpu.png")
+  # savefig(p_dev2, "dev2_cpu.png")
 
-	p_dev2
+  p_dev2
 end
 
 # ╔═╡ 8bd6926d-dbec-4858-9c72-5e0904bc71d7
@@ -899,59 +899,59 @@ md"#### Final stopping point"
 
 # ╔═╡ 123376cd-d638-41e9-a6bf-8ff9fcbe4b6b
 begin
-	p_optimal = plot(
-		times_range[begin+1:end],
-		eachrow(vmr_time[:, begin+1:end])[test_indices],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=vmr_bounds,
-		xlims=extrema(times_range[begin+1:end]),
-		# yaxis=:log,
-		xaxis=:log
-	)
+  p_optimal = plot(
+    times_range[begin+1:end],
+    eachrow(vmr_time[:, begin+1:end])[test_indices],
+    label=false,
+    palette=test_palette,
+    lw=2,
+    ylims=vmr_bounds,
+    xlims=extrema(times_range[begin+1:end]),
+    # yaxis=:log,
+    xaxis=:log
+  )
 
-	vline!(p_optimal, [propagation_time], c=:forestgreen, label="Propagation time")
+  vline!(p_optimal, [propagation_time], c=:forestgreen, label="Propagation time")
 
-	for (i, val) in enumerate(distro_pdf[test_indices])
-		vline!(
-			p_optimal,
-			[
-				times_range[
-					findlast(density_assigned_time[test_indices[i], :])
-				]
-			],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dash,
-		)
-		
-		vline!(
-			p_optimal,
-			[optimal_times[test_indices[i]]],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dashdot,
-		)
-	end
+  for (i, val) in enumerate(distro_pdf[test_indices])
+    vline!(
+      p_optimal,
+      [
+        times_range[
+          findlast(density_assigned_time[test_indices[i], :])
+        ]
+      ],
+      label=false,
+      lw=2,
+      lc=test_palette[i],
+      ls=:dash,
+    )
 
-	# Manual label
-	plot!(
-		p_optimal, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
-	)
-	plot!(
-		p_optimal, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stopping point"
-	)
-	plot!(
-		p_optimal,
-		[-10; -20], lw=1, lc=:black, ls=:dashdot, label="Optimal time"
-	)
+    vline!(
+      p_optimal,
+      [optimal_times[test_indices[i]]],
+      label=false,
+      lw=2,
+      lc=test_palette[i],
+      ls=:dashdot,
+    )
+  end
 
-	# savefig(p_optimal, "vmr_cpu.png")
+  # Manual label
+  plot!(
+    p_optimal, [-10; -20], lw=2, lc=:black, ls=:solid, label="Scaled VMR"
+  )
+  plot!(
+    p_optimal, [-10; -20], lw=2, lc=:black, ls=:dash, label="Stopping point"
+  )
+  plot!(
+    p_optimal,
+    [-10; -20], lw=1, lc=:black, ls=:dashdot, label="Optimal time"
+  )
 
-	p_optimal
+  # savefig(p_optimal, "vmr_cpu.png")
+
+  p_optimal
 end
 
 # ╔═╡ 9f5e3a30-0104-45f8-b3f5-eaa4b73dce32
@@ -959,68 +959,68 @@ md"#### Error comparison"
 
 # ╔═╡ c85f42eb-6667-4bcf-8888-db105378cb55
 begin
-	p_means2 = plot(
-		times_range,
-		eachrow(means_time)[test_indices],
-		label=false,
-		palette=test_palette,
-		lw=2,
-		ylims=1.1 .* extrema(means_time[test_indices, :]),
-		xlims=extrema(times_range),
-	)
+  p_means2 = plot(
+    times_range,
+    eachrow(means_time)[test_indices],
+    label=false,
+    palette=test_palette,
+    lw=2,
+    ylims=1.1 .* extrema(means_time[test_indices, :]),
+    xlims=extrema(times_range),
+  )
 
-	vline!(p_means2, [propagation_time], c=:forestgreen, label="Propagation time")
+  vline!(p_means2, [propagation_time], c=:forestgreen, label="Propagation time")
 
-	for (i, val) in enumerate(distro_pdf[test_indices])
-		hline!(
-			p_means2,
-			[val],
-			label=false,
-			lc=test_palette[i],
-			lw=2,
-			ls=:dashdotdot,
-		)
+  for (i, val) in enumerate(distro_pdf[test_indices])
+    hline!(
+      p_means2,
+      [val],
+      label=false,
+      lc=test_palette[i],
+      lw=2,
+      ls=:dashdotdot,
+    )
 
-		vline!(
-			p_means2,
-			[
-				times_range[
-					findlast(density_assigned_time[test_indices[i], :])
-				]
-			],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dash,
-		)
+    vline!(
+      p_means2,
+      [
+        times_range[
+          findlast(density_assigned_time[test_indices[i], :])
+        ]
+      ],
+      label=false,
+      lw=2,
+      lc=test_palette[i],
+      ls=:dash,
+    )
 
-		vline!(
-			p_means2,
-			[optimal_times[test_indices[i]]],
-			label=false,
-			lw=2,
-			lc=test_palette[i],
-			ls=:dashdot,
-		)
-	end
+    vline!(
+      p_means2,
+      [optimal_times[test_indices[i]]],
+      label=false,
+      lw=2,
+      lc=test_palette[i],
+      ls=:dashdot,
+    )
+  end
 
-	# Manual label
-	plot!(
-		p_means2,
-		[-10; -20], lw=2, lc=:black, ls=:solid, label="Propagated means"
-	)
-	plot!(
-		p_means2,
-		[-10; -20], lw=2, lc=:black, ls=:dashdotdot, label="PDF"
-	)
-	plot!(
-		p_means2,
-		[-10; -20], lw=2, lc=:black, ls=:dashdot, label="Optimal time"
-	)
-	plot!(
-		p_means2,
-		[-10; -20], lw=2, lc=:black, ls=:dash, label="Stopping time"
-	)
+  # Manual label
+  plot!(
+    p_means2,
+    [-10; -20], lw=2, lc=:black, ls=:solid, label="Propagated means"
+  )
+  plot!(
+    p_means2,
+    [-10; -20], lw=2, lc=:black, ls=:dashdotdot, label="PDF"
+  )
+  plot!(
+    p_means2,
+    [-10; -20], lw=2, lc=:black, ls=:dashdot, label="Optimal time"
+  )
+  plot!(
+    p_means2,
+    [-10; -20], lw=2, lc=:black, ls=:dash, label="Stopping time"
+  )
 end
 
 # ╔═╡ Cell order:
