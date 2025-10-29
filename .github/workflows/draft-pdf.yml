@@ -4,6 +4,18 @@ on:
     paths:
       - paper/**
       - .github/workflows/draft-pdf.yml
+    branches:
+      - main
+      - dev
+      - paper
+  pull_request:
+    paths:
+      - paper/**
+      - .github/workflows/draft-pdf.yml
+    branches:
+      - main
+      - dev
+      - paper
 
 jobs:
   paper:
