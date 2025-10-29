@@ -59,9 +59,9 @@ Currently, there are two estimators available:
 - `:gradepro`: As described in [Sustay Martinez *et al.* (2025)], this estimator is designed for high-dimensional data and can be run on both CPU and GPU.
 - `:rot`: Implements the rules of thumb (Silverman and Scott) for bandwidth selection. It makes use of some of the routines from `:gradepro` to evaluate the density on a grid.
 
-<!-- ## Python Wrapper -->
-<!---->
-<!-- For integration with Python-based workflows, a Python wrapper is available via the [ParallelKDEpy](https://github.com/chrissm23/ParallelKDEpy) package. This wrapper allows you to use the ParallelKDE functionality directly in Python. -->
+## Python Wrapper
+
+For integration with Python-based workflows, a Python wrapper is available via the [ParallelKDEpy](https://github.com/chrissm23/ParallelKDEpy) package. This wrapper allows you to use the ParallelKDE functionality directly in Python.
 
 ## Citing
 
