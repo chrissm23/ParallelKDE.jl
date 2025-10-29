@@ -387,16 +387,13 @@ function generate_dirac_cuda!(
   idx_bootstrap = idx_bootstrap_tmp + 1i32
   idx_sample = idx_sample_tmp + 1i32
 
-  mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
+  mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, Val(M-1))
 
   boot_idx = bootstrap_idxs[idx_sample, idx_bootstrap]
-  grid_idxs = ntuple(
-    i -> let
-      index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i]) + 1i32
-      return mask[i] ? index_l : index_l + 1i32
-    end,
-    n_dims
-  )
+  grid_idxs = ntuple(Val(M-1)) do i
+    index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i]) + 1i32
+    mask[i] ? index_l : index_l + 1i32
+  end
 
   remainder_product = 1.0f0
   i = 1i32
@@ -447,16 +444,13 @@ function generate_dirac_cuda!(
   idx_bootstrap = idx_bootstrap_tmp + 1i32
   idx_sample = idx_sample_tmp + 1i32
 
-  mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, n_dims)
+  mask = ntuple(i -> (idx_dim >> (n_dims - i)) & 1i32 == 1i32, Val(M-1))
 
   boot_idx = bootstrap_idxs[idx_sample, idx_bootstrap]
-  grid_idxs = ntuple(
-    i -> let
-      index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i]) + 1i32
-      return mask[i] ? index_l : index_l + 1i32
-    end,
-    n_dims
-  )
+  grid_idxs = ntuple(Val(M-1)) do i
+    index_l = floor(Int32, (data[i, boot_idx] - low_bound[i]) / spacing[i]) + 1i32
+    mask[i] ? index_l : index_l + 1i32
+  end
 
   remainder_product = 1.0f0
   i = 1i32
@@ -644,7 +638,7 @@ function calculate_scaled_vmr!(
   idxs = CartesianIndices(vmrs)
   Threads.@threads for idx in eachindex(idxs)
     I = idxs[idx]
-    J = ntuple(i -> I[perm[i]], M)
+    J = ntuple(i -> I[perm[i]], Val(M))
     vmrs_transposed[J...] = vmrs[I]
   end
 
