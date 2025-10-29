@@ -1,7 +1,7 @@
 name = "ParallelKDE"
 uuid = "251f600b-d60c-4092-b1b9-465b74160c73"
 authors = ["Christian Sustay (christian.sustay@tum.de)"]
-version = "1.0.0-beta.1"
+version = "1.0.0-rc.1"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
