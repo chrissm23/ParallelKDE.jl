@@ -6,7 +6,7 @@ The GradePro Estimator is the primary estimator provided by the package. It is d
 - Threaded (multi-core CPU)
 - CUDA (GPU acceleration)
 
-The underlying ideas for this estimator can be found in [1]
+The underlying ideas for this estimator can be found in Sustay Martinez et al[^1].
 
 ## Usage
 
@@ -36,4 +36,4 @@ estimate_density!(density_estimation, :gradepro; kwargs...)
 
 ## References
 
-[1] [Sustay Martinez, C., Quoika P. K., Zacharias, M. (2025). Novel Rapid Approach for Adaptive Gaussian Kernel Density Estimation: Gridpoint-wise Propagation of Anisotropic Diffusion Equation]
+[^1]: [Sustay Martinez, C., Quoika P. K., Zacharias, M. (2025). Novel Rapid Approach for Adaptive Gaussian Kernel Density Estimation: Gridpoint-wise Propagation of Anisotropic Diffusion Equation]
