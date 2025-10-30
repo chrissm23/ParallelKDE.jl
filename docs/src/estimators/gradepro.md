@@ -24,7 +24,7 @@ estimate_density!(density_estimation, :gradepro; kwargs...)
 - `bw_step`: Size of the bandwidth step between iterations. Default is chosen for 250 iterations.
 - `n_steps`: Number of iterations to perform. Default is 250. This has precedence over `bw_step`.
 - `alpha_s`: Percentage of the total bandwidth steps of persistence beyond the thresholds before registering the crossing event. Default is 0.0 (0%) for 1D, and 0.06 (6%) for 2D.
-- `alpha_os`: Maximum percentage of the total bandwidth steps allowed before the next estimation update before halting the estimated density updates. Default is 0.2 (20%) for 1D, and 0.1 (10%) for 2D.
+- `alpha_os`: Maximum percentage of the total bandwidth steps allowed before the next estimation update for halting the estimated density updates. Default is 0.1 (10%).
 - `eps`: Threshold for convergence of low density regions. Default is 2.0 for 1D, and -0.5 for 2D.
 
 !!! warning "Parameters for higher dimensions"
