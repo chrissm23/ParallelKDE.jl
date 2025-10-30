@@ -24,7 +24,9 @@ estimate_density!(density_estimation, :rot; kwargs...)
     Implementation with CUDA was not written to support higher dimensionality than 3D estimations.
 
 ## References
+[1]: https://doi.org/10.1201/9781315140919 "Silverman, B. W. (1986). Density Estimation for Statistics and Data Analysis. Chapman and Hall/CRC."
+[2]: https://doi.org/10.1002/9780470316849 "Scott, D. W. (1992). Multivariate Density Estimation: Theory, Practice, and Visualization. Wiley & Sons."
 
-[1] [Silverman, B. W. (1986). Density Estimation for Statistics and Data Analysis. Chapman and Hall/CRC.](https://doi.org/10.1201/9781315140919)
+[1] [Silverman, B. W. (1986). Density Estimation for Statistics and Data Analysis. Chapman and Hall/CRC.][1]
 
-[2] [Scott, D. W. (1992). Multivariate Density Estimation: Theory, Practice, and Visualization. Wiley & Sons.](https://doi.org/10.1002/9780470316849)
+[2] [Scott, D. W. (1992). Multivariate Density Estimation: Theory, Practice, and Visualization. Wiley & Sons.][2]
