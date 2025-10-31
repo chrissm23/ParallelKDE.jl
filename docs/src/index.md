@@ -4,7 +4,7 @@ CurrentModule = ParallelKDE
 
 # ParallelKDE
 
-[ParallelKDE](https://github.com/chrissm23/ParallelKDE.jl) is a package for flexible and efficient kernel density estimation (KDE), with a strong focus on parallel implementations. Its core estimator, the [Parallel Estimator](@ref "GradeproEstimator") described here, supports CPU and GPU acceleration (threaded and CUDA), and its designed to scale with modern hardware. While the package is centered around grid-based KDEs, it also provides extensible infrastructure to support and implement other types of estimators.
+[ParallelKDE](https://github.com/chrissm23/ParallelKDE.jl) is a package for flexible and efficient kernel density estimation (KDE), with a strong focus on parallel implementations. Its core estimator, the [GradePro Estimator](@ref "GradeproEstimator") described here, supports CPU and GPU acceleration (threaded and CUDA), and its designed to scale with modern hardware. While the package is centered around grid-based KDEs, it also provides extensible infrastructure to support and implement other types of estimators.
 
 The user interface is built around a modular design that separates concerns between grids, devices, density objects and estimation routines. This allows users to easily switch estimators, control execution targets (e.g., CPU or GPU), and prototype new estimation strategies without rewriting boilerplate code.
 
