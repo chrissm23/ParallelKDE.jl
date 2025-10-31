@@ -50,13 +50,13 @@ estimate_density!(density_estimation, :gradepro)
 density_estimated = get_density(density_estimation)
 ```
 
-See the [documentation] for more details on how to use the package.
+See the [documentation](https://chrissm23.github.io/ParallelKDE.jl) for more details on how to use the package.
 
 ## Features
 
 Currently, there are two estimators available:
 
-- `:gradepro`: As described in [Sustay Martinez *et al.* (2025)], this estimator is designed for high-dimensional data and can be run on both CPU and GPU.
+- `:gradepro`: As described in [Sustay Martinez et al. (2025)], this estimator is designed for high-dimensional data and can be run on both CPU and GPU.
 - `:rot`: Implements the rules of thumb (Silverman and Scott) for bandwidth selection. It makes use of some of the routines from `:gradepro` to evaluate the density on a grid.
 
 ## Python Wrapper

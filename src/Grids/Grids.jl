@@ -20,14 +20,15 @@ export AbstractGrid,
   find_grid
 
 """
-    initialize_grid(ranges; device=:cpu, b32=true)
-    initialize_grid(ranges...; device=:cpu, b32=true)
+    initialize_grid(ranges; device=:cpu, b32=false)
+    initialize_grid(ranges...; device=:cpu, b32=false)
 
 Create a grid object based on the provided ranges of coordinates for each dimension.
 
 `device` specifies the device type (default is `:cpu` but `:cuda` is also implemented),
 and, if a GPU is used, `b32` determines whether to use `Float32` or `Float64`
-for the grid coordinates.
+for the grid coordinates. For CPU grids, `b32` is ignored and the data type matches the
+data type of `ranges`.
 
 # Examples
 ```julia
@@ -45,7 +46,7 @@ function initialize_grid(ranges::NTuple{N,<:AbstractVector{T}}; device=:cpu, kwa
 
   return initialize_grid(device_type, ranges; kwargs...)
 end
-initialize_grid(::IsCPU, ranges) = Grid(ranges)
+initialize_grid(::IsCPU, ranges; b32=false) = Grid(ranges)
 initialize_grid(::IsCUDA, ranges; b32=true) = CuGrid(ranges; b32)
 
 """
@@ -68,7 +69,7 @@ struct Grid{N,T<:Real,M} <: AbstractGrid{N,T,M}
   spacings::SVector{N,T}
   bounds::SMatrix{2,N,T}
 
-  function Grid(ranges::NTuple{N,<:AbstractVector{T}}) where {N,T<:Real}
+  function Grid(ranges::NTuple{N,<:AbstractVector{T}}; b32=false) where {N,T<:Real}
     if !hasmethod(step, Tuple{typeof(first(ranges))})
       throw(ArgumentError("Elements of ranges must implement 'step' method."))
     end

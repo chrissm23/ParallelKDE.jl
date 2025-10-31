@@ -2,7 +2,7 @@
 CurrentModule = ParallelKDE
 ```
 
-# [Grids Interace](@id APIGrids)
+# [Grids Interface](@id APIGrids)
 
 Grids define the space over which the KDE is computed. The package supports:
 

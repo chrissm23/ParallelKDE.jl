@@ -49,6 +49,7 @@ nothing # hide
 which would yield a plot like this:
 
 ```@example 1
+ENV["GKSwstype"]="null" # hide
 using Plots # hide
 p = plot(grid_coordinates, density_true, label="True Density", color=:cornflowerblue, lw=2)
 plot!(p, grid_coordinates, density_estimated, label="Estimated Density", color=:firebrick, lw=2)

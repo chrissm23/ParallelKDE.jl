@@ -34,6 +34,4 @@ estimate_density!(density_estimation, :gradepro; kwargs...)
 !!! warning "High dimensionality with CUDA"
     Implementation with CUDA was not written to support higher dimensionality than 3D estimations.
 
-## References
-
 [^1]: [Sustay Martinez, C., Quoika P. K., Zacharias, M. (2025). Novel Rapid Approach for Adaptive Gaussian Kernel Density Estimation: Gridpoint-wise Propagation of Anisotropic Diffusion Equation]
