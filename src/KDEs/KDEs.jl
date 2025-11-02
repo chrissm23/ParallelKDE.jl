@@ -192,11 +192,16 @@ end
 function bootstrap_indices(kde::CuKDE, n_bootstraps::Integer)
   n_samples = get_nsamples(kde)
   if n_bootstraps == 0
-    return reshape(CuArray{Int32}(1:n_samples), n_samples, 1)
+    bootstrap_idxs = reshape(CuArray{Int32}(1:n_samples), n_samples, 1)
+    return bootstrap_idxs
+
   elseif n_bootstraps < 0
     throw(ArgumentError("Number of bootstraps must be non-negative"))
+
   else
-    return CuArray{Int32}(rand(1:n_samples, n_samples, n_bootstraps))
+    bootstrap_idxs = CUDA.rand(Int32, n_samples, n_bootstraps)
+    bootstrap_idxs .= mod1.(bootstrap_idxs, n_samples)
+    return bootstrap_idxs
   end
 end
 
