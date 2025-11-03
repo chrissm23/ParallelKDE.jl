@@ -1,4 +1,4 @@
-![ParallelKDE Logo](docs/src/assents/logo.png)
+![ParallelKDE Logo](docs/src/assets/logo.png)
 
 # ParallelKDE: Rapid Parallel Kernel Density Estimation
 
