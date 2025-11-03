@@ -1,5 +1,3 @@
-![ParallelKDE Logo](docs/src/assets/logo.png)
-
 # ParallelKDE: Rapid Parallel Kernel Density Estimation
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://chrissm23.github.io/ParallelKDE.jl/stable/)
