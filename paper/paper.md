@@ -11,7 +11,6 @@ authors:
       given: Christian
       surname: Sustay Martinez
     orcid: 0009-0006-1282-4850
-    corresponding: true
     affiliation: 1
   - name:
       given: Martin
@@ -22,6 +21,7 @@ authors:
       given: Patrick K.
       surname: Quoika
     orcid: 0000-0002-6227-5443
+    corresponding: true
     affiliation: 1
 affiliations:
   - index: 1
