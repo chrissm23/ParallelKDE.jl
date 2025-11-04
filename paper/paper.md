@@ -11,11 +11,6 @@ authors:
       given: Christian
       surname: Sustay Martinez
     orcid: 0009-0006-1282-4850
-    affiliation: 1
-  - name:
-      given: Patrick K.
-      surname: Quoika
-    orcid: 0000-0002-6227-5443
     corresponding: true
     affiliation: 1
   - name:
@@ -23,10 +18,15 @@ authors:
       surname: Zacharias
     orcid: 0000-0001-5163-2663
     affiliation: 1
+  - name:
+      given: Patrick K.
+      surname: Quoika
+    orcid: 0000-0002-6227-5443
+    affiliation: 1
 affiliations:
   - index: 1
     name: Center for Functional Protein Assemblies, Technical University of Munich, Ernst-Otto-Fischer-Str. 8, Garching 85748, Germany
-date: 28.10.2025
+date: 04.11.2025
 bibliography: paper.bib
 ---
 
