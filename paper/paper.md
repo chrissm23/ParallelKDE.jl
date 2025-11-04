@@ -5,7 +5,7 @@ tags:
   - kernel density estimation
   - parallel algorithms
   - Python
-  - Data Science
+  - data science
 authors:
   - name:
       given: Christian
@@ -16,6 +16,7 @@ authors:
       given: Patrick K.
       surname: Quoika
     orcid: 0000-0002-6227-5443
+    corresponding: true
     affiliation: 1
   - name:
       given: Martin
@@ -74,6 +75,6 @@ Further comparison of GradePro with other methods is in progress. In the future,
 
 # Acknowledgements
 
-funding...
+We thank the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation)---Project number 439143547---for funding this research.
 
 # References
