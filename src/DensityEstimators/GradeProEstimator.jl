@@ -1,6 +1,5 @@
 abstract type AbstractKernelStatistics{N,T,M} end
 abstract type AbstractKernelMeans{N,T,M} <: AbstractKernelStatistics{N,T,M} end
-using Core: Argument
 abstract type AbstractKernelVars{N,T,M} <: AbstractKernelStatistics{N,T,M} end
 
 struct KernelMeans{N,T<:Real,M} <: AbstractKernelMeans{N,T,M}
