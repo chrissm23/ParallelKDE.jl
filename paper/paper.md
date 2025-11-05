@@ -7,26 +7,19 @@ tags:
   - Python
   - data science
 authors:
-  - name:
-      given: Christian
-      surname: Sustay Martinez
+  - name: Christian Sustay Martinez
     orcid: 0009-0006-1282-4850
     affiliation: 1
-  - name:
-      given: Martin
-      surname: Zacharias
+  - name: Martin Zacharias
     orcid: 0000-0001-5163-2663
     affiliation: 1
-  - name:
-      given: Patrick K.
-      surname: Quoika
+  - name: Patrick K. Quoika
     orcid: 0000-0002-6227-5443
     corresponding: true
     affiliation: 1
 affiliations:
-  - index: 1
-    name: Center for Functional Protein Assemblies, Technical University of Munich, Ernst-Otto-Fischer-Str. 8, Garching 85748, Germany
-date: 04.11.2025
+  - name: Center for Functional Protein Assemblies, Technical University of Munich, Ernst-Otto-Fischer-Str. 8, Garching 85748, Germany
+date: 05 November 2025
 bibliography: paper.bib
 ---
 
