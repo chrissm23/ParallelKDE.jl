@@ -19,7 +19,7 @@ authors:
     affiliation: 1
 affiliations:
   - index: 1
-  - name: Center for Functional Protein Assemblies, School of Natural Sciences, Technical University of Munich, Ernst-Otto-Fischer-Str. 8, Garching 85748, Germany
+    name: Center for Functional Protein Assemblies, School of Natural Sciences, Technical University of Munich, Ernst-Otto-Fischer-Str. 8, Garching 85748, Germany
 date: 05 November 2025
 bibliography: paper.bib
 ---
