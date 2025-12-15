@@ -32,6 +32,9 @@ or, similarly,
 pkg> add ParallelKDE
 ```
 
+> [!IMPORTANT]
+> This package supports Julia v1.11+ and is expected to work on Julia 1.x (SemVer: ^1.11).
+
 ## Quick Start
 
 ```julia
