@@ -40,7 +40,7 @@ Pkg.add(url="https://github.com/chrissm23/ParallelKDE.jl", rev="dev")
 ```
 
 > [!IMPORTANT]
-> `ParallelKDE.jl` supports Julia v1.11+ and is expected to work on Julia 1.x (SemVer: ^1.11).
+> `ParallelKDE.jl` supports Julia v1.11+ and is expected to work on Julia 1.x (SemVer: ^1.11).\
 > In order to use it with Julia v1.10, please install directly from the repository as shown above.
 
 ## Quick Start
