@@ -13,8 +13,16 @@ using Pkg
 Pkg.add("ParallelKDE")
 ```
 
+For the latest changes, the package can also be installed directly from the repository with:
+
+```julia
+using Pkg
+Pkg.add(url="https://github.com/chrissm23/ParallelKDE.jl", rev="dev")
+```
+
 !!! compat "Compatible Julia versions"
-    This package supports Julia v1.11+ and is expected to work on Julia 1.x (SemVer: ^1.11).
+    `ParallelKDE.jl` supports Julia v1.11+ and is expected to work on Julia 1.x (SemVer: ^1.11).\
+    In order to use it with Julia v1.10, please install directly from the repository as shown above.
 
 This will automatically install the package and its dependencies including [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl). In order to use CUDA acceleration, please ensure that you have a compatible NVIDIA GPU.
 

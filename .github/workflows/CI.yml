@@ -23,10 +23,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version:
-          - "1"
-        os:
-          - ubuntu-latest
+        julia-version: ["lts", "1"]
+        os: [ubuntu-latest, windows-latest]
         arch:
           - x64
     steps:
