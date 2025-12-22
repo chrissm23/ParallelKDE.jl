@@ -30,7 +30,7 @@ makedocs(;
     "Home" => "index.md",
     "Installation" => "installation.md",
     "Estimators" => ESTIMATOR_PAGES,
-    "Development" => "development.md",
+    "Contributing and Support" => "contributing.md",
     "API Reference" => API_PAGES,
   ],
   remotes=nothing,

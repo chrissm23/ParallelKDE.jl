@@ -76,3 +76,7 @@ For integration with Python-based workflows, a Python wrapper is available via t
 ## Citing
 
 Please cite the following papers when using ParallelKDE.jl in your work:
+
+## Community Guidelines
+
+Contributing, issue reporting and support: see *Contributing and Support* in the docs.
