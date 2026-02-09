@@ -47,9 +47,9 @@ Additionally, our novel method, GradePro, achieves high accuracy on diverse dist
 
 Further comparison of GradePro with other methods is in progress. In the future, we aim to provide general recommendations for users on the optimal choice of bandwidth selection methods for different use-cases. Here, we focus on the software engineering aspects, which enable our fast implementation.
 
-![Benchmark of common KDE packages and their estimators—rule-of-thumb (ROT), plug-in, and GradePro—along with estimators in ParallelKDE at different sample sizes. The estimations were performed for 100 and 100,000 samples in 1D with a grid of 500 points; and for 1,000 and 1,000,000 samples in 2D with a grid of 100 points per dimension. Reported runtimes are averages over 10 repetitions. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_samples}](./benchmark_samples.pdf)
+![Benchmark of common KDE packages and their estimators—rule-of-thumb (ROT), plug-in, and GradePro—along with estimators in ParallelKDE at different sample sizes. The estimations were performed on normally distributed data. In 1D, 100 and 100,000 samples were used with a grid of 500 points. In 2D, 1,000 and 1,000,000 samples were used with a grid of 100 points per dimension. Reported runtimes are averages over 10 repetitions. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_samples}](./benchmark_samples.pdf)
 
-![Benchmark of common KDE packages and their estimators along with estimators in ParallelKDE at different grid sizes. The estimations were performed for 100 and 2,500 grid points in 1D with 10,000 samples; and for 33 and 300 grid points per dimension with 100,000 samples in 2D. Reported runtimes are averages over 10 repetitions. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_grids}](./benchmark_grids.pdf)
+![Benchmark of common KDE packages and their estimators along with estimators in ParallelKDE at different grid sizes. The estimations were performed on normally distributed data. In 1D, 100 and 2,500 grid points were used with 10,000 samples. In 2D, 33 and 300 grid points per dimension were used with 100,000 samples. Reported runtimes are averages over 10 repetitions. Hardware: Intel Core i7-6700 and NVIDIA GTX 1080.\label{fig:benchmark_grids}](./benchmark_grids.pdf)
 
 # Functionality
 
