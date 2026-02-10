@@ -73,6 +73,10 @@ Currently, there are two estimators available:
 
 For integration with Python-based workflows, a Python wrapper is available via the [ParallelKDEpy](https://github.com/chrissm23/ParallelKDEpy) package. This wrapper allows you to use the ParallelKDE functionality directly in Python.
 
+## Benchmarks
+
+We include a Python benchmark suite to compare `ParallelKDE`against commonly used Python KDE implementations on a uniform interface via `ParallelKDEpy`. We report both single-threaded CPU results (as baseline for typical Python tools) and CUDA results to illustrate the acceleration enabled by parallel execution. See [`paper/benchmark_samples.pdf`](paper/benchmark_samples.pdf) and [`paper/benchmark_grids.pdf`](paper/benchmark_grids.pdf) (or run it yourself using the notebook in [`paper/benchmark_time.ipynb`](paper/benchmark_time.ipynb)).
+
 ## Citing
 
 Please cite the following papers when using ParallelKDE.jl in your work:
