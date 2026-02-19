@@ -66,7 +66,14 @@ Further comparison of GradePro with other methods is in progress. In the future,
 
 **Python wrapper.** The companion package `ParallelKDEpy` provides, with the help of `PythonCall.jl` [@rowley_pythoncalljl_2022], Python bindings to `ParallelKDE.jl`, offering identical estimators and device selection for seamless integration in Python-based workflows.
 
-![Flowchart of the parallelizable point-wise density estimation algorithm. \label{fig:flowchart}](./parallelkde_flowchart.pdf)
+```{=latex}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[height=0.9\textheight,keepaspectratio]{parallelkde_flowchart.pdf}
+  \caption{Flowchart of the parallelizable point-wise density estimation algorithm.}
+  \label{fig:flowchart}
+\end{figure}
+```
 
 # Acknowledgements
 
