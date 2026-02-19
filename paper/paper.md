@@ -36,9 +36,9 @@ Many researchers rely on Python implementations of KDE. Popular examples include
 
 `ParallelKDE.jl` addresses this gap with:
 
-1. a unified device interface so that the estimations can be executed on serial, threads (via Julia's `Threads.@threads`), or GPU (e.g. via `CUDA.jl`) without changing user code;
-2. parallelized calculation of FFT-based KDE with ROTs and GradePro;
-3. a reproducible benchmark comparing against SciPy, scikit-learn, statsmodels and KDEpy under matched estimation tasks.
+1. A unified device interface so that the estimations can be executed on serial, threads (via Julia's `Threads.@threads`), or GPU (e.g. via `CUDA.jl`) without changing user code;
+2. Parallelized calculation of FFT-based KDE with ROTs and GradePro;
+3. A reproducible benchmark comparing against SciPy, scikit-learn, statsmodels and KDEpy under matched estimation tasks.
 
 # Performance benchmarks
 
