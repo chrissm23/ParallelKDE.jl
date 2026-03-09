@@ -82,7 +82,7 @@ We include a Python benchmark suite to compare `ParallelKDE`against commonly use
 
 Please cite the following papers when using ParallelKDE.jl in your work:
 
-- [Sustay Martinez et al., (2026). ParallelKDE.jl: A Package for Higly Parallel Kernel Density Estimation. Journal of Open Source Software, 11(119), 9616.](https://doi.org/10.21105/joss.09616)
+- [Sustay Martinez et al., (2026). ParallelKDE.jl: A Package for Highly Parallel Kernel Density Estimation. Journal of Open Source Software, 11(119), 9616.](https://doi.org/10.21105/joss.09616)
 
 ## Community Guidelines
 
