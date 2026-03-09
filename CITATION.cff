@@ -1,0 +1,44 @@
+cff-version: "1.2.0"
+authors:
+- family-names: Sustay Martinez
+  given-names: Christian
+  orcid: "https://orcid.org/0009-0006-1282-4850"
+- family-names: Zacharias
+  given-names: Martin
+  orcid: "https://orcid.org/0000-0001-5163-2663"
+- family-names: Quoika
+  given-names: Patrick K.
+  orcid: "https://orcid.org/0000-0002-6227-5443"
+contact:
+- family-names: Quoika
+  given-names: Patrick K.
+  orcid: "https://orcid.org/0000-0002-6227-5443"
+doi: 10.5281/zenodo.18712216
+message: If you use this software, please cite our article in the
+  Journal of Open Source Software.
+preferred-citation:
+  authors:
+  - family-names: Sustay Martinez
+    given-names: Christian
+    orcid: "https://orcid.org/0009-0006-1282-4850"
+  - family-names: Zacharias
+    given-names: Martin
+    orcid: "https://orcid.org/0000-0001-5163-2663"
+  - family-names: Quoika
+    given-names: Patrick K.
+    orcid: "https://orcid.org/0000-0002-6227-5443"
+  date-published: 2026-03-06
+  doi: 10.21105/joss.09616
+  issn: 2475-9066
+  issue: 119
+  journal: Journal of Open Source Software
+  publisher:
+    name: Open Journals
+  start: 9616
+  title: "ParallelKDE.jl: A Package for Highly Parallel Kernel Density
+    Estimation"
+  type: article
+  url: "https://joss.theoj.org/papers/10.21105/joss.09616"
+  volume: 11
+title: "ParallelKDE.jl: A Package for Highly Parallel Kernel Density
+  Estimation"

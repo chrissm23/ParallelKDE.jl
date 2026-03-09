@@ -4,6 +4,7 @@
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://chrissm23.github.io/ParallelKDE.jl/dev/)
 [![Build Status](https://github.com/chrissm23/ParallelKDE.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/chrissm23/ParallelKDE.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Aqua](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.09616/status.svg)](https://doi.org/10.21105/joss.09616)
 
 High performance implementation in Julia of a parallel kernel density estimation algorithm described in [Sustay Martinez *et al.* (2025)]. The algorithm is specially suited for high-dimensional data, with CPU/CUDA support.
 
@@ -80,6 +81,8 @@ We include a Python benchmark suite to compare `ParallelKDE`against commonly use
 ## Citing
 
 Please cite the following papers when using ParallelKDE.jl in your work:
+
+- [Sustay Martinez et al., (2026). ParallelKDE.jl: A Package for Higly Parallel Kernel Density Estimation. Journal of Open Source Software, 11(119), 9616.](https://doi.org/10.21105/joss.09616)
 
 ## Community Guidelines
 
