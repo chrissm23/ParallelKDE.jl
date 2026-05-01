@@ -1,7 +1,7 @@
 name = "ParallelKDE"
 uuid = "251f600b-d60c-4092-b1b9-465b74160c73"
-authors = ["Christian Sustay (christian.sustay@tum.de)"]
 version = "1.0.2"
+authors = ["Christian Sustay (christian.sustay@tum.de)"]
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
@@ -13,7 +13,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
 Aqua = "^0.8"
-CUDA = "^5"
+CUDA = "^5, 6"
 Distributions = "^0.25"
 FFTW = "^1"
 LinearAlgebra = "^1"
